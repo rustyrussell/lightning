@@ -1,0 +1,7 @@
+run-bitcoind-gettxout
+run-channel
+run-commit_tx
+run-cryptomsg
+run-find_my_path
+run-funding_tx
+run-key_derive
