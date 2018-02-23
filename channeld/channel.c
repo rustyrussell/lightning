@@ -322,6 +322,10 @@ static void send_announcement_signatures(struct peer *peer)
 	    !peer->funding_locked[REMOTE])
 		return;
 
+	/* FIXME: Put in spec! */
+	if (peer->shutdown_sent[LOCAL])
+		return;
+
 	tmpctx = tal_tmpctx(peer);
 	status_trace("Exchanging announcement signatures.");
 	ca = create_channel_announcement(tmpctx, peer);
