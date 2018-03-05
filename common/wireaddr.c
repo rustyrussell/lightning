@@ -10,6 +10,63 @@
 #include <sys/types.h>
 #include <wire/wire.h>
 
+#define BASE32DATA "abcdefghijklmnopqrstuvwxyz234567"
+
+
+static char *b32_encode(char *dst, u8 *src, u8 ver) {
+	u16 byte = 0,
+	poff = 0;
+	for(; byte < 	((ver==2)?16:56); poff += 5)
+	{
+	if(poff > 7) {
+	poff -= 8;
+	src++;
+	}
+	dst[byte++] = BASE32DATA[ (htobe16(*(u16*)src) >> (11 -poff)) & (u16)0x001F];
+	}
+	dst[byte] = 0;
+	return dst;
+}
+
+//FIXME quiknditry
+//int b32_decode( u8 *dst,u8 *src,u8 ver);
+
+static int b32_decode( u8 *dst,u8 *src,u8 ver) {
+
+	int rem = 0;
+
+	int i;
+	u8 *p=src;
+	int buf;
+	u8 ch;
+
+	for (i=0; i < ((ver==2)?16:56) ; p++) {
+	ch = *p;
+	buf <<= 5;
+
+	if ( (ch >= 'a' && ch <= 'z')) {
+	ch = (ch & 0x1F) - 1;
+	} else
+
+		if (ch >= '2' && ch <= '7') {
+			ch -= '2' - 0x1A ;
+	} else {
+			return -1;
+	}
+
+		buf = buf | ch;
+	rem = rem + 5;
+	if (rem >= 8) {
+			dst[i++] = buf >> (rem - 8);
+			rem -= 8;
+	}
+		}
+
+return 0;
+}
+
+
+
 /* Returns false if we didn't parse it, and *cursor == NULL if malformed. */
 bool fromwire_wireaddr(const u8 **cursor, size_t *max, struct wireaddr *addr)
 {
@@ -22,6 +79,13 @@ bool fromwire_wireaddr(const u8 **cursor, size_t *max, struct wireaddr *addr)
 	case ADDR_TYPE_IPV6:
 		addr->addrlen = 16;
 		break;
+	case ADDR_TYPE_TOR_V2:
+		addr->addrlen = TOR_V2_ADDRLEN;
+		break;
+	case ADDR_TYPE_TOR_V3:
+		addr->addrlen = TOR_V3_ADDRLEN;
+		break;
+
 	default:
 		return false;
 	}
@@ -30,6 +94,7 @@ bool fromwire_wireaddr(const u8 **cursor, size_t *max, struct wireaddr *addr)
 
 	return *cursor != NULL;
 }
+
 
 void towire_wireaddr(u8 **pptr, const struct wireaddr *addr)
 {
@@ -56,7 +121,11 @@ char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a)
 		if (!inet_ntop(AF_INET6, a->addr, addrstr, INET6_ADDRSTRLEN))
 			return "Unprintable-ipv6-address";
 		return tal_fmt(ctx, "[%s]:%u", addrstr, a->port);
-	case ADDR_TYPE_PADDING:
+	case ADDR_TYPE_TOR_V2:
+		return tal_fmt(ctx, "%s.onion:%u", b32_encode(addrstr, (u8 *)a->addr,2) , a->port);
+	case ADDR_TYPE_TOR_V3:
+		return tal_fmt(ctx, "%s.onion:%u", b32_encode(addrstr, (u8 *)a->addr,3) , a->port);
+		case ADDR_TYPE_PADDING:
 		break;
 	}
 
@@ -113,8 +182,34 @@ static bool separate_address_and_port(tal_t *ctx, const char *arg,
 	return true;
 }
 
+//FIXME: SAIBATO todo make c-lightning auto temp onion hidden service
+/*
+*
+* make sure torrc config ok ( service port 9051 enabled)
+* connect 127.0.0.1:9051 Tor Service api
+*
+*PROTOCOLINFO CR LF
+*
+*250-PROTOCOLINFO 1
+*250-AUTH METHODS=COOKIE,SAFECOOKIE,HASHEDPASSWORD COOKIEFILE="/var/run/tor/control.authcookie"
+*
+*open /var/run/tor/control.authcookie
+*cook = hex(var/run/tor/control.authcookie)
+*AUTHENTICATE cook CR LF
+*
+*if return ok
+*i.e.
+*ADD_ONION NEW:RSA1024 Port=1234,127.0.0.1:1234
+*
+*if ok
+*new tmp hidden_service created
+*echo service addr.onion to user
+*thats all
+*/
+
+
 bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 defport,
-		    const char **err_msg)
+		  const char **err_msg)
 {
 	struct in6_addr v6;
 	struct in_addr v4;
@@ -123,10 +218,14 @@ bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 defport,
 	struct addrinfo *addrinfo;
 	struct addrinfo hints;
 	int gai_err;
+
+	u8 tor_dec_bytes[TOR_V3_ADDRLEN];
 	u16 port;
 	char *ip;
+
 	bool res;
 	tal_t *tmpctx = tal_tmpctx(NULL);
+
 
 	res = false;
 	port = defport;
@@ -135,6 +234,7 @@ bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 defport,
 
 	if (!separate_address_and_port(tmpctx, arg, &ip, &port))
 		goto finish;
+
 
 	if (streq(ip, "localhost"))
 		ip = "127.0.0.1";
@@ -157,15 +257,40 @@ bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 defport,
 		res = true;
 	}
 
+	if (strends(ip, ".onion"))
+	{
+		if (strlen(ip)<25) {//FIXME bool is_V2_or_V3_TOR(addr);
+		//odpzvneidqdf5hdq.onion
+		addr->type =   ADDR_TYPE_TOR_V2;
+		addr->addrlen = TOR_V2_ADDRLEN;
+		addr->port = port;
+		b32_decode((u8 *)tor_dec_bytes,(u8 *)ip,2);
+		memcpy(&addr->addr,tor_dec_bytes, addr->addrlen);
+		res = true;
+			}
+		else {
+		//4ruvswpqec5i2gogopxl4vm5bruzknbvbylov2awbo4rxiq4cimdldad.onion
+		addr->type = ADDR_TYPE_TOR_V3;
+		addr->addrlen = TOR_V3_ADDRLEN;
+		addr->port = port;
+		b32_decode((u8 *)tor_dec_bytes,(u8 *)ip,3);
+		memcpy(&addr->addr,tor_dec_bytes, addr->addrlen);
+		res = true;
+			}
+
+		goto finish;
+	};
+
 	/* Resolve with getaddrinfo */
 	if (!res) {
 		memset(&hints, 0, sizeof(hints));
+
 		hints.ai_family = AF_UNSPEC;
 		hints.ai_socktype = SOCK_STREAM;
 		hints.ai_protocol = 0;
 		hints.ai_flags = AI_ADDRCONFIG;
 		gai_err = getaddrinfo(ip, tal_fmt(tmpctx, "%d", port),
-				      &hints, &addrinfo);
+							&hints, &addrinfo);
 		if (gai_err != 0) {
 			if (err_msg)
 				*err_msg = gai_strerror(gai_err);
@@ -187,7 +312,6 @@ bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 defport,
 			memcpy(&addr->addr, &sa6->sin6_addr, addr->addrlen);
 			res = true;
 		}
-
 		/* Clean up */
 		freeaddrinfo(addrinfo);
 	}
@@ -197,4 +321,5 @@ finish:
 		*err_msg = "Error parsing hostname";
 	tal_free(tmpctx);
 	return res;
+
 }
