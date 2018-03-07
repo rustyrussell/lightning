@@ -167,6 +167,10 @@ struct lightningd {
 	/* Things we've marked as not leaking. */
 	const void **notleaks;
 #endif /* DEVELOPER */
+	
+	/*	tor support	*/
+	u8 *tor_proxy_ip;
+	u16 tor_proxy_port;
 };
 
 const struct chainparams *get_chainparams(const struct lightningd *ld);

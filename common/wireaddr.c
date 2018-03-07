@@ -32,39 +32,32 @@ static char *b32_encode(char *dst, u8 *src, u8 ver) {
 //int b32_decode( u8 *dst,u8 *src,u8 ver);
 
 static int b32_decode( u8 *dst,u8 *src,u8 ver) {
-
 	int rem = 0;
 
 	int i;
 	u8 *p=src;
 	int buf;
 	u8 ch;
-
 	for (i=0; i < ((ver==2)?16:56) ; p++) {
 	ch = *p;
 	buf <<= 5;
-
 	if ( (ch >= 'a' && ch <= 'z')) {
 	ch = (ch & 0x1F) - 1;
 	} else
-
-		if (ch >= '2' && ch <= '7') {
+	if (ch >= '2' && ch <= '7') {
 			ch -= '2' - 0x1A ;
 	} else {
 			return -1;
 	}
-
-		buf = buf | ch;
+	buf = buf | ch;
 	rem = rem + 5;
 	if (rem >= 8) {
-			dst[i++] = buf >> (rem - 8);
-			rem -= 8;
+		dst[i++] = buf >> (rem - 8);
+		rem -= 8;
 	}
 		}
-
 return 0;
 }
-
 
 
 /* Returns false if we didn't parse it, and *cursor == NULL if malformed. */
@@ -109,7 +102,7 @@ void towire_wireaddr(u8 **pptr, const struct wireaddr *addr)
 
 char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a)
 {
-	char addrstr[INET6_ADDRSTRLEN];
+	char addrstr[FQDN_ADDRLEN];
 	char *ret, *hex;
 
 	switch (a->type) {
@@ -122,9 +115,9 @@ char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a)
 			return "Unprintable-ipv6-address";
 		return tal_fmt(ctx, "[%s]:%u", addrstr, a->port);
 	case ADDR_TYPE_TOR_V2:
-		return tal_fmt(ctx, "%s.onion:%u", b32_encode(addrstr, (u8 *)a->addr,2) , a->port);
+		return tal_fmt(ctx, "%s.onion:%u", b32_encode(addrstr, (u8 *)a->addr,2), a->port);
 	case ADDR_TYPE_TOR_V3:
-		return tal_fmt(ctx, "%s.onion:%u", b32_encode(addrstr, (u8 *)a->addr,3) , a->port);
+		return tal_fmt(ctx, "%s.onion:%u", b32_encode(addrstr, (u8 *)a->addr,3), a->port);
 		case ADDR_TYPE_PADDING:
 		break;
 	}
@@ -184,29 +177,28 @@ static bool separate_address_and_port(tal_t *ctx, const char *arg,
 
 //FIXME: SAIBATO todo make c-lightning auto temp onion hidden service
 /*
-*
-* make sure torrc config ok ( service port 9051 enabled)
-* connect 127.0.0.1:9051 Tor Service api
-*
-*PROTOCOLINFO CR LF
-*
-*250-PROTOCOLINFO 1
-*250-AUTH METHODS=COOKIE,SAFECOOKIE,HASHEDPASSWORD COOKIEFILE="/var/run/tor/control.authcookie"
-*
-*open /var/run/tor/control.authcookie
-*cook = hex(var/run/tor/control.authcookie)
-*AUTHENTICATE cook CR LF
-*
-*if return ok
-*i.e.
-*ADD_ONION NEW:RSA1024 Port=1234,127.0.0.1:1234
-*
-*if ok
-*new tmp hidden_service created
-*echo service addr.onion to user
-*thats all
-*/
-
+ *
+ * make sure torrc config ok ( service port 9051 enabled)
+ * connect 127.0.0.1:9051 Tor Service api
+ *
+ *PROTOCOLINFO CR LF
+ *
+ *250-PROTOCOLINFO 1
+ *250-AUTH METHODS=COOKIE,SAFECOOKIE,HASHEDPASSWORD COOKIEFILE="/var/run/tor/control.authcookie"
+ *
+ *open /var/run/tor/control.authcookie
+ *cook = hex(var/run/tor/control.authcookie)
+ *AUTHENTICATE cook CR LF
+ *
+ *if return ok
+ *i.e.
+ *ADD_ONION NEW:RSA1024 Port=1234,127.0.0.1:1234
+ *
+ *if ok
+ *new tmp hidden_service created
+ *echo service addr.onion to user
+ *thats all
+ */
 
 bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 defport,
 		  const char **err_msg)
@@ -322,4 +314,31 @@ finish:
 	tal_free(tmpctx);
 	return res;
 
+}
+
+bool parse_tor_wireaddr(const char *arg,u8 **ip_ld,u16 *port_ld)
+{
+	u16 port;
+	char *ip;
+	
+	bool res;
+	tal_t *tmpctx = tal_tmpctx(NULL);
+	res = false;
+	
+	ip		= tal_strdup(tmpctx,"127.0.0.1");
+	port	= 9050;
+	
+	if (!separate_address_and_port(tmpctx, arg,&ip, &port)) {
+		tal_free(tmpctx);
+		return false;
+	}
+	else
+	{
+	    assert(strlen(ip) < 16);
+		memcpy(*ip_ld,ip,strlen(ip)+1);
+		(*port_ld) = port;
+		res= true;
+	}
+	tal_free(tmpctx);
+	return res;
 }

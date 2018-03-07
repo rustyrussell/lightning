@@ -179,7 +179,7 @@ if ((reach->buffer[3]) == SOCKS_TYP_IPV6 )
 
 }
 else
-if ((reach->buffer[3]) == SOCKS_TYP_IPV4 )
+if ((reach->buffer[3]) == SOCKS_TYP_IPV4)
 	{
 		return connection_out(conn,reach->reach);
 	}
@@ -245,6 +245,9 @@ struct daemon {
 
 	/* To make sure our node_announcement timestamps increase */
 	u32 last_announce_timestamp;
+	
+	u8 *tor_proxy_ip;
+	u16 tor_proxy_port;
 };
 
 /* Peers we're trying to reach. */
@@ -349,18 +352,20 @@ static bool try_reach_peer(struct daemon *daemon, const struct pubkey *id);
 static struct io_plan *io_tor_connect(struct io_conn *conn, struct reaching *reach)
 {
 	static struct addrinfo *ai_tor;
-
+    static char *port_addr;
+    
 	reach_tor.port=htons(reach->addr.port);
 	//FIXME: SAIBATO set tor_proxy_ip and tor_proxy_port with options
-	//getaddrinfo(reach->daemon->tor_proxy_ip, reach->daemon->tor_proxy_port, NULL,&ai_tor);
-	getaddrinfo(tal_strdup(NULL,"127.0.0.1"),tal_strdup(NULL,"9050"), NULL,&ai_tor);
-	//status_trace("torproyaddr_ip_port: %s %s",reach->daemon->tor_proxy_ip,reach->daemon->tor_proxy_port);
-	reach_tor.host = tal_strdup(NULL,"");
+	port_addr = tal_fmt(NULL,"%u",reach->daemon->tor_proxy_port);
+	getaddrinfo((char *)reach->daemon->tor_proxy_ip, port_addr, NULL,&ai_tor);
+	//getaddrinfo(tal_strdup(NULL,"127.0.0.1"),tal_strdup(NULL,"9050"), NULL,&ai_tor);
+	status_trace("torproyaddr_ip_port: %s %d",reach->daemon->tor_proxy_ip,reach->daemon->tor_proxy_port);
+	reach_tor.host = tal_strdup(reach,"");
 
 	if((reach->addr.type) == ADDR_TYPE_TOR_V3)
-	reach_tor.host = tal_fmt(NULL,"%.56s.onion",fmt_wireaddr(NULL,&reach->addr));
+	reach_tor.host = tal_fmt(reach,"%.56s.onion",fmt_wireaddr(NULL,&reach->addr));
 	if((reach->addr.type) == ADDR_TYPE_TOR_V2)
-	reach_tor.host = tal_fmt(NULL,"%.16s.onion",fmt_wireaddr(NULL,&reach->addr));
+	reach_tor.host = tal_fmt(reach,"%.16s.onion",fmt_wireaddr(NULL,&reach->addr));
 
 	reach_tor.reach=reach;
 
@@ -1693,11 +1698,14 @@ static struct io_plan *gossip_init(struct daemon_conn *master,
 	u16 port;
 	u32 update_channel_interval;
 
+   daemon->tor_proxy_ip=tal_arr(daemon,u8,16);
+	
+
 	if (!fromwire_gossipctl_init(
 		daemon, msg, &daemon->broadcast_interval, &chain_hash,
 		&daemon->id, &port, &daemon->globalfeatures,
 		&daemon->localfeatures, &daemon->wireaddrs, daemon->rgb,
-		daemon->alias, &update_channel_interval)) {
+		daemon->alias, &update_channel_interval,(u8 *)&daemon->tor_proxy_ip,&daemon->tor_proxy_port)) {
 		master_badmsg(WIRE_GOSSIPCTL_INIT, msg);
 	}
 	/* Prune time is twice update time */

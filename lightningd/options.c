@@ -232,6 +232,18 @@ static char *opt_set_offline(struct lightningd *ld)
 	return NULL;
 }
 
+static char *opt_add_torproxy_addr(const char *arg, struct lightningd *ld)
+{
+
+if (!ld->tor_proxy_ip) ld->tor_proxy_ip = tal_arrz(ld,u8,16);
+
+if (!parse_tor_wireaddr(arg,(u8 **)(&ld->tor_proxy_ip),(u16 *)&ld->tor_proxy_port)) {
+	return tal_fmt(NULL, "Unable to parse Tor address '%s'", arg);
+	}
+
+return NULL;
+}
+
 static void config_register_opts(struct lightningd *ld)
 {
 	opt_register_noarg("--daemon", opt_set_bool, &ld->daemon,
@@ -307,6 +319,8 @@ static void config_register_opts(struct lightningd *ld)
 	opt_register_arg("--debug-subdaemon-io",
 			 opt_set_charp, NULL, &ld->debug_subdaemon_io,
 			 "Enable full peer IO logging in subdaemons ending in this string (can also send SIGUSR1 to toggle)");
+	opt_register_arg("--torproxy", opt_add_torproxy_addr, NULL,
+			 ld,"Set the TOR Proxy IP address and port");
 }
 
 #if DEVELOPER
@@ -838,7 +852,10 @@ static void add_config(struct lightningd *ld,
 		} else if (strstarts(name, "dev-")) {
 			/* Ignore dev settings */
 #endif
-		} else {
+		}	else if (opt->cb_arg == (void *)opt_add_torproxy_addr) 
+	       {
+			answer = tal_fmt(name0,"%s:%d",ld->tor_proxy_ip,ld->tor_proxy_port);
+		   } else {
 			/* Insert more decodes here! */
 			abort();
 		}
