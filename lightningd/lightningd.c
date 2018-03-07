@@ -77,7 +77,7 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	ld->pidfile = NULL;
 	ld->tor_proxy_ip= tal_arrz(ld, u8 , 16);
 	ld->tor_proxy_port= 0;
-
+	ld->tor_enable_hidden_service= false;
 	return ld;
 }
 

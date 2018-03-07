@@ -200,6 +200,7 @@ static bool separate_address_and_port(tal_t *ctx, const char *arg,
  *thats all
  */
 
+
 bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 defport,
 		  const char **err_msg)
 {
@@ -316,26 +317,24 @@ finish:
 
 }
 
-bool parse_tor_wireaddr(const char *arg,u8 **ip_ld,u16 *port_ld)
+bool parse_tor_wireaddr(const char *arg,u8 *ip_ld,u16 *port_ld)
 {
 	u16 port;
 	char *ip;
-	
+
 	bool res;
 	tal_t *tmpctx = tal_tmpctx(NULL);
 	res = false;
-	
-	ip		= tal_strdup(tmpctx,"127.0.0.1");
-	port	= 9050;
-	
+	ip = tal_strdup(tmpctx,"127.0.0.1");
+	port = 9050;
 	if (!separate_address_and_port(tmpctx, arg,&ip, &port)) {
 		tal_free(tmpctx);
 		return false;
 	}
 	else
 	{
-	    assert(strlen(ip) < 16);
-		memcpy(*ip_ld,ip,strlen(ip)+1);
+		assert(strlen(ip) < 16);
+		memcpy(ip_ld,ip,strlen(ip)+1);
 		(*port_ld) = port;
 		res= true;
 	}

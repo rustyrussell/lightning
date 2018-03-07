@@ -237,12 +237,30 @@ static char *opt_add_torproxy_addr(const char *arg, struct lightningd *ld)
 
 if (!ld->tor_proxy_ip) ld->tor_proxy_ip = tal_arrz(ld,u8,16);
 
-if (!parse_tor_wireaddr(arg,(u8 **)(&ld->tor_proxy_ip),(u16 *)&ld->tor_proxy_port)) {
+if (!parse_tor_wireaddr(arg,(u8 *)(ld->tor_proxy_ip),(u16 *)&ld->tor_proxy_port)) {
 	return tal_fmt(NULL, "Unable to parse Tor address '%s'", arg);
 	}
 
 return NULL;
 }
+
+static char *opt_add_tor_hidden_service(const char *arg, struct lightningd *ld)
+{
+
+//FIXME: TODO SAIBATO
+/*
+ * check service port active
+ * do we need here async ? no just open socket sync
+ * AUTHENTICATE
+ * CREATE TEMP ONION ADDR
+ * display to user
+ * done
+ *
+ */
+
+return NULL;
+}
+
 
 static void config_register_opts(struct lightningd *ld)
 {
@@ -320,7 +338,9 @@ static void config_register_opts(struct lightningd *ld)
 			 opt_set_charp, NULL, &ld->debug_subdaemon_io,
 			 "Enable full peer IO logging in subdaemons ending in this string (can also send SIGUSR1 to toggle)");
 	opt_register_arg("--torproxy", opt_add_torproxy_addr, NULL,
-			 ld,"Set the TOR Proxy IP address and port");
+			ld,"Set the TOR Proxy IP address and port");
+	opt_register_arg("--tor-enable-hidden-service", opt_add_tor_hidden_service, NULL,
+			ld,"Generate and use a temp auto hidden-service and show the onion address");
 }
 
 #if DEVELOPER
@@ -852,10 +872,14 @@ static void add_config(struct lightningd *ld,
 		} else if (strstarts(name, "dev-")) {
 			/* Ignore dev settings */
 #endif
-		}	else if (opt->cb_arg == (void *)opt_add_torproxy_addr) 
-	       {
+		}	else if (opt->cb_arg == (void *)opt_add_torproxy_addr)
+		{
 			answer = tal_fmt(name0,"%s:%d",ld->tor_proxy_ip,ld->tor_proxy_port);
-		   } else {
+		}
+		else if (opt->cb_arg == (void *)opt_add_tor_hidden_service) {
+			answer = tal_fmt(name0, "%s", ld->tor_enable_hidden_service ? "true" : "false");
+		}
+		else {
 			/* Insert more decodes here! */
 			abort();
 		}
