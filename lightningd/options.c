@@ -244,19 +244,13 @@ if (!parse_tor_wireaddr(arg,(u8 *)(ld->tor_proxy_ip),(u16 *)&ld->tor_proxy_port)
 return NULL;
 }
 
+
+
 static char *opt_add_tor_hidden_service(const char *arg, struct lightningd *ld)
 {
 
-//FIXME: TODO SAIBATO
-/*
- * check service port active
- * do we need here async ? no just open socket sync
- * AUTHENTICATE
- * CREATE TEMP ONION ADDR
- * display to user
- * done
- *
- */
+if (strstr(arg,"true"))
+	create_tor_hidden_service_conn(ld);
 
 return NULL;
 }

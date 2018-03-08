@@ -3,6 +3,7 @@
 #include "config.h"
 #include <ccan/short_types/short_types.h>
 #include <ccan/tal/tal.h>
+#include <lightningd/lightningd.h>
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -49,6 +50,7 @@ bool fromwire_wireaddr(const u8 **cursor, size_t *max, struct wireaddr *addr);
 
 bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 port, const char **err_msg);
 bool parse_tor_wireaddr(const char *arg,u8 *ip_ld,u16 *port_ld);
+bool create_tor_hidden_service_conn(struct lightningd *);
 
 char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a);
 

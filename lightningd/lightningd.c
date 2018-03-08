@@ -75,9 +75,10 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	ld->debug_subdaemon_io = NULL;
 	ld->daemon = false;
 	ld->pidfile = NULL;
-	ld->tor_proxy_ip= tal_arrz(ld, u8 , 16);
-	ld->tor_proxy_port= 0;
-	ld->tor_enable_hidden_service= false;
+	ld->tor_proxy_ip = tal_arrz(ld, u8 , 16);
+	ld->tor_proxy_port = 0;
+	ld->tor_enable_hidden_service = false;
+	ld->tor_onion_addr = tal_arrz(ld, char, 24);
 	return ld;
 }
 
@@ -392,6 +393,8 @@ int main(int argc, char *argv[])
 	log_info(ld->log, "Server started with public key %s, alias %s (color #%s) and lightningd %s",
 		 type_to_string(ltmp, struct pubkey, &ld->id),
 		 ld->alias, tal_hex(ltmp, ld->rgb), version());
+	/* display if we have an auto hidden service addr */
+	if(strlen(ld->tor_onion_addr) > 0) log_info(ld->log, "Tor - onion addr = %s",ld->tor_onion_addr);
 
 	/* Start the peers. */
 	activate_peers(ld);
