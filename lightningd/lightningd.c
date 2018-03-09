@@ -77,8 +77,6 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	ld->pidfile = NULL;
 	ld->tor_proxy_ip = tal_arrz(ld, u8 , 16);
 	ld->tor_proxy_port = 0;
-	ld->tor_enable_hidden_service = false;
-	ld->tor_onion_addr = tal_arrz(ld, char, 24);
 	return ld;
 }
 
@@ -317,6 +315,11 @@ int main(int argc, char *argv[])
 	/* Ignore SIGPIPE: we look at our write return values*/
 	signal(SIGPIPE, SIG_IGN);
 
+	/* tor support */
+	if (ld->config.tor_enable_hidden_service)
+	create_tor_hidden_service_conn(ld);
+
+
 	/* Make sure we can reach other daemons, and versions match. */
 	test_daemons(ld);
 
@@ -393,8 +396,12 @@ int main(int argc, char *argv[])
 	log_info(ld->log, "Server started with public key %s, alias %s (color #%s) and lightningd %s",
 		 type_to_string(ltmp, struct pubkey, &ld->id),
 		 ld->alias, tal_hex(ltmp, ld->rgb), version());
-	/* display if we have an auto hidden service addr */
-	if(strlen(ld->tor_onion_addr) > 0) log_info(ld->log, "Tor - onion addr = %s",ld->tor_onion_addr);
+
+	tal_t *tmpctx = tal_tmpctx(NULL);
+	size_t n = tal_count(ld->wireaddrs);
+	for (int i=0;i<n;i++)
+	log_info(ld->log, "Wireaddr[%d] = %s",i,fmt_wireaddr(tmpctx, &(ld->wireaddrs[i])));
+	tal_free(tmpctx);
 
 	/* Start the peers. */
 	activate_peers(ld);

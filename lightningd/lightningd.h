@@ -72,6 +72,9 @@ struct config {
 
 	/* Do we let the funder set any fee rate they want */
 	bool ignore_fee_limits;
+
+	/* tor support */
+	bool tor_enable_hidden_service;
 };
 
 struct lightningd {
@@ -172,8 +175,6 @@ struct lightningd {
 	/*	tor support	*/
 	u8 *tor_proxy_ip;
 	u16 tor_proxy_port;
-	bool tor_enable_hidden_service;
-	char *tor_onion_addr;
 };
 
 const struct chainparams *get_chainparams(const struct lightningd *ld);

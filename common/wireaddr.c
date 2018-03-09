@@ -19,7 +19,7 @@
 #define BASE32DATA "abcdefghijklmnopqrstuvwxyz234567"
 
 
-static char *b32_encode(char *dst, u8 *src, u8 ver) {
+char *b32_encode(char *dst, u8 *src, u8 ver) {
 	u16 byte = 0,
 	poff = 0;
 	for(; byte < 	((ver==2)?16:56); poff += 5)
@@ -35,7 +35,6 @@ static char *b32_encode(char *dst, u8 *src, u8 ver) {
 }
 
 //FIXME quiknditry
-//int b32_decode( u8 *dst,u8 *src,u8 ver);
 
 static int b32_decode( u8 *dst,u8 *src,u8 ver) {
 	int rem = 0;
@@ -330,22 +329,29 @@ bool parse_tor_wireaddr(const char *arg,u8 *ip_ld,u16 *port_ld)
 #define MAX_TOR_ONION_V2_ADDR_LEN 16
 #define MAX_TOR_ONION_V3_ADDR_LEN 56
 
-struct reaching {
+struct tor_service_reaching {
 	struct lightningd *ld;
 	u8 buffer[MAX_TOR_SERVICE_READBUFFER_LEN];
 	char *cookie[MAX_TOR_COOKIE_LEN];
 	u8 *p;
 	bool noauth;
 	size_t hlen;
-
 };
 
 
-static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn *conn, struct reaching *reach)
+static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn *conn, struct tor_service_reaching *reach)
 {
+    u8 tor_dec_bytes[TOR_V3_ADDRLEN];
 
 	if(reach->hlen ==  MAX_TOR_ONION_V2_ADDR_LEN ) {
-	reach->ld->tor_onion_addr = tal_fmt(reach->ld,"%.16s.onion %d",(char *)reach->buffer,reach->ld->portnum);
+	size_t n = tal_count(reach->ld->wireaddrs);
+	tal_resize(&reach->ld->wireaddrs, n+1);
+	reach->ld->wireaddrs[n].type = ADDR_TYPE_TOR_V2;
+	reach->ld->wireaddrs[n].addrlen = TOR_V2_ADDRLEN;
+	reach->ld->wireaddrs[n].port = reach->ld->portnum;
+	b32_decode((u8 *)tor_dec_bytes,(u8 *)reach->buffer,2);
+	memcpy(&reach->ld->wireaddrs[n].addr,tor_dec_bytes, reach->ld->wireaddrs[n].addrlen);
+
 	}
 	/*on the other hand we can stay connected until ln finish to keep onion alive and then vanish*/
 	//because when we run with Detach flag as we now do every start of LN creates a new addr while the old
@@ -357,7 +363,7 @@ static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn *conn
 }
 
 
-static struct io_plan *io_tor_connect_after_create_onion(struct io_conn *conn, struct reaching *reach)
+static struct io_plan *io_tor_connect_after_create_onion(struct io_conn *conn, struct tor_service_reaching *reach)
 {
 
 	reach->p = reach->p+reach->hlen;
@@ -378,10 +384,12 @@ static struct io_plan *io_tor_connect_after_create_onion(struct io_conn *conn, s
 //V3 tor after 3.3.3.aplha FIXME: TODO SAIBATO
 //sprintf((char *)reach->buffer,"ADD_ONION NEW:ED25519-V3 Port=9735,127.0.0.1:9735\r\n");
 
-static struct io_plan *io_tor_connect_make_onion(struct io_conn *conn, struct reaching *reach)
+static struct io_plan *io_tor_connect_make_onion(struct io_conn *conn, struct tor_service_reaching *reach)
 {
 	if (strstr((char *)reach->buffer,"250 OK") == NULL) return io_close(conn);
-	sprintf((char *)reach->buffer,"ADD_ONION NEW:RSA1024 Port=%d,127.0.0.1:%d Flags=DiscardPK,Detach\r\n",reach->ld->portnum,reach->ld->portnum);
+	sprintf((char *)reach->buffer,"ADD_ONION NEW:RSA1024 Port=%d,127.0.0.1:%d Flags=DiscardPK,Detach\r\n",
+			reach->ld->portnum,reach->ld->portnum);
+
 			reach->hlen = strlen((char *)reach->buffer);
 			reach->p = reach->buffer;
 	return io_write(conn, reach->buffer,  reach->hlen, io_tor_connect_after_create_onion, reach);
@@ -389,13 +397,13 @@ static struct io_plan *io_tor_connect_make_onion(struct io_conn *conn, struct re
 }
 
 
-static struct io_plan *io_tor_connect_after_authenticate(struct io_conn *conn, struct reaching *reach)
+static struct io_plan *io_tor_connect_after_authenticate(struct io_conn *conn, struct tor_service_reaching *reach)
 {
 return io_read(conn, reach->buffer,7,io_tor_connect_make_onion, reach);
 }
 
 
-static struct io_plan *io_tor_connect_authenticate(struct io_conn *conn, struct reaching *reach)
+static struct io_plan *io_tor_connect_authenticate(struct io_conn *conn, struct tor_service_reaching *reach)
 {
 		sprintf((char *)reach->buffer,"AUTHENTICATE %s\r\n",(char *)reach->cookie);
 
@@ -410,7 +418,7 @@ return io_write(conn, reach->buffer,  reach->hlen, io_tor_connect_after_authenti
 
 
 
-static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn, struct reaching *reach)
+static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn, struct tor_service_reaching *reach)
 {
 	char *p,*p2;
 	int i;
@@ -445,14 +453,14 @@ static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn, stru
 
 }
 
-static struct io_plan *io_tor_connect_after_protocolinfo(struct io_conn *conn, struct reaching *reach)
+static struct io_plan *io_tor_connect_after_protocolinfo(struct io_conn *conn, struct tor_service_reaching *reach)
 {
-	//return io_read(conn, reach->buffer, 10, &io_tor_connect_after_answer_pi, reach);
+
 	memset(reach->buffer,0,MAX_TOR_SERVICE_READBUFFER_LEN);
 	return io_read_partial(conn, reach->buffer, MAX_TOR_SERVICE_READBUFFER_LEN ,&reach->hlen, &io_tor_connect_after_answer_pi, reach);
 }
 
-static struct io_plan *io_tor_connect_after_resp_to_connect(struct io_conn *conn, struct reaching *reach)
+static struct io_plan *io_tor_connect_after_resp_to_connect(struct io_conn *conn, struct tor_service_reaching *reach)
 {
 
 			 sprintf((char *)reach->buffer,"PROTOCOLINFO\r\n");
@@ -463,14 +471,14 @@ static struct io_plan *io_tor_connect_after_resp_to_connect(struct io_conn *conn
 
 
 static struct io_plan *tor_connect_finish(struct io_conn *conn,
-		struct reaching *reach)
+		struct tor_service_reaching *reach)
 {
 	return io_tor_connect_after_resp_to_connect(conn,reach);
 };
 
 static struct io_plan *tor_conn_init(struct io_conn *conn, struct lightningd *ld)
  {
-	static struct reaching reach;
+	static struct tor_service_reaching reach;
 	static struct addrinfo *ai_tor;
 	reach.ld = ld;
 	getaddrinfo(tal_strdup(NULL,"127.0.0.1"),tal_strdup(NULL,"9051"), NULL,&ai_tor);

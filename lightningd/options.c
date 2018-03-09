@@ -245,12 +245,10 @@ return NULL;
 }
 
 
-
 static char *opt_add_tor_hidden_service(const char *arg, struct lightningd *ld)
 {
-
-if (strstr(arg,"true"))
-	create_tor_hidden_service_conn(ld);
+	ld->config.tor_enable_hidden_service = false;
+	if (strstr(arg,"true")) ld->config.tor_enable_hidden_service = true;
 
 return NULL;
 }
@@ -418,6 +416,9 @@ static const struct config testnet_config = {
 
 	/* Testnet sucks */
 	.ignore_fee_limits = true,
+
+	/* tor support */
+	.tor_enable_hidden_service = false
 };
 
 /* aka. "Dude, where's my coins?" */
@@ -479,6 +480,9 @@ static const struct config mainnet_config = {
 
 	/* Mainnet should have more stable fees */
 	.ignore_fee_limits = false,
+
+	/* tor support */
+	.tor_enable_hidden_service = false
 };
 
 static void check_config(struct lightningd *ld)
@@ -871,7 +875,7 @@ static void add_config(struct lightningd *ld,
 			answer = tal_fmt(name0,"%s:%d",ld->tor_proxy_ip,ld->tor_proxy_port);
 		}
 		else if (opt->cb_arg == (void *)opt_add_tor_hidden_service) {
-			answer = tal_fmt(name0, "%s", ld->tor_enable_hidden_service ? "true" : "false");
+			answer = tal_fmt(name0, "%s", ld->config.tor_enable_hidden_service ? "true" : "false");
 		}
 		else {
 			/* Insert more decodes here! */
