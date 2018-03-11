@@ -244,11 +244,26 @@ if (!parse_tor_wireaddr(arg,(u8 *)(ld->tor_proxy_ip),(u16 *)&ld->tor_proxy_port)
 return NULL;
 }
 
-
-static char *opt_add_tor_hidden_service(const char *arg, struct lightningd *ld)
+static char *opt_add_tor_addr(const char *arg, struct lightningd *ld)
 {
-	ld->config.tor_enable_hidden_service = false;
-	if (strstr(arg,"true")) ld->config.tor_enable_hidden_service = true;
+	size_t n = tal_count(ld->wireaddrs);
+	char const *err_msg;
+
+	assert(arg != NULL);
+
+	tal_resize(&ld->wireaddrs, n+1);
+
+	if (!parse_wireaddr(arg, &ld->wireaddrs[n], ld->portnum, &err_msg)) {
+		return tal_fmt(NULL, "Unable to parse TOR address '%s': %s", arg, err_msg);
+	}
+	return NULL;
+}
+
+
+static char *opt_add_tor_service_password(const char *arg, struct lightningd *ld)
+{
+
+ld->tor_service_password = tal_fmt(ld, "%.30s", arg);
 
 return NULL;
 }
@@ -314,7 +329,7 @@ static void config_register_opts(struct lightningd *ld)
 			 "Microsatoshi fee for every satoshi in HTLC");
 	opt_register_arg("--ipaddr", opt_add_ipaddr, NULL,
 			 ld,
-			 "Set the IP address (v4 or v6) to announce to the network for incoming connections");
+			 "Set the IP address (v4 or v6) or .onion V2/V3 to announce to the network for incoming connections");
 	opt_register_noarg("--offline", opt_set_offline, ld,
 			   "Start in offline-mode (do not automatically reconnect and do not accept incoming connections");
 
@@ -329,10 +344,14 @@ static void config_register_opts(struct lightningd *ld)
 	opt_register_arg("--debug-subdaemon-io",
 			 opt_set_charp, NULL, &ld->debug_subdaemon_io,
 			 "Enable full peer IO logging in subdaemons ending in this string (can also send SIGUSR1 to toggle)");
-	opt_register_arg("--torproxy", opt_add_torproxy_addr, NULL,
-			ld,"Set the TOR Proxy IP address and port");
-	opt_register_arg("--tor-enable-hidden-service", opt_add_tor_hidden_service, NULL,
-			ld,"Generate and use a temp auto hidden-service and show the onion address");
+	opt_register_arg("--proxy", opt_add_torproxy_addr, NULL,
+			ld,"Set a socks v5 proxy IP address and port");
+	opt_register_arg("--tor-external", opt_add_tor_addr, NULL,
+			ld,"Set a Tor onion address and port");
+	opt_register_arg("--tor-service-password", opt_add_tor_service_password, NULL,
+			ld,"Set a Tor hidden service password");
+	opt_register_arg("--tor-auto-listen", opt_set_bool_arg, opt_show_bool,
+			&ld->config.tor_enable_auto_hidden_service ,"Generate and use a temp auto hidden-service and show the onion address");
 }
 
 #if DEVELOPER
@@ -418,7 +437,10 @@ static const struct config testnet_config = {
 	.ignore_fee_limits = true,
 
 	/* tor support */
-	.tor_enable_hidden_service = false
+	.tor_enable_auto_hidden_service = false,
+
+	/* ipv6 bind disable */
+	.no_ipv6_bind = false
 };
 
 /* aka. "Dude, where's my coins?" */
@@ -482,7 +504,10 @@ static const struct config mainnet_config = {
 	.ignore_fee_limits = false,
 
 	/* tor support */
-	.tor_enable_hidden_service = false
+	.tor_enable_auto_hidden_service = false,
+
+	/* ipv6 bind disable */
+	.no_ipv6_bind = false
 };
 
 static void check_config(struct lightningd *ld)
@@ -873,9 +898,6 @@ static void add_config(struct lightningd *ld,
 		}	else if (opt->cb_arg == (void *)opt_add_torproxy_addr)
 		{
 			answer = tal_fmt(name0,"%s:%d",ld->tor_proxy_ip,ld->tor_proxy_port);
-		}
-		else if (opt->cb_arg == (void *)opt_add_tor_hidden_service) {
-			answer = tal_fmt(name0, "%s", ld->config.tor_enable_hidden_service ? "true" : "false");
 		}
 		else {
 			/* Insert more decodes here! */

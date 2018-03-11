@@ -53,6 +53,7 @@ bool parse_tor_wireaddr(const char *arg,u8 *ip_ld,u16 *port_ld);
 bool create_tor_hidden_service_conn(struct lightningd *);
 
 char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a);
+char *fmt_wireaddr_without_port(const tal_t *ctx, const struct wireaddr *a);
 char *b32_encode(char *dst, u8 *src, u8 ver);
 
 #endif /* LIGHTNING_COMMON_WIREADDR_H */

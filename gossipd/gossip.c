@@ -67,6 +67,8 @@
 #define SOCK_REQ_V5_LEN			5
 #define SOCK_REQ_V5_HEADER_LEN	7
 
+/* some crufts can not forward ipv6*/
+#undef BIND_FIRST_TO_IPV6
 
 struct reaching_socks {
 
@@ -352,7 +354,7 @@ static bool try_reach_peer(struct daemon *daemon, const struct pubkey *id);
 static struct io_plan *io_tor_connect(struct io_conn *conn, struct reaching *reach)
 {
 	static struct addrinfo *ai_tor;
-    static char *port_addr;
+	static char *port_addr;
 
 	reach_tor.port=htons(reach->addr.port);
 
@@ -363,9 +365,16 @@ static struct io_plan *io_tor_connect(struct io_conn *conn, struct reaching *rea
 	reach_tor.host = tal_strdup(NULL,"");
 
 	if((reach->addr.type) == ADDR_TYPE_TOR_V3)
-	reach_tor.host = tal_fmt(NULL,"%.56s.onion",fmt_wireaddr(NULL,&reach->addr));
+	reach_tor.host = tal_fmt(NULL,"%.56s",fmt_wireaddr_without_port(NULL,&reach->addr));
+	else
 	if((reach->addr.type) == ADDR_TYPE_TOR_V2)
-	reach_tor.host = tal_fmt(NULL,"%.16s.onion",fmt_wireaddr(NULL,&reach->addr));
+	reach_tor.host = tal_fmt(NULL,"%.16s",fmt_wireaddr_without_port(NULL,&reach->addr));
+	else
+	if((reach->addr.type) == ADDR_TYPE_IPV4)
+	reach_tor.host = tal_fmt(NULL,"%s",fmt_wireaddr_without_port(NULL,&reach->addr));
+	else
+	if((reach->addr.type) == ADDR_TYPE_IPV6)
+	reach_tor.host = tal_fmt(NULL,"%s",fmt_wireaddr_without_port(NULL,&reach->addr));
 
 	reach_tor.reach=reach;
 
@@ -1643,6 +1652,10 @@ static void setup_listeners(struct daemon *daemon, u16 portnum)
 	addr6.sin6_addr = in6addr_any;
 	addr6.sin6_port = htons(portnum);
 
+	fd1=-1;
+	fd2=-1;
+
+#ifdef BIND_FIRST_TO_IPV6
 	/* IPv6, since on Linux that (usually) binds to IPv4 too. */
 	fd1 = make_listen_fd(AF_INET6, &addr6, sizeof(addr6), true);
 	if (fd1 >= 0) {
@@ -1662,7 +1675,7 @@ static void setup_listeners(struct daemon *daemon, u16 portnum)
 			io_new_listener(daemon, fd1, connection_in, daemon);
 		}
 	}
-
+#endif
 	/* Just in case, aim for the same port... */
 	fd2 = make_listen_fd(AF_INET, &addr, sizeof(addr), false);
 	if (fd2 >= 0) {
@@ -1698,8 +1711,7 @@ static struct io_plan *gossip_init(struct daemon_conn *master,
 	u16 port;
 	u32 update_channel_interval;
 
-	daemon->tor_proxy_ip=tal_arr(daemon,u8,16);
-
+	daemon->tor_proxy_ip = tal_arr(daemon,u8,16);
 
 	if (!fromwire_gossipctl_init(
 		daemon, msg, &daemon->broadcast_interval, &chain_hash,
@@ -1818,6 +1830,8 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		memcpy(&sin.sin_addr, reach->addr.addr, sizeof(sin.sin_addr));
 		ai.ai_addrlen = sizeof(sin);
 		ai.ai_addr = (struct sockaddr *)&sin;
+		//FIXME: SAIBATO for now use allways proxy if set because we dont want to leak our ip'S when using tor
+		if (strlen((char *)reach->daemon->tor_proxy_ip)>0) return io_tor_connect(conn, reach);
 		io_set_finish(conn, connect_failed, reach);
 		return io_connect(conn, &ai, connection_out, reach);
 		break;
@@ -1829,6 +1843,8 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		memcpy(&sin6.sin6_addr, reach->addr.addr, sizeof(sin6.sin6_addr));
 		ai.ai_addrlen = sizeof(sin6);
 		ai.ai_addr = (struct sockaddr *)&sin6;
+		//FIXME: AIBATO for now use allways proxy if set because we dont want to leak our ip's when using tor
+		if (strlen((char *)reach->daemon->tor_proxy_ip)>0)  return io_tor_connect(conn, reach);
 		io_set_finish(conn, connect_failed, reach);
 		return io_connect(conn, &ai, connection_out, reach);
 		break;

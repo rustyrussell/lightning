@@ -368,7 +368,7 @@ void json_add_address(struct json_result *response, const char *fieldname,
 		return;
 
 	json_object_start(response, fieldname);
-	char *addrstr = tal_arr(response, char, TOR_V3_ADDRLEN);
+	char *addrstr = tal_arr(response, char, FQDN_ADDRLEN);
 	if (addr->type == ADDR_TYPE_IPV4) {
 		inet_ntop(AF_INET, addr->addr, addrstr, INET_ADDRSTRLEN);
 		json_add_string(response, "type", "ipv4");

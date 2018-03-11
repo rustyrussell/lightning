@@ -123,7 +123,7 @@ char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a)
 		return tal_fmt(ctx, "%s.onion:%u", b32_encode(addrstr, (u8 *)a->addr,2), a->port);
 	case ADDR_TYPE_TOR_V3:
 		return tal_fmt(ctx, "%s.onion:%u", b32_encode(addrstr, (u8 *)a->addr,3), a->port);
-		case ADDR_TYPE_PADDING:
+	case ADDR_TYPE_PADDING:
 		break;
 	}
 
@@ -133,6 +133,34 @@ char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a)
 	return ret;
 }
 REGISTER_TYPE_TO_STRING(wireaddr, fmt_wireaddr);
+
+char *fmt_wireaddr_without_port(const tal_t *ctx, const struct wireaddr *a)
+{
+	char addrstr[FQDN_ADDRLEN];
+	char *ret, *hex;
+
+	switch (a->type) {
+	case ADDR_TYPE_IPV4:
+		if (!inet_ntop(AF_INET, a->addr, addrstr, INET_ADDRSTRLEN))
+			return "Unprintable-ipv4-address";
+		return tal_fmt(ctx, "%s", addrstr);
+	case ADDR_TYPE_IPV6:
+		if (!inet_ntop(AF_INET6, a->addr, addrstr, INET6_ADDRSTRLEN))
+			return "Unprintable-ipv6-address";
+		return tal_fmt(ctx, "[%s]", addrstr);
+	case ADDR_TYPE_TOR_V2:
+		return tal_fmt(ctx, "%s.onion", b32_encode(addrstr, (u8 *)a->addr,2));
+	case ADDR_TYPE_TOR_V3:
+		return tal_fmt(ctx, "%s.onion", b32_encode(addrstr, (u8 *)a->addr,3));
+	case ADDR_TYPE_PADDING:
+		break;
+	}
+
+	hex = tal_hexstr(ctx, a->addr, a->addrlen);
+	ret = tal_fmt(ctx, "Unknown type %u %s:%u", a->type, hex, a->port);
+	tal_free(hex);
+	return ret;
+}
 
 /* Valid forms:
  *
@@ -424,6 +452,16 @@ static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn, stru
 	int i;
 	static u8 buf[MAX_TOR_COOKIE_LEN];
 
+	reach->noauth=false;
+
+	if (strstr((char *)reach->buffer,"NULL")) reach->noauth=true;
+	else 
+	if (strstr((char *)reach->buffer,"HASHEDPASSWORD") && (reach->ld->tor_service_password != NULL))
+				{
+					reach->noauth=false;
+					sprintf((char *)reach->cookie,"\"%s\"",reach->ld->tor_service_password);
+				}
+	else
 	if((p = strstr((char *)reach->buffer,"COOKIEFILE=")))
 	{
 	assert(strlen(p) > 12);
@@ -445,9 +483,7 @@ static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn, stru
 	reach->noauth=false;
 	}
 	else
-	if (strstr((char *)reach->buffer,"NULL")) reach->noauth=true;
-	else // FIXME: TODO set passwd in options if we not sudo
-	if (strstr((char *)reach->buffer,"COOKIE")) return io_close(conn);
+	return io_close(conn);
 
 	return io_tor_connect_authenticate(conn,reach);
 
@@ -463,7 +499,7 @@ static struct io_plan *io_tor_connect_after_protocolinfo(struct io_conn *conn, s
 static struct io_plan *io_tor_connect_after_resp_to_connect(struct io_conn *conn, struct tor_service_reaching *reach)
 {
 
-			 sprintf((char *)reach->buffer,"PROTOCOLINFO\r\n");
+			 sprintf((char *)reach->buffer,"PROTOCOLINFO 1\r\n");
 		  	 reach->hlen = strlen((char *)reach->buffer);
 
 	return io_write(conn, reach->buffer,  reach->hlen, io_tor_connect_after_protocolinfo, reach);
@@ -477,25 +513,25 @@ static struct io_plan *tor_connect_finish(struct io_conn *conn,
 };
 
 static struct io_plan *tor_conn_init(struct io_conn *conn, struct lightningd *ld)
- {
+{
 	static struct tor_service_reaching reach;
 	static struct addrinfo *ai_tor;
 	reach.ld = ld;
 	getaddrinfo(tal_strdup(NULL,"127.0.0.1"),tal_strdup(NULL,"9051"), NULL,&ai_tor);
 
 	return io_connect(conn, ai_tor, &tor_connect_finish, &reach);
- }
+}
 
 bool create_tor_hidden_service_conn(struct lightningd *ld)
-  {
- 	int fd;
- 	struct io_conn *conn;
+{
+	int fd;
+	struct io_conn *conn;
 
 	fd = socket(AF_INET, SOCK_STREAM, 0);
- 	conn = io_new_conn(NULL, fd, &tor_conn_init,ld);
- 	if (!conn)
- 		exit(1);
+	conn = io_new_conn(NULL, fd, &tor_conn_init,ld);
+	if (!conn)
+		exit(1);
 
- 	return true;
-  }
+	return true;
+}
 

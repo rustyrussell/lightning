@@ -74,7 +74,11 @@ struct config {
 	bool ignore_fee_limits;
 
 	/* tor support */
-	bool tor_enable_hidden_service;
+	bool tor_enable_auto_hidden_service;
+
+	/* ipv6 bind disable */
+	bool no_ipv6_bind;
+
 };
 
 struct lightningd {
@@ -175,6 +179,7 @@ struct lightningd {
 	/*	tor support	*/
 	u8 *tor_proxy_ip;
 	u16 tor_proxy_port;
+	char *tor_service_password;
 };
 
 const struct chainparams *get_chainparams(const struct lightningd *ld);

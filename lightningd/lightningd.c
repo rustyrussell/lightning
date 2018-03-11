@@ -77,6 +77,7 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	ld->pidfile = NULL;
 	ld->tor_proxy_ip = tal_arrz(ld, u8 , 16);
 	ld->tor_proxy_port = 0;
+	ld->tor_service_password = NULL;
 	return ld;
 }
 
@@ -316,7 +317,7 @@ int main(int argc, char *argv[])
 	signal(SIGPIPE, SIG_IGN);
 
 	/* tor support */
-	if (ld->config.tor_enable_hidden_service)
+	if (ld->config.tor_enable_auto_hidden_service)
 	create_tor_hidden_service_conn(ld);
 
 
