@@ -455,7 +455,7 @@ static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn, stru
 	reach->noauth=false;
 
 	if (strstr((char *)reach->buffer,"NULL")) reach->noauth=true;
-	else 
+	else
 	if (strstr((char *)reach->buffer,"HASHEDPASSWORD") && (reach->ld->tor_service_password != NULL))
 				{
 					reach->noauth=false;

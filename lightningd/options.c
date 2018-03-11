@@ -437,10 +437,7 @@ static const struct config testnet_config = {
 	.ignore_fee_limits = true,
 
 	/* tor support */
-	.tor_enable_auto_hidden_service = false,
-
-	/* ipv6 bind disable */
-	.no_ipv6_bind = false
+	.tor_enable_auto_hidden_service = false
 };
 
 /* aka. "Dude, where's my coins?" */
@@ -504,10 +501,7 @@ static const struct config mainnet_config = {
 	.ignore_fee_limits = false,
 
 	/* tor support */
-	.tor_enable_auto_hidden_service = false,
-
-	/* ipv6 bind disable */
-	.no_ipv6_bind = false
+	.tor_enable_auto_hidden_service = false
 };
 
 static void check_config(struct lightningd *ld)
@@ -882,22 +876,29 @@ static void add_config(struct lightningd *ld,
 						 topo->override_fee_rate[0],
 						 topo->override_fee_rate[1],
 						 topo->override_fee_rate[2]);
-		} else if (opt->cb_arg == (void *)opt_add_ipaddr) {
+		} else if (
+		(opt->cb_arg == (void *)opt_add_ipaddr)
+		|| (opt->cb_arg == (void *)opt_add_tor_addr)) {
 			/* This is a bit weird, we can have multiple args */
 			for (size_t i = 0; i < tal_count(ld->wireaddrs); i++) {
 				json_add_string(response,
 						name0,
 						fmt_wireaddr(name0,
-							     ld->wireaddrs+i));
+								 ld->wireaddrs+i));
 			}
 			return;
 #if DEVELOPER
-		} else if (strstarts(name, "dev-")) {
+		}  else if (strstarts(name, "dev-")) {
 			/* Ignore dev settings */
 #endif
-		}	else if (opt->cb_arg == (void *)opt_add_torproxy_addr)
+		}
+		else if (opt->cb_arg == (void *)opt_add_torproxy_addr)
 		{
 			answer = tal_fmt(name0,"%s:%d",ld->tor_proxy_ip,ld->tor_proxy_port);
+		}
+		else if (opt->cb_arg == (void *)opt_add_tor_service_password)
+		{
+			answer = tal_fmt(name0,"%s",ld->tor_service_password);
 		}
 		else {
 			/* Insert more decodes here! */
