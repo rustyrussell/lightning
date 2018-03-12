@@ -185,13 +185,12 @@ void gossip_init(struct lightningd *ld)
 				     take(&hsmfd), NULL);
 	if (!ld->gossip)
 		err(1, "Could not subdaemon gossip");
-
 	msg = towire_gossipctl_init(
 	    tmpctx, ld->config.broadcast_interval,
 	    &get_chainparams(ld)->genesis_blockhash, &ld->id, ld->portnum,
 	    get_supported_global_features(tmpctx),
 	    get_supported_local_features(tmpctx), ld->wireaddrs, ld->rgb,
-	    ld->alias, ld->config.channel_update_interval,ld->tor_proxy_ip,ld->tor_proxy_port);
+	    ld->alias, ld->config.channel_update_interval, ld->tor_proxyaddrs);
 	subd_send_msg(ld->gossip, msg);
 	tal_free(tmpctx);
 }

@@ -17,29 +17,6 @@
 #include <unistd.h>
 #include <wire/wire.h>
 
-bool parse_tor_wireaddr(const char *arg, u8 * ip_ld, u16 * port_ld)
-{
-	u16 port;
-	char *ip;
-
-	bool res;
-	tal_t *tmpctx = tal_tmpctx(NULL);
-	res = false;
-	ip = tal_strdup(tmpctx, "127.0.0.1");
-	port = 9050;
-	if (!separate_address_and_port(tmpctx, arg, &ip, &port)) {
-		tal_free(tmpctx);
-		return false;
-	} else {
-		assert(strlen(ip) < 16);
-		memcpy(ip_ld, ip, strlen(ip) + 1);
-		(*port_ld) = port;
-		res = true;
-	}
-	tal_free(tmpctx);
-	return res;
-}
-
 #define MAX_TOR_COOKIE_LEN 32
 #define MAX_TOR_SERVICE_READBUFFER_LEN 255
 #define MAX_TOR_ONION_V2_ADDR_LEN 16
@@ -55,8 +32,7 @@ struct tor_service_reaching {
 };
 
 static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn
-							    *conn,
-							    struct
+							    *conn, struct
 							    tor_service_reaching
 							    *reach)
 {
@@ -79,8 +55,7 @@ static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn
 	return io_close(conn);
 }
 
-static struct io_plan *io_tor_connect_after_create_onion(struct io_conn *conn,
-							 struct
+static struct io_plan *io_tor_connect_after_create_onion(struct io_conn *conn, struct
 							 tor_service_reaching
 							 *reach)
 {
@@ -106,8 +81,7 @@ static struct io_plan *io_tor_connect_after_create_onion(struct io_conn *conn,
 //V3 tor after 3.3.3.aplha FIXME: TODO SAIBATO
 //sprintf((char *)reach->buffer,"ADD_ONION NEW:ED25519-V3 Port=9735,127.0.0.1:9735\r\n");
 
-static struct io_plan *io_tor_connect_make_onion(struct io_conn *conn,
-						 struct tor_service_reaching
+static struct io_plan *io_tor_connect_make_onion(struct io_conn *conn, struct tor_service_reaching
 						 *reach)
 {
 	if (strstr((char *)reach->buffer, "250 OK") == NULL)
@@ -123,8 +97,7 @@ static struct io_plan *io_tor_connect_make_onion(struct io_conn *conn,
 
 }
 
-static struct io_plan *io_tor_connect_after_authenticate(struct io_conn *conn,
-							 struct
+static struct io_plan *io_tor_connect_after_authenticate(struct io_conn *conn, struct
 							 tor_service_reaching
 							 *reach)
 {
@@ -132,8 +105,7 @@ static struct io_plan *io_tor_connect_after_authenticate(struct io_conn *conn,
 		       reach);
 }
 
-static struct io_plan *io_tor_connect_authenticate(struct io_conn *conn,
-						   struct tor_service_reaching
+static struct io_plan *io_tor_connect_authenticate(struct io_conn *conn, struct tor_service_reaching
 						   *reach)
 {
 	sprintf((char *)reach->buffer, "AUTHENTICATE %s\r\n",
@@ -149,8 +121,7 @@ static struct io_plan *io_tor_connect_authenticate(struct io_conn *conn,
 
 }
 
-static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn,
-						      struct
+static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn, struct
 						      tor_service_reaching
 						      *reach)
 {
@@ -192,8 +163,7 @@ static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn,
 
 }
 
-static struct io_plan *io_tor_connect_after_protocolinfo(struct io_conn *conn,
-							 struct
+static struct io_plan *io_tor_connect_after_protocolinfo(struct io_conn *conn, struct
 							 tor_service_reaching
 							 *reach)
 {
@@ -205,8 +175,7 @@ static struct io_plan *io_tor_connect_after_protocolinfo(struct io_conn *conn,
 }
 
 static struct io_plan *io_tor_connect_after_resp_to_connect(struct io_conn
-							    *conn,
-							    struct
+							    *conn, struct
 							    tor_service_reaching
 							    *reach)
 {
@@ -230,8 +199,10 @@ static struct io_plan *tor_conn_init(struct io_conn *conn,
 	static struct tor_service_reaching reach;
 	static struct addrinfo *ai_tor;
 	reach.ld = ld;
-	getaddrinfo(tal_strdup(NULL, "127.0.0.1"), tal_strdup(NULL, "9051"),
-		    NULL, &ai_tor);
+
+	getaddrinfo(fmt_wireaddr_without_port(ld, ld->tor_serviceaddrs),
+		    tal_fmt(ld, "%d", ld->tor_serviceaddrs->port), NULL,
+		    &ai_tor);
 
 	return io_connect(conn, ai_tor, &tor_connect_finish, &reach);
 }

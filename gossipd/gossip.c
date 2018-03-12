@@ -248,8 +248,7 @@ struct daemon {
 	/* To make sure our node_announcement timestamps increase */
 	u32 last_announce_timestamp;
 
-	u8 *tor_proxy_ip;
-	u16 tor_proxy_port;
+	struct wireaddr *tor_proxyaddrs;
 };
 
 /* Peers we're trying to reach. */
@@ -358,11 +357,10 @@ static struct io_plan *io_tor_connect(struct io_conn *conn, struct reaching *rea
 	struct reaching_socks *reach_tor = tal(reach, struct reaching_socks);
 
 	reach_tor->port=htons(reach->addr.port);
-
-	port_addr = tal_fmt(tmpctx,"%u",reach->daemon->tor_proxy_port);
-	getaddrinfo((char *)reach->daemon->tor_proxy_ip, port_addr, NULL,&ai_tor);
+	port_addr = tal_fmt(tmpctx,"%u",reach->daemon->tor_proxyaddrs->port);
+	getaddrinfo((char *)fmt_wireaddr_without_port(tmpctx,reach->daemon->tor_proxyaddrs), port_addr, NULL,&ai_tor);
 	//getaddrinfo(tal_strdup(NULL,"127.0.0.1"),tal_strdup(NULL,"9050"), NULL,&ai_tor);
-	status_trace("torproyaddr_ip_port: %s %u",reach->daemon->tor_proxy_ip,reach->daemon->tor_proxy_port);
+	status_trace("torproyaddr_ip_port: %s",fmt_wireaddr_without_port(tmpctx,reach->daemon->tor_proxyaddrs));
 	reach_tor->host = tal_strdup(tmpctx,"");
 
 	if((reach->addr.type) == ADDR_TYPE_TOR_V3)
@@ -1714,14 +1712,12 @@ static struct io_plan *gossip_init(struct daemon_conn *master,
 	struct bitcoin_blkid chain_hash;
 	u16 port;
 	u32 update_channel_interval;
-
-	daemon->tor_proxy_ip = tal_arr(daemon,u8,16);
-
+	daemon->tor_proxyaddrs = tal_arrz(daemon, struct wireaddr,1);
 	if (!fromwire_gossipctl_init(
 		daemon, msg, &daemon->broadcast_interval, &chain_hash,
 		&daemon->id, &port, &daemon->globalfeatures,
 		&daemon->localfeatures, &daemon->wireaddrs, daemon->rgb,
-		daemon->alias, &update_channel_interval,(u8 *)daemon->tor_proxy_ip,&daemon->tor_proxy_port)) {
+		daemon->alias, &update_channel_interval, daemon->tor_proxyaddrs)) {
 		master_badmsg(WIRE_GOSSIPCTL_INIT, msg);
 	}
 	/* Prune time is twice update time */
@@ -1835,7 +1831,8 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		ai.ai_addrlen = sizeof(sin);
 		ai.ai_addr = (struct sockaddr *)&sin;
 		//FIXME: SAIBATO for now use allways proxy if set because we dont want to leak our ip'S when using tor
-		if (strlen((char *)reach->daemon->tor_proxy_ip)>0) return io_tor_connect(conn, reach);
+		if (reach->daemon->tor_proxyaddrs->port>0)
+		return io_tor_connect(conn, reach);
 		io_set_finish(conn, connect_failed, reach);
 		return io_connect(conn, &ai, connection_out, reach);
 		break;
@@ -1848,7 +1845,8 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		ai.ai_addrlen = sizeof(sin6);
 		ai.ai_addr = (struct sockaddr *)&sin6;
 		//FIXME: SAIBATO for now use allways proxy if set because we dont want to leak our ip's when using tor
-		if (strlen((char *)reach->daemon->tor_proxy_ip)>0)  return io_tor_connect(conn, reach);
+		if (reach->daemon->tor_proxyaddrs->port>0)
+		return io_tor_connect(conn, reach);
 		io_set_finish(conn, connect_failed, reach);
 		return io_connect(conn, &ai, connection_out, reach);
 		break;

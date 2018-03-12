@@ -236,15 +236,23 @@ static char *opt_set_offline(struct lightningd *ld)
 static char *opt_add_torproxy_addr(const char *arg, struct lightningd *ld)
 {
 
-	if (!ld->tor_proxy_ip) /* make sure its not undefined */
-		ld->tor_proxy_ip = tal_arrz(ld,u8,16);
-
-	if (!parse_tor_wireaddr(arg, ld->tor_proxy_ip, &ld->tor_proxy_port)) {
-	return tal_fmt(NULL, "Unable to parse Tor address '%s'", arg);
+	if (!parse_wireaddr(arg, ld->tor_proxyaddrs,9050,NULL)) {
+	return tal_fmt(NULL, "Unable to parse Tor proxy address '%s'", arg);
 	}
 
 return NULL;
 }
+
+static char *opt_add_tor_service_addr(const char *arg, struct lightningd *ld)
+{
+
+	if (!parse_wireaddr(arg, ld->tor_serviceaddrs,9051,NULL)) {
+	return tal_fmt(NULL, "Unable to parse Tor service address '%s'", arg);
+	}
+
+return NULL;
+}
+
 
 static char *opt_add_tor_addr(const char *arg, struct lightningd *ld)
 {
@@ -348,6 +356,8 @@ static void config_register_opts(struct lightningd *ld)
 			 "Enable full peer IO logging in subdaemons ending in this string (can also send SIGUSR1 to toggle)");
 	opt_register_arg("--proxy", opt_add_torproxy_addr, NULL,
 			ld,"Set a socks v5 proxy IP address and port");
+	opt_register_arg("--tor-service",opt_add_tor_service_addr, NULL,
+			ld,"Set a tor service api IP address and port");
 	opt_register_arg("--tor-external", opt_add_tor_addr, NULL,
 			ld,"Set a Tor onion address and port");
 	opt_register_arg("--tor-service-password", opt_add_tor_service_password, NULL,
@@ -890,19 +900,21 @@ static void add_config(struct lightningd *ld,
 			}
 			return;
 #if DEVELOPER
-		}  else if (strstarts(name, "dev-")) {
+		} else if (strstarts(name, "dev-")) {
 			/* Ignore dev settings */
 #endif
-		}
-		else if (opt->cb_arg == (void *)opt_add_torproxy_addr)
+		} else if (opt->cb_arg == (void *)opt_add_torproxy_addr)
 		{
-			answer = tal_fmt(name0,"%s:%d",ld->tor_proxy_ip,ld->tor_proxy_port);
-		}
-		else if (opt->cb_arg == (void *)opt_add_tor_service_password)
+			answer = fmt_wireaddr(name0,
+								ld->tor_proxyaddrs);
+		} else if (opt->cb_arg == (void *)opt_add_tor_service_addr)
+		{
+			answer = fmt_wireaddr(name0,
+								ld->tor_serviceaddrs);
+		} else if (opt->cb_arg == (void *)opt_add_tor_service_password)
 		{
 			answer = tal_fmt(name0,"%s",ld->tor_service_password);
-		}
-		else {
+		} else {
 			/* Insert more decodes here! */
 			abort();
 		}

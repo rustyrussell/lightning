@@ -176,9 +176,9 @@ struct lightningd {
 	const void **notleaks;
 #endif /* DEVELOPER */
 
-	/*	tor support	*/
-	u8 *tor_proxy_ip;
-	u16 tor_proxy_port;
+	/* tor support */
+	struct wireaddr *tor_proxyaddrs;
+	struct wireaddr *tor_serviceaddrs;
 	char *tor_service_password;
 };
 
