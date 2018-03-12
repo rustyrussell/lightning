@@ -51,7 +51,6 @@ bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 port, const char
 
 char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a);
 char *fmt_wireaddr_without_port(const tal_t *ctx, const struct wireaddr *a);
-int b32_decode( u8 *dst,u8 *src,u8 ver);
 
 bool separate_address_and_port(tal_t *ctx, const char *arg,
 				      char **addr, u16 *port);

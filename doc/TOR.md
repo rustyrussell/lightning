@@ -1,5 +1,34 @@
 HOWTO USE TOR WITH C-LIGHTNING
 
+what do we support
+
+1 	c-lightning has a public IP address and no TOR hidden service address,
+	but can connect to an onion address via a TOR socks 5 proxy.
+
+2 	c-lightning has a public IP address and a fixed TOR hidden service address that is persistent
+	so that external users can connect to this node.
+
+3 	c-lightning has a public IP address and not fixed TOR service address that (changes at each restart)
+	so that external users can connect to this node by TOR and IP
+
+4 	c-lightning has no public IP address, but has a fixed TOR hidden service address that is persistent
+	so that external users can connect to this node.
+
+5 	c-lightning has no public IP address, and has no fixed TOR hidden service address
+	(changes at each restart and vanish at restart of tor) to make it harder to track this node.
+
+6	c-lightning has a public IP address and a fixed TOR V3 service address and a TOR V2 service  address
+	that (changes at each restart and that vanish at restart of tor)
+	so that external users can connect to this node by TOR V2 and V3 and IP
+
+7	c-lightning has nop public IP address and a fixed TOR V3 service address and fixed TOR V2 service  address
+	a 3rd V2 address that (changes at each restart and that vanish at restart of tor)
+	so that external users can connect to this node by TOR V2 and V3 and a random V2 until next tor release then also (V3 randomly)
+
+8 	c-lightning has a public IP address and no TOR hidden service address,
+	but can connect to any V4/6 ip address via a IPV4/6 socks 5 proxy.
+
+
 to use tor you have to have tor installed an running.
 
 i.e.
