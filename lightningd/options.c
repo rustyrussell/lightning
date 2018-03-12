@@ -11,6 +11,7 @@
 #include <ccan/tal/str/str.h>
 #include <common/configdir.h>
 #include <common/memleak.h>
+#include <common/tor.h>
 #include <common/version.h>
 #include <common/wireaddr.h>
 #include <errno.h>
@@ -235,9 +236,10 @@ static char *opt_set_offline(struct lightningd *ld)
 static char *opt_add_torproxy_addr(const char *arg, struct lightningd *ld)
 {
 
-if (!ld->tor_proxy_ip) ld->tor_proxy_ip = tal_arrz(ld,u8,16);
+	if (!ld->tor_proxy_ip) /* make sure its not undefined */
+		ld->tor_proxy_ip = tal_arrz(ld,u8,16);
 
-if (!parse_tor_wireaddr(arg,(u8 *)(ld->tor_proxy_ip),(u16 *)&ld->tor_proxy_port)) {
+	if (!parse_tor_wireaddr(arg, ld->tor_proxy_ip, &ld->tor_proxy_port)) {
 	return tal_fmt(NULL, "Unable to parse Tor address '%s'", arg);
 	}
 

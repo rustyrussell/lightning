@@ -40,7 +40,7 @@ save
 and
 /etc/init.d/tor restart
 
-then you can use c-lighting with following options
+then you can use c-lightning with following options
 
 --tor-service-password=yourpassword to access the tor service at 9051
 

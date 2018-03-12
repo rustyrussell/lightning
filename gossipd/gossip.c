@@ -80,7 +80,7 @@ struct reaching_socks {
 };
 
 
-struct reaching_socks reach_tor;
+//struct reaching_socks reach_tor;
 
 
 
@@ -348,37 +348,41 @@ static void wake_pkt_out(struct peer *peer);
 static bool try_reach_peer(struct daemon *daemon, const struct pubkey *id);
 
 
-
-
 // called when we want to connect to TOR SOCKS5
 static struct io_plan *io_tor_connect(struct io_conn *conn, struct reaching *reach)
 {
-	static struct addrinfo *ai_tor;
-	static char *port_addr;
+	struct addrinfo *ai_tor = tal(reach, struct addrinfo);
+	char *port_addr = tal(reach, char);
+	const tal_t *tmpctx = tal_tmpctx(NULL);
+	struct io_plan *plan;
+	struct reaching_socks *reach_tor = tal(reach, struct reaching_socks);
 
-	reach_tor.port=htons(reach->addr.port);
+	reach_tor->port=htons(reach->addr.port);
 
-	port_addr = tal_fmt(NULL,"%u",reach->daemon->tor_proxy_port);
+	port_addr = tal_fmt(tmpctx,"%u",reach->daemon->tor_proxy_port);
 	getaddrinfo((char *)reach->daemon->tor_proxy_ip, port_addr, NULL,&ai_tor);
 	//getaddrinfo(tal_strdup(NULL,"127.0.0.1"),tal_strdup(NULL,"9050"), NULL,&ai_tor);
 	status_trace("torproyaddr_ip_port: %s %u",reach->daemon->tor_proxy_ip,reach->daemon->tor_proxy_port);
-	reach_tor.host = tal_strdup(NULL,"");
+	reach_tor->host = tal_strdup(tmpctx,"");
 
 	if((reach->addr.type) == ADDR_TYPE_TOR_V3)
-	reach_tor.host = tal_fmt(NULL,"%.56s",fmt_wireaddr_without_port(NULL,&reach->addr));
+	reach_tor->host = tal_fmt(tmpctx,"%.56s",fmt_wireaddr_without_port(tmpctx,&reach->addr));
 	else
 	if((reach->addr.type) == ADDR_TYPE_TOR_V2)
-	reach_tor.host = tal_fmt(NULL,"%.16s",fmt_wireaddr_without_port(NULL,&reach->addr));
+	reach_tor->host = tal_fmt(tmpctx,"%.16s",fmt_wireaddr_without_port(tmpctx,&reach->addr));
 	else
 	if((reach->addr.type) == ADDR_TYPE_IPV4)
-	reach_tor.host = tal_fmt(NULL,"%s",fmt_wireaddr_without_port(NULL,&reach->addr));
+	reach_tor->host = tal_fmt(tmpctx,"%s",fmt_wireaddr_without_port(tmpctx,&reach->addr));
 	else
 	if((reach->addr.type) == ADDR_TYPE_IPV6)
-	reach_tor.host = tal_fmt(NULL,"%s",fmt_wireaddr_without_port(NULL,&reach->addr));
+	reach_tor->host = tal_fmt(tmpctx,"%s",fmt_wireaddr_without_port(tmpctx,&reach->addr));
 
-	reach_tor.reach=reach;
+	reach_tor->reach=reach;
 
-	return io_connect(conn, ai_tor, &io_tor_connect_do_req,  &reach_tor);
+	plan = io_connect(conn, ai_tor, &io_tor_connect_do_req,  reach_tor);
+
+	tal_free(tmpctx);
+	return plan;
 }
 
 
@@ -1843,7 +1847,7 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		memcpy(&sin6.sin6_addr, reach->addr.addr, sizeof(sin6.sin6_addr));
 		ai.ai_addrlen = sizeof(sin6);
 		ai.ai_addr = (struct sockaddr *)&sin6;
-		//FIXME: AIBATO for now use allways proxy if set because we dont want to leak our ip's when using tor
+		//FIXME: SAIBATO for now use allways proxy if set because we dont want to leak our ip's when using tor
 		if (strlen((char *)reach->daemon->tor_proxy_ip)>0)  return io_tor_connect(conn, reach);
 		io_set_finish(conn, connect_failed, reach);
 		return io_connect(conn, &ai, connection_out, reach);

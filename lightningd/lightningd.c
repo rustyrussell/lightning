@@ -21,6 +21,7 @@
 #include <common/io_debug.h>
 #include <common/memleak.h>
 #include <common/timeout.h>
+#include <common/tor.h>
 #include <common/utils.h>
 #include <common/version.h>
 #include <common/wireaddr.h>
@@ -400,7 +401,7 @@ int main(int argc, char *argv[])
 
 	tal_t *tmpctx = tal_tmpctx(NULL);
 	size_t n = tal_count(ld->wireaddrs);
-	for (int i=0;i<n;i++)
+	for (int i=0; i<n; i++)
 	log_info(ld->log, "Wireaddr[%d] = %s",i,fmt_wireaddr(tmpctx, &(ld->wireaddrs[i])));
 	tal_free(tmpctx);
 

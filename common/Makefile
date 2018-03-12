@@ -38,6 +38,7 @@ COMMON_SRC_NOGEN :=				\
 	common/timeout.c			\
 	common/type_to_string.c			\
 	common/utils.c				\
+	common/tor.c				\
 	common/utxo.c				\
 	common/version.c			\
 	common/wireaddr.c			\

@@ -382,12 +382,12 @@ void json_add_address(struct json_result *response, const char *fieldname,
 	}
 	else if (addr->type == ADDR_TYPE_TOR_V2) {
 		json_add_string(response, "type", "torv2");
-		json_add_string(response, "address", tal_fmt(addr,"%s.onion",b32_encode(addrstr, (u8 *)addr->addr,2)));
+		json_add_string(response, "address", tal_fmt(addr,"%s",fmt_wireaddr_without_port(addr, addr)));
 		json_add_num(response, "port", addr->port);
 	}
 	else if (addr->type == ADDR_TYPE_TOR_V3) {
 		json_add_string(response, "type", "torv3");
-		json_add_string(response, "address", tal_fmt(addr,"%s.onion",b32_encode(addrstr, (u8 *)addr->addr,3)));
+		json_add_string(response, "address", tal_fmt(addr,"%s",fmt_wireaddr_without_port(addr, addr)));
 		json_add_num(response, "port", addr->port);
 	}
 	json_object_end(response);
