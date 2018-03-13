@@ -123,9 +123,8 @@ static struct io_plan *io_tor_connect(struct io_conn *, struct reaching *);
 
 static struct io_plan *io_tor_connect_after_resp_to_connect(struct io_conn *conn, struct reaching_socks *reach)
 {
-		if (reach->buffer[1] == SOCKS_ERROR)
-		 {
-			 status_trace("Connected out for %s error",reach->host);
+		if (reach->buffer[1] == SOCKS_ERROR) {
+			 status_trace("Connected out for %s error", reach->host);
 		   return io_close(conn);
 		 }
 			 //make the V5 request
@@ -139,7 +138,7 @@ static struct io_plan *io_tor_connect_after_resp_to_connect(struct io_conn *conn
 			memcpy( reach->buffer + SOCK_REQ_V5_LEN, reach->host,reach->hlen );
 			memcpy( reach->buffer + SOCK_REQ_V5_LEN + strlen( reach->host), &(reach->port), sizeof reach->port);
 
-  return io_write(conn, reach->buffer,  SOCK_REQ_V5_HEADER_LEN + reach->hlen, io_tor_connect_after_req_host, reach);
+  return io_write(conn, reach->buffer, SOCK_REQ_V5_HEADER_LEN + reach->hlen, io_tor_connect_after_req_host, reach);
 }
 
 
@@ -179,7 +178,8 @@ static struct io_plan *connect_finish(struct io_conn *conn,
 
 if ((reach->buffer[3]) == SOCKS_TYP_IPV6 )
 {
-	return  io_read(conn, (reach->buffer+SIZE_OF_RESPONSE-SIZE_OF_IPV4_RESPONSE),SIZE_OF_IPV6_RESPONSE-SIZE_OF_RESPONSE-SIZE_OF_IPV4_RESPONSE, &connect_finish2, reach);
+	return  io_read(conn, (reach->buffer + SIZE_OF_RESPONSE - SIZE_OF_IPV4_RESPONSE),
+					SIZE_OF_IPV6_RESPONSE - SIZE_OF_RESPONSE - SIZE_OF_IPV4_RESPONSE, &connect_finish2, reach);
 
 }
 else
@@ -197,7 +197,7 @@ if ((reach->buffer[3]) == SOCKS_TYP_IPV4)
 static struct io_plan *connect_out(struct io_conn *conn,
 					  struct reaching_socks *reach)
 {
-	return  io_read(conn, reach->buffer, SIZE_OF_IPV4_RESPONSE+SIZE_OF_RESPONSE, &connect_finish, reach);
+	return  io_read(conn, reach->buffer, SIZE_OF_IPV4_RESPONSE + SIZE_OF_RESPONSE, &connect_finish, reach);
 
 }
 
@@ -207,7 +207,7 @@ static struct io_plan *io_tor_connect_after_req_host(struct io_conn *conn, struc
  {
 
 
-  status_trace("Connected out tor new for %s",reach->host);
+  status_trace("Connected out tor new for %s", reach->host);
 
   if (reach->buffer[0] == '0')  return io_close(conn);
 	return connect_out(conn, reach);
@@ -251,6 +251,7 @@ struct daemon {
 	u32 last_announce_timestamp;
 
 	struct wireaddr *tor_proxyaddrs;
+	bool use_tor_proxy_allways;
 };
 
 /* Peers we're trying to reach. */
@@ -359,23 +360,23 @@ static struct io_plan *io_tor_connect(struct io_conn *conn, struct reaching *rea
 	struct reaching_socks *reach_tor = tal(reach, struct reaching_socks);
 
 	reach_tor->port=htons(reach->addr.port);
-	port_addr = tal_fmt(tmpctx,"%u",reach->daemon->tor_proxyaddrs->port);
-	getaddrinfo((char *)fmt_wireaddr_without_port(tmpctx,reach->daemon->tor_proxyaddrs), port_addr, NULL,&ai_tor);
+	port_addr = tal_fmt(tmpctx,"%u", reach->daemon->tor_proxyaddrs->port);
+	getaddrinfo((char *)fmt_wireaddr_without_port(tmpctx, reach->daemon->tor_proxyaddrs), port_addr, NULL, &ai_tor);
 	//getaddrinfo(tal_strdup(NULL,"127.0.0.1"),tal_strdup(NULL,"9050"), NULL,&ai_tor);
-	status_trace("torproyaddr_ip_port: %s",fmt_wireaddr_without_port(tmpctx,reach->daemon->tor_proxyaddrs));
+	status_trace("Tor proxyaddr : %s", fmt_wireaddr(tmpctx, reach->daemon->tor_proxyaddrs));
 	reach_tor->host = tal_strdup(tmpctx,"");
 
 	if((reach->addr.type) == ADDR_TYPE_TOR_V3)
-	reach_tor->host = tal_fmt(tmpctx,"%.56s",fmt_wireaddr_without_port(tmpctx,&reach->addr));
+	reach_tor->host = tal_fmt(tmpctx,"%.56s", fmt_wireaddr_without_port(tmpctx, &reach->addr));
 	else
 	if((reach->addr.type) == ADDR_TYPE_TOR_V2)
-	reach_tor->host = tal_fmt(tmpctx,"%.16s",fmt_wireaddr_without_port(tmpctx,&reach->addr));
+	reach_tor->host = tal_fmt(tmpctx,"%.16s", fmt_wireaddr_without_port(tmpctx, &reach->addr));
 	else
 	if((reach->addr.type) == ADDR_TYPE_IPV4)
-	reach_tor->host = tal_fmt(tmpctx,"%s",fmt_wireaddr_without_port(tmpctx,&reach->addr));
+	reach_tor->host = tal_fmt(tmpctx,"%s", fmt_wireaddr_without_port(tmpctx, &reach->addr));
 	else
 	if((reach->addr.type) == ADDR_TYPE_IPV6)
-	reach_tor->host = tal_fmt(tmpctx,"%s",fmt_wireaddr_without_port(tmpctx,&reach->addr));
+	reach_tor->host = tal_fmt(tmpctx,"%s", fmt_wireaddr_without_port(tmpctx, &reach->addr));
 
 	reach_tor->reach=reach;
 
@@ -918,7 +919,7 @@ static void handle_get_update(struct peer *peer, const u8 *msg)
 	const u8 *update;
 
 	if (!fromwire_gossip_get_update(msg, &scid)) {
-		status_trace("peer %s sent bad gossip_get_update %s",
+		status_trace("Peer %s sent bad gossip_get_update %s",
 			     type_to_string(trc, struct pubkey, &peer->id),
 			     tal_hex(trc, msg));
 		return;
@@ -926,7 +927,7 @@ static void handle_get_update(struct peer *peer, const u8 *msg)
 
 	chan = get_channel(peer->daemon->rstate, &scid);
 	if (!chan) {
-		status_unusual("peer %s scid %s: unknown channel",
+		status_unusual("Peer %s scid %s: unknown channel",
 			       type_to_string(trc, struct pubkey, &peer->id),
 			       type_to_string(trc, struct short_channel_id,
 					      &scid));
@@ -938,7 +939,7 @@ static void handle_get_update(struct peer *peer, const u8 *msg)
 		else if (pubkey_eq(&chan->nodes[1]->id, &peer->daemon->id))
 			update = chan->half[1].channel_update;
 		else {
-			status_unusual("peer %s scid %s: not our channel?",
+			status_unusual("Peer %s scid %s: not our channel?",
 				       type_to_string(trc, struct pubkey,
 						      &peer->id),
 				       type_to_string(trc,
@@ -947,7 +948,7 @@ static void handle_get_update(struct peer *peer, const u8 *msg)
 			update = NULL;
 		}
 	}
-	status_trace("peer %s schanid %s: %s update",
+	status_trace("Peer %s schanid %s: %s update",
 		     type_to_string(trc, struct pubkey, &peer->id),
 		     type_to_string(trc, struct short_channel_id, &scid),
 		     update ? "got" : "no");
@@ -1720,7 +1721,7 @@ static struct io_plan *gossip_init(struct daemon_conn *master,
 		daemon, msg, &daemon->broadcast_interval, &chain_hash,
 		&daemon->id, &port, &daemon->globalfeatures,
 		&daemon->localfeatures, &daemon->wireaddrs, daemon->rgb,
-		daemon->alias, &update_channel_interval, daemon->tor_proxyaddrs)) {
+		daemon->alias, &update_channel_interval, daemon->tor_proxyaddrs, &daemon->use_tor_proxy_allways)) {
 		master_badmsg(WIRE_GOSSIPCTL_INIT, msg);
 	}
 	/* Prune time is twice update time */
@@ -1833,11 +1834,12 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		memcpy(&sin.sin_addr, reach->addr.addr, sizeof(sin.sin_addr));
 		ai.ai_addrlen = sizeof(sin);
 		ai.ai_addr = (struct sockaddr *)&sin;
-		//FIXME: SAIBATO for now use allways proxy if set because we dont want to leak our ip'S when using tor
-		if (reach->daemon->tor_proxyaddrs->port>0)
-		//if we dont use tor proxy if we only use ip
-		if (do_we_use_tor_addr(reach->daemon->wireaddrs))
-		return io_tor_connect(conn, reach);
+
+		if (reach->daemon->tor_proxyaddrs->port > 0)
+		/* We dont use tor proxy if we only have ip */
+ 				if (reach->daemon->use_tor_proxy_allways || do_we_use_tor_addr(reach->daemon->wireaddrs))
+								return io_tor_connect(conn, reach);
+
 		io_set_finish(conn, connect_failed, reach);
 		return io_connect(conn, &ai, connection_out, reach);
 		break;
@@ -1849,11 +1851,12 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		memcpy(&sin6.sin6_addr, reach->addr.addr, sizeof(sin6.sin6_addr));
 		ai.ai_addrlen = sizeof(sin6);
 		ai.ai_addr = (struct sockaddr *)&sin6;
-		//FIXME: SAIBATO for now use allways proxy if set because we dont want to leak our ip's when using tor
-		if (reach->daemon->tor_proxyaddrs->port>0)
-		//if we dont use proxy if we only use ip
-		if (do_we_use_tor_addr(reach->daemon->wireaddrs))
-		return io_tor_connect(conn, reach);
+
+		if (reach->daemon->tor_proxyaddrs->port > 0)
+		/* We dont use tor proxy if we only have ip */
+				if (reach->daemon->use_tor_proxy_allways || do_we_use_tor_addr(reach->daemon->wireaddrs))
+								return io_tor_connect(conn, reach);
+
 		io_set_finish(conn, connect_failed, reach);
 		return io_connect(conn, &ai, connection_out, reach);
 		break;

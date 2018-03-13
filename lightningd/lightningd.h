@@ -180,6 +180,7 @@ struct lightningd {
 	struct wireaddr *tor_proxyaddrs;
 	struct wireaddr *tor_serviceaddrs;
 	char *tor_service_password;
+	bool use_tor_proxy_allways;
 };
 
 const struct chainparams *get_chainparams(const struct lightningd *ld);

@@ -79,6 +79,7 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	ld->tor_service_password = tal_arrz(ld, char, 32);
 	ld->tor_proxyaddrs = tal_arrz(ld, struct wireaddr,1);
 	ld->tor_serviceaddrs = tal_arrz(ld, struct wireaddr,1);
+	ld->use_tor_proxy_allways = false;
 	return ld;
 }
 

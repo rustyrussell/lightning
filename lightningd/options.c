@@ -239,8 +239,7 @@ static char *opt_add_torproxy_addr(const char *arg, struct lightningd *ld)
 	if (!parse_wireaddr(arg, ld->tor_proxyaddrs,9050,NULL)) {
 	return tal_fmt(NULL, "Unable to parse Tor proxy address '%s'", arg);
 	}
-
-return NULL;
+	return NULL;
 }
 
 static char *opt_add_tor_service_addr(const char *arg, struct lightningd *ld)
@@ -249,8 +248,7 @@ static char *opt_add_tor_service_addr(const char *arg, struct lightningd *ld)
 	if (!parse_wireaddr(arg, ld->tor_serviceaddrs,9051,NULL)) {
 	return tal_fmt(NULL, "Unable to parse Tor service address '%s'", arg);
 	}
-
-return NULL;
+	return NULL;
 }
 
 
@@ -272,10 +270,8 @@ static char *opt_add_tor_addr(const char *arg, struct lightningd *ld)
 
 static char *opt_add_tor_service_password(const char *arg, struct lightningd *ld)
 {
-
-ld->tor_service_password = tal_fmt(ld, "%.30s", arg);
-
-return NULL;
+	ld->tor_service_password = tal_fmt(ld, "%.30s", arg);
+	return NULL;
 }
 
 
@@ -363,7 +359,9 @@ static void config_register_opts(struct lightningd *ld)
 	opt_register_arg("--tor-service-password", opt_add_tor_service_password, NULL,
 			ld,"Set a Tor hidden service password");
 	opt_register_arg("--tor-auto-listen", opt_set_bool_arg, opt_show_bool,
-			&ld->config.tor_enable_auto_hidden_service ,"Generate and use a temp auto hidden-service and show the onion address");
+			&ld->config.tor_enable_auto_hidden_service , "Generate and use a temp auto hidden-service and show the onion address");
+	opt_register_arg("--allways-use-tor-proxy", opt_set_bool_arg, opt_show_bool,
+			&ld->use_tor_proxy_allways , "Use the Tor propxy allways");
 }
 
 #if DEVELOPER
@@ -913,7 +911,7 @@ static void add_config(struct lightningd *ld,
 								ld->tor_serviceaddrs);
 		} else if (opt->cb_arg == (void *)opt_add_tor_service_password)
 		{
-			answer = tal_fmt(name0,"%s",ld->tor_service_password);
+			answer = tal_fmt(name0,"%s", ld->tor_service_password);
 		} else {
 			/* Insert more decodes here! */
 			abort();

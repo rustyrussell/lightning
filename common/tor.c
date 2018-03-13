@@ -62,7 +62,6 @@ static struct io_plan *io_tor_connect_after_create_onion(struct io_conn *conn, s
 							 tor_service_reaching
 							 *reach)
 {
-
 	reach->p = reach->p + reach->hlen;
 
 	if (!strstr((char *)reach->buffer, "ServiceID=")) {
@@ -78,7 +77,6 @@ static struct io_plan *io_tor_connect_after_create_onion(struct io_conn *conn, s
 				       io_tor_connect_create_onion_finished,
 				       reach);
 	};
-
 }
 
 //V3 tor after 3.3.3.aplha FIXME: TODO SAIBATO
@@ -97,7 +95,6 @@ static struct io_plan *io_tor_connect_make_onion(struct io_conn *conn, struct to
 	reach->p = reach->buffer;
 	return io_write(conn, reach->buffer, reach->hlen,
 			io_tor_connect_after_create_onion, reach);
-
 }
 
 static struct io_plan *io_tor_connect_after_authenticate(struct io_conn *conn, struct

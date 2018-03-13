@@ -8,7 +8,8 @@ what do we support
 2 	c-lightning has a public IP address and a fixed TOR hidden service address that is persistent
 	so that external users can connect to this node.
 
-3 	c-lightning has a public IP address and not fixed TOR service address that (changes at each restart)
+3 	c-lightning has a public IP address and not fixed TOR service address that (changes at each restart
+	and that vanish at restart of tor)
 	so that external users can connect to this node by TOR and IP
 
 4 	c-lightning has no public IP address, but has a fixed TOR hidden service address that is persistent
@@ -17,7 +18,7 @@ what do we support
 5 	c-lightning has no public IP address, and has no fixed TOR hidden service address
 	(changes at each restart and vanish at restart of tor) to make it harder to track this node.
 
-6	c-lightning has a public IP address and a fixed TOR V3 service address and a TOR V2 service  address
+6	c-lightning has a public IP address and a fixed TOR V3 service address and a TOR V2 service address
 	that (changes at each restart and that vanish at restart of tor)
 	so that external users can connect to this node by TOR V2 and V3 and IP
 
