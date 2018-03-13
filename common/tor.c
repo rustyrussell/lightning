@@ -108,8 +108,9 @@ static struct io_plan *io_tor_connect_after_authenticate(struct io_conn *conn, s
 		       reach);
 }
 
-static struct io_plan *io_tor_connect_authenticate(struct io_conn *conn, struct tor_service_reaching
-						   *reach)
+static struct io_plan *io_tor_connect_authenticate(struct io_conn *conn, struct
+						 tor_service_reaching
+						 *reach)
 {
 	sprintf((char *)reach->buffer, "AUTHENTICATE %s\r\n",
 		(char *)reach->cookie);
@@ -128,16 +129,17 @@ static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn, stru
 						      tor_service_reaching
 						      *reach)
 {
-	char *p, *p2;
-	int i;
-	static u8 buf[MAX_TOR_COOKIE_LEN];
+	char *p = tal(reach, char);
+	char *p2 = tal(reach, char);
+
+	u8 *buf = tal_arrz(reach, u8, MAX_TOR_COOKIE_LEN);
 
 	reach->noauth = false;
 
 	if (strstr((char *)reach->buffer, "NULL"))
 		reach->noauth = true;
 	else if (strstr((char *)reach->buffer, "HASHEDPASSWORD")
-		 && (reach->ld->tor_service_password != NULL)) {
+		 && (strlen(reach->ld->tor_service_password))) {
 		reach->noauth = false;
 		sprintf((char *)reach->cookie, "\"%s\"",
 			reach->ld->tor_service_password);
@@ -145,13 +147,12 @@ static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn, stru
 		assert(strlen(p) > 12);
 		p2 = strstr((char *)(p + 12), "\"");
 		assert(p2 != NULL);
-		i = strlen(p2);
-		*(char *)(p + (strlen(p) - i)) = 0;
-		int fd = open((char *)(p + 12), O_RDONLY);
+		*(char *)(p + (strlen(p) - strlen(p2))) = 0;
 
+		int fd = open((char *)(p + 12), O_RDONLY);
 		if (fd < 0)
 			return io_close(conn);
-		if (!read(fd, &buf, sizeof(buf))) {
+		if (!read(fd, buf, MAX_TOR_COOKIE_LEN )) {
 			close(fd);
 			return io_close(conn);
 		} else
@@ -199,34 +200,35 @@ static struct io_plan *tor_connect_finish(struct io_conn *conn,
 static struct io_plan *tor_conn_init(struct io_conn *conn,
 				     struct lightningd *ld)
 {
-	static struct tor_service_reaching reach;
-	static struct addrinfo *ai_tor;
-	reach.ld = ld;
+	struct addrinfo *ai_tor = tal(ld, struct addrinfo);
+	struct tor_service_reaching *reach = tal(ld, struct tor_service_reaching);
+
+	reach->ld = ld;
 
 	getaddrinfo(fmt_wireaddr_without_port(ld, ld->tor_serviceaddrs),
 		    tal_fmt(ld, "%d", ld->tor_serviceaddrs->port), NULL,
 		    &ai_tor);
 
-	return io_connect(conn, ai_tor, &tor_connect_finish, &reach);
+	return io_connect(conn, ai_tor, &tor_connect_finish, reach);
 }
 
 bool create_tor_hidden_service_conn(struct lightningd * ld)
 {
 	int fd;
 	struct io_conn *conn;
+
 	return_from_service_call = false;
+
 	fd = socket(AF_INET, SOCK_STREAM, 0);
 	conn = io_new_conn(NULL, fd, &tor_conn_init, ld);
 	//FIXME: SAIBATO maybe return false and handle this
 	if (!conn)
 		err(1, "Cannot create new TOR connection");
-
 	return true;
 }
 
 bool do_we_use_tor_addr(const struct wireaddr * wireaddr)
 {
-
 	for (int i = 0; i < tal_count(wireaddr); i++) {
 		if ((wireaddr[i].type == ADDR_TYPE_TOR_V2)
 		    || (wireaddr[i].type == ADDR_TYPE_TOR_V3))
