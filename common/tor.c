@@ -22,6 +22,8 @@
 #define MAX_TOR_ONION_V2_ADDR_LEN 16
 #define MAX_TOR_ONION_V3_ADDR_LEN 56
 
+static bool return_from_service_call;
+
 struct tor_service_reaching {
 	struct lightningd *ld;
 	u8 buffer[MAX_TOR_SERVICE_READBUFFER_LEN];
@@ -49,9 +51,10 @@ static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn
 	//because when we run with Detach flag as we now do every start of LN creates a new addr while the old
 	//stays valid until reboot this might not be desired so we can also drop Detach and use the
 	//read_partial to keep it open until LN drops
-	//FIXME: SAIBATO
+	//FIXME: SAIBATO we might not want to close this conn
 	//return io_read_partial(conn, reach->p, 1 ,&reach->hlen, io_tor_connect_create_onion_finished, reach);
 	tal_free(tmpctx);
+	return_from_service_call = true;
 	return io_close(conn);
 }
 
@@ -211,7 +214,7 @@ bool create_tor_hidden_service_conn(struct lightningd * ld)
 {
 	int fd;
 	struct io_conn *conn;
-
+	return_from_service_call = false;
 	fd = socket(AF_INET, SOCK_STREAM, 0);
 	conn = io_new_conn(NULL, fd, &tor_conn_init, ld);
 	//FIXME: SAIBATO maybe return false and handle this
@@ -219,4 +222,20 @@ bool create_tor_hidden_service_conn(struct lightningd * ld)
 		err(1, "Cannot create new TOR connection");
 
 	return true;
+}
+
+bool do_we_use_tor_addr(const struct wireaddr * wireaddr)
+{
+
+	for (int i = 0; i < tal_count(wireaddr); i++) {
+		if ((wireaddr[i].type == ADDR_TYPE_TOR_V2)
+		    || (wireaddr[i].type == ADDR_TYPE_TOR_V3))
+			return true;
+	}
+	return false;
+};
+
+bool check_return_from_service_call(void)
+{
+	return return_from_service_call;
 }

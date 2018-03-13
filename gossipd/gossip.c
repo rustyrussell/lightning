@@ -22,6 +22,7 @@
 #include <common/status.h>
 #include <common/subdaemon.h>
 #include <common/timeout.h>
+#include <common/tor.h>
 #include <common/type_to_string.h>
 #include <common/utils.h>
 #include <common/version.h>
@@ -48,6 +49,7 @@
 #include <wire/gen_peer_wire.h>
 #include <wire/wire_io.h>
 #include <wire/wire_sync.h>
+
 
 #define SOCKS_NOAUTH		0
 #define SOCKS_ERROR 	 0xff
@@ -1713,6 +1715,7 @@ static struct io_plan *gossip_init(struct daemon_conn *master,
 	u16 port;
 	u32 update_channel_interval;
 	daemon->tor_proxyaddrs = tal_arrz(daemon, struct wireaddr,1);
+
 	if (!fromwire_gossipctl_init(
 		daemon, msg, &daemon->broadcast_interval, &chain_hash,
 		&daemon->id, &port, &daemon->globalfeatures,
@@ -1832,6 +1835,8 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		ai.ai_addr = (struct sockaddr *)&sin;
 		//FIXME: SAIBATO for now use allways proxy if set because we dont want to leak our ip'S when using tor
 		if (reach->daemon->tor_proxyaddrs->port>0)
+		//if we dont use tor proxy if we only use ip
+		if (do_we_use_tor_addr(reach->daemon->wireaddrs))
 		return io_tor_connect(conn, reach);
 		io_set_finish(conn, connect_failed, reach);
 		return io_connect(conn, &ai, connection_out, reach);
@@ -1846,6 +1851,8 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		ai.ai_addr = (struct sockaddr *)&sin6;
 		//FIXME: SAIBATO for now use allways proxy if set because we dont want to leak our ip's when using tor
 		if (reach->daemon->tor_proxyaddrs->port>0)
+		//if we dont use proxy if we only use ip
+		if (do_we_use_tor_addr(reach->daemon->wireaddrs))
 		return io_tor_connect(conn, reach);
 		io_set_finish(conn, connect_failed, reach);
 		return io_connect(conn, &ai, connection_out, reach);

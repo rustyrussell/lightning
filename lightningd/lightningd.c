@@ -318,9 +318,11 @@ int main(int argc, char *argv[])
 	signal(SIGPIPE, SIG_IGN);
 
 	/* tor support */
-	if (ld->config.tor_enable_auto_hidden_service)
-	create_tor_hidden_service_conn(ld);
-
+	if (ld->config.tor_enable_auto_hidden_service) {
+		create_tor_hidden_service_conn(ld);
+					while (!check_return_from_service_call())
+					io_loop(NULL, NULL);
+	}
 
 	/* Make sure we can reach other daemons, and versions match. */
 	test_daemons(ld);
