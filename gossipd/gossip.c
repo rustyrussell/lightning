@@ -251,7 +251,7 @@ struct daemon {
 	u32 last_announce_timestamp;
 
 	struct wireaddr *tor_proxyaddrs;
-	bool use_tor_proxy_allways;
+	bool use_tor_proxy_always;
 };
 
 /* Peers we're trying to reach. */
@@ -1721,7 +1721,7 @@ static struct io_plan *gossip_init(struct daemon_conn *master,
 		daemon, msg, &daemon->broadcast_interval, &chain_hash,
 		&daemon->id, &port, &daemon->globalfeatures,
 		&daemon->localfeatures, &daemon->wireaddrs, daemon->rgb,
-		daemon->alias, &update_channel_interval, daemon->tor_proxyaddrs, &daemon->use_tor_proxy_allways)) {
+		daemon->alias, &update_channel_interval, daemon->tor_proxyaddrs, &daemon->use_tor_proxy_always)) {
 		master_badmsg(WIRE_GOSSIPCTL_INIT, msg);
 	}
 	/* Prune time is twice update time */
@@ -1837,7 +1837,7 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 
 		if (reach->daemon->tor_proxyaddrs->port > 0)
 		/* We dont use tor proxy if we only have ip */
- 				if (reach->daemon->use_tor_proxy_allways || do_we_use_tor_addr(reach->daemon->wireaddrs))
+ 				if (reach->daemon->use_tor_proxy_always || do_we_use_tor_addr(reach->daemon->wireaddrs))
 								return io_tor_connect(conn, reach);
 
 		io_set_finish(conn, connect_failed, reach);
@@ -1854,7 +1854,7 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 
 		if (reach->daemon->tor_proxyaddrs->port > 0)
 		/* We dont use tor proxy if we only have ip */
-				if (reach->daemon->use_tor_proxy_allways || do_we_use_tor_addr(reach->daemon->wireaddrs))
+				if (reach->daemon->use_tor_proxy_always || do_we_use_tor_addr(reach->daemon->wireaddrs))
 								return io_tor_connect(conn, reach);
 
 		io_set_finish(conn, connect_failed, reach);

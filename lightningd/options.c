@@ -361,7 +361,7 @@ static void config_register_opts(struct lightningd *ld)
 	opt_register_arg("--tor-auto-listen", opt_set_bool_arg, opt_show_bool,
 			&ld->config.tor_enable_auto_hidden_service , "Generate and use a temp auto hidden-service and show the onion address");
 	opt_register_arg("--always-use-tor-proxy", opt_set_bool_arg, opt_show_bool,
-			&ld->use_tor_proxy_allways , "Use the Tor proxy always");
+			&ld->use_tor_proxy_always , "Use the Tor proxy always");
 }
 
 #if DEVELOPER
