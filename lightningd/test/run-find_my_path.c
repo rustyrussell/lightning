@@ -1,8 +1,7 @@
 #define main unused_main
 int unused_main(int argc, char *argv[]);
-#include "../../common/wireaddr.h"
+#include "../../common/base32.c"
 #include "../../common/wireaddr.c"
-#include "../../common/tor.h"
 #include "../../common/tor.c"
 #include "../lightningd.c"
 

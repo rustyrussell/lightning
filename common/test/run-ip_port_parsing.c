@@ -1,3 +1,4 @@
+#include "../common/base32.c"
 #include "../common/wireaddr.c"
 
 #include <stdio.h>

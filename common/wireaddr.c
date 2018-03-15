@@ -3,6 +3,7 @@
 #include <ccan/io/io.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/str/str.h>
+#include <common/base32.h>
 #include <common/type_to_string.h>
 #include <common/utils.h>
 #include <common/wireaddr.h>
@@ -15,53 +16,7 @@
 #include <unistd.h>
 #include <wire/wire.h>
 
-#define BASE32DATA "abcdefghijklmnopqrstuvwxyz234567"
 
-static char *b32_encode(char *dst, u8 * src, u8 ver)
-{
-	u16 byte = 0, poff = 0;
-	for (; byte < ((ver == 2) ? 16 : 56); poff += 5) {
-		if (poff > 7) {
-			poff -= 8;
-			src++;
-		}
-		dst[byte++] =
-		    BASE32DATA[(htobe16(*(u16 *) src) >> (11 - poff)) & (u16)
-			       0x001F];
-	}
-	dst[byte] = 0;
-	return dst;
-}
-
-//FIXME quiknditry
-
-static int b32_decode(u8 * dst, u8 * src, u8 ver)
-{
-	int rem = 0;
-
-	int i;
-	u8 *p = src;
-	int buf;
-	u8 ch;
-	for (i = 0; i < ((ver == 2) ? 16 : 56); p++) {
-		ch = *p;
-		buf <<= 5;
-		if ((ch >= 'a' && ch <= 'z')) {
-			ch = (ch & 0x1F) - 1;
-		} else if (ch >= '2' && ch <= '7') {
-			ch -= '2' - 0x1A;
-		} else {
-			return -1;
-		}
-		buf = buf | ch;
-		rem = rem + 5;
-		if (rem >= 8) {
-			dst[i++] = buf >> (rem - 8);
-			rem -= 8;
-		}
-	}
-	return 0;
-}
 
 /* Returns false if we didn't parse it, and *cursor == NULL if malformed. */
 bool fromwire_wireaddr(const u8 ** cursor, size_t * max, struct wireaddr * addr)

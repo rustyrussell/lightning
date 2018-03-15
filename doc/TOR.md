@@ -114,7 +114,7 @@ cli/lightning-cli getinfo
 some examples:
 
 sudo lightningd/lightningd --network=testnet --ipaddr=127.0.0.1 --port=1234
---proxy=127.0.0.1:9050 --tor-auto-listen true
+--proxy=127.0.0.1:9050 --tor-auto-listen true --tor-service=127.0.0.1:9051
 
 this will try to generate an V2 auto hidden-service by reading the tor cookie and
 also create local ipaddr at port 1234
@@ -122,7 +122,7 @@ so the node is accessableby connect peerid xxxxxxxxxxxxxxxx.onion 1234
 or local by connect ID 127.0.0.1 1234
 
 lightningd/lightningd --network=testnet --port=1234
---proxy=127.0.0.1:9050 --tor-service-password testpassword --tor-auto-listen true
+--proxy=127.0.0.1:9050 --tor-service-password testpassword --tor-auto-listen true --tor-service=127.0.0.1:9051
 
 this will try to generate an V2 auto temp hidden-service addr by using the password to access tor service api
 so the node accessable by connect peerid xxxxxxxxxxxxxxxxxxx.onion 1234

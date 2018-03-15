@@ -1,4 +1,5 @@
 COMMON_SRC_NOGEN :=				\
+	common/base32.c				\
 	common/bech32.c				\
 	common/bip32.c				\
 	common/bolt11.c				\
