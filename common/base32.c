@@ -50,8 +50,9 @@ void b32_decode(u8 * dst, u8 * src, u8 ver)
 		buf <<= 5;
 		if ((ch >= 'a' && ch <= 'z')) {
 			ch = (ch & 0x1F) - 1;
-		} else
+		} else if ((ch >= '2' && ch <= '7')) {
 			ch -= '2' - 0x1A;
+		} else return;
 		buf = buf | ch;
 		rem = rem + 5;
 		if (rem >= 8) {
