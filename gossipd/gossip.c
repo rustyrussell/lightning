@@ -371,7 +371,7 @@ static struct io_plan *io_tor_connect(struct io_conn *conn, struct reaching *rea
 	reach_tor->host = tal_fmt(tmpctx,"%.62s", fmt_wireaddr_without_port(tmpctx, &reach->addr));
 	else
 	if((reach->addr.type) == ADDR_TYPE_TOR_V2)
-	reach_tor->host = tal_fmt(tmpctx,"%.24s", fmt_wireaddr_without_port(tmpctx, &reach->addr));
+	reach_tor->host = tal_fmt(tmpctx,"%.22s", fmt_wireaddr_without_port(tmpctx, &reach->addr));
 	else
 	if((reach->addr.type) == ADDR_TYPE_IPV4)
 	reach_tor->host = tal_fmt(tmpctx,"%s", fmt_wireaddr_without_port(tmpctx, &reach->addr));
