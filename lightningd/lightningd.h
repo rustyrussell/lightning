@@ -141,6 +141,8 @@ struct lightningd {
 
 	struct wallet *wallet;
 
+	/* Outstanding waitsendpay commands. */
+	struct list_head waitsendpay_commands;
 	/* Outstanding sendpay commands. */
 	struct list_head sendpay_commands;
 

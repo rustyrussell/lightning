@@ -16,6 +16,7 @@
 #include <onchaind/onchain_wire.h>
 #include <wally_bip32.h>
 
+enum onion_type;
 struct invoices;
 struct channel;
 struct lightningd;
@@ -106,6 +107,16 @@ struct wallet_payment {
 	struct secret *path_secrets;
 	struct pubkey *route_nodes;
 	struct short_channel_id *route_channels;
+};
+
+struct outpoint {
+	struct bitcoin_txid txid;
+	u32 blockheight;
+	u32 txindex;
+	u32 outnum;
+	u64 satoshis;
+	u8 *scriptpubkey;
+	u32 spendheight;
 };
 
 /**
@@ -669,6 +680,37 @@ struct secret *wallet_payment_get_secrets(const tal_t *ctx,
 					  const struct sha256 *payment_hash);
 
 /**
+ * wallet_payment_get_failinfo - Get failure information for a given
+ * `payment_hash`.
+ *
+ * Data is allocated as children of the given context.
+ */
+void wallet_payment_get_failinfo(const tal_t *ctx,
+				 struct wallet *wallet,
+				 const struct sha256 *payment_hash,
+				 /* outputs */
+				 u8 **failonionreply,
+				 bool *faildestperm,
+				 int *failindex,
+				 enum onion_type *failcode,
+				 struct pubkey **failnode,
+				 struct short_channel_id **failchannel,
+				 u8 **failupdate);
+/**
+ * wallet_payment_set_failinfo - Set failure information for a given
+ * `payment_hash`.
+ */
+void wallet_payment_set_failinfo(struct wallet *wallet,
+				 const struct sha256 *payment_hash,
+				 const u8 *failonionreply,
+				 bool faildestperm,
+				 int failindex,
+				 enum onion_type failcode,
+				 const struct pubkey *failnode,
+				 const struct short_channel_id *failchannel,
+				 const u8 *failupdate);
+
+/**
  * wallet_payment_list - Retrieve a list of payments
  *
  * payment_hash: optional filter for only this payment hash.
@@ -710,6 +752,9 @@ void wallet_blocks_rollback(struct wallet *w, u32 height);
 
 void wallet_outpoint_spend(struct wallet *w, const u32 blockheight,
 			   const struct bitcoin_txid *txid, const u32 outnum);
+
+struct outpoint *wallet_outpoint_for_scid(struct wallet *w, tal_t *ctx,
+					  const struct short_channel_id *scid);
 
 void wallet_utxoset_add(struct wallet *w, const struct bitcoin_tx *tx,
 			const u32 outnum, const u32 blockheight,
