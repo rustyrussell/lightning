@@ -356,7 +356,6 @@ static struct io_plan *io_tor_connect(struct io_conn *conn, struct reaching *rea
 {
 	struct addrinfo *ai_tor = tal(reach, struct addrinfo);
 	char *port_addr = tal(reach, char);
-	const tal_t *tmpctx = tal_tmpctx(NULL);
 	struct io_plan *plan;
 	struct reaching_socks *reach_tor = tal(reach, struct reaching_socks);
 
@@ -383,7 +382,6 @@ static struct io_plan *io_tor_connect(struct io_conn *conn, struct reaching *rea
 
 	plan = io_connect(conn, ai_tor, &io_tor_connect_do_req,  reach_tor);
 
-	tal_free(tmpctx);
 	return plan;
 }
 
@@ -1933,10 +1931,10 @@ static void try_connect(struct reaching *reach)
 		break;
 	case ADDR_TYPE_TOR_V2:
 		fd = socket(AF_INET, SOCK_STREAM, 0);
-	break;
+		break;
 	case ADDR_TYPE_TOR_V3:
 		fd = socket(AF_INET, SOCK_STREAM, 0);
-	break;
+		break;
 	default:
 		fd = -1;
 		errno = EPROTONOSUPPORT;

@@ -52,7 +52,4 @@ bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 port, const char
 char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a);
 char *fmt_wireaddr_without_port(const tal_t *ctx, const struct wireaddr *a);
 
-bool separate_address_and_port(tal_t *ctx, const char *arg,
-				      char **addr, u16 *port);
-
 #endif /* LIGHTNING_COMMON_WIREADDR_H */

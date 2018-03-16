@@ -36,7 +36,6 @@ bool fromwire_wireaddr(const u8 ** cursor, size_t * max, struct wireaddr * addr)
 	case ADDR_TYPE_TOR_V3:
 		addr->addrlen = TOR_V3_ADDRLEN;
 		break;
-
 	default:
 		return false;
 	}

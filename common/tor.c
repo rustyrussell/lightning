@@ -39,7 +39,7 @@ static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn
 							    *reach)
 {
 	char *temp_char;
-	const tal_t *tmpctx = tal_tmpctx(NULL);
+
 	if (reach->hlen == MAX_TOR_ONION_V2_ADDR_LEN) {
 		size_t n = tal_count(reach->ld->wireaddrs);
 		tal_resize(&reach->ld->wireaddrs, n + 1);
@@ -53,7 +53,6 @@ static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn
 	//read_partial to keep it open until LN drops
 	//FIXME: SAIBATO we might not want to close this conn
 	//return io_read_partial(conn, reach->p, 1 ,&reach->hlen, io_tor_connect_create_onion_finished, reach);
-	tal_free(tmpctx);
 	return_from_service_call = true;
 	return io_close(conn);
 }
