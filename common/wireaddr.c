@@ -129,8 +129,8 @@ char *fmt_wireaddr_without_port(const tal_t * ctx, const struct wireaddr *a)
  * Returns false if it wasn't one of these forms.  If it returns true,
  * it only overwrites *port if it was specified by <number> above.
  */
-bool separate_address_and_port(tal_t * ctx, const char *arg,
-			       char **addr, u16 * port)
+static bool separate_address_and_port(const tal_t *ctx, const char *arg,
+				      char **addr, u16 *port)
 {
 	char *portcolon;
 
@@ -180,7 +180,6 @@ bool parse_wireaddr(const char *arg, struct wireaddr * addr, u16 defport,
 	char *ip;
 
 	bool res;
-	tal_t *tmpctx = tal_tmpctx(NULL);
 
 	res = false;
 	port = defport;
@@ -270,7 +269,6 @@ bool parse_wireaddr(const char *arg, struct wireaddr * addr, u16 defport,
  finish:
 	if (!res && err_msg && !*err_msg)
 		*err_msg = "Error parsing hostname";
-	tal_free(tmpctx);
 	return res;
 
 }
