@@ -397,9 +397,10 @@ int main(int argc, char *argv[])
 		 type_to_string(tmpctx, struct pubkey, &ld->id),
 		 ld->alias, tal_hex(tmpctx, ld->rgb), version());
 
+	/* Show some info about our addresses */
 	size_t n = tal_count(ld->wireaddrs);
-	for (int i=0; i<n; i++)
-	log_info(ld->log, "Wireaddr[%d] = %s",i,fmt_wireaddr(tmpctx, &(ld->wireaddrs[i])));
+	for (int i = 0; i < n; i++)
+		log_info(ld->log, "Wireaddr[%d] = %s", i, fmt_wireaddr(tmpctx, &(ld->wireaddrs[i])));
 
 	/* Start the peers. */
 	activate_peers(ld);
