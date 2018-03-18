@@ -173,8 +173,8 @@ static struct io_plan *connect_finish(struct io_conn *conn,
 				      struct reaching_socks *reach)
 {
 
-	if ((reach->buffer[1]) == '\0') {
-		if (((reach->buffer[3]) == SOCKS_TYP_IPV6)) {
+	if ( reach->buffer[1] == '\0') {
+		if ( reach->buffer[3] == SOCKS_TYP_IPV6) {
 			return io_read(conn,
 				       (reach->buffer + SIZE_OF_RESPONSE -
 					SIZE_OF_IPV4_RESPONSE),
@@ -182,7 +182,7 @@ static struct io_plan *connect_finish(struct io_conn *conn,
 				       SIZE_OF_RESPONSE - SIZE_OF_IPV4_RESPONSE,
 				       &connect_finish2, reach);
 
-		} else if (((reach->buffer[3]) == SOCKS_TYP_IPV4)) {
+		} else if ( reach->buffer[3] == SOCKS_TYP_IPV4) {
 			status_trace("Now try LN connect out for host %s",
 				     reach->host);
 			return connection_out(conn, reach->reach);
