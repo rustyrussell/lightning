@@ -405,10 +405,13 @@ static struct block *new_block(struct chain_topology *topo,
 	struct block *b = tal(topo, struct block);
 
 	sha256_double(&b->blkid.shad, &blk->hdr, sizeof(blk->hdr));
+	/* FIXME: SAIBATO remove before merge */
+	#ifdef ANOINGBLOCKMESSAGE
 	log_debug(topo->log, "Adding block %u: %s",
 		  height,
 		  type_to_string(tmpctx, struct bitcoin_blkid, &b->blkid));
 	assert(!block_map_get(&topo->block_map, &b->blkid));
+	#endif
 	b->next = NULL;
 	b->prev = NULL;
 

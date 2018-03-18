@@ -33,6 +33,13 @@ struct tor_service_reaching {
 	size_t hlen;
 };
 
+static struct io_plan *io_tor_connect_close(struct io_conn *conn)
+{
+	err(1, "Cannot create TOR service address");
+	return_from_service_call = true;
+	return io_close(conn);
+};
+
 static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn
 							    *conn, struct
 							    tor_service_reaching
@@ -46,6 +53,8 @@ static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn
 		temp_char = tal_fmt(tmpctx, "%.56s.onion", reach->buffer);
 		parse_wireaddr(temp_char, &reach->ld->wireaddrs[n],
 			       reach->ld->portnum, NULL);
+		return_from_service_call = true;
+		return io_close(conn);
 	}
 	/*on the other hand we can stay connected until ln finish to keep onion alive and then vanish */
 	//because when we run with Detach flag as we now do every start of LN creates a new addr while the old
@@ -53,8 +62,7 @@ static struct io_plan *io_tor_connect_create_onion_finished(struct io_conn
 	//read_partial to keep it open until LN drops
 	//FIXME: SAIBATO we might not want to close this conn
 	//return io_read_partial(conn, reach->p, 1 ,&reach->hlen, io_tor_connect_create_onion_finished, reach);
-	return_from_service_call = true;
-	return io_close(conn);
+	return io_tor_connect_close(conn);
 }
 
 static struct io_plan *io_tor_connect_after_create_onion(struct io_conn *conn, struct
@@ -65,7 +73,8 @@ static struct io_plan *io_tor_connect_after_create_onion(struct io_conn *conn, s
 
 	if (!strstr((char *)reach->buffer, "ServiceID=")) {
 		if (reach->hlen == 0)
-			return io_close(conn);
+			return io_tor_connect_close(conn);
+
 		return io_read_partial(conn, reach->p, 1, &reach->hlen,
 				       io_tor_connect_after_create_onion,
 				       reach);
@@ -85,7 +94,8 @@ static struct io_plan *io_tor_connect_make_onion(struct io_conn *conn, struct to
 						 *reach)
 {
 	if (strstr((char *)reach->buffer, "250 OK") == NULL)
-		return io_close(conn);
+		return io_tor_connect_close(conn);
+
 	sprintf((char *)reach->buffer,
 		"ADD_ONION NEW:RSA1024 Port=%d,127.0.0.1:%d Flags=DiscardPK,Detach\r\n",
 		reach->ld->portnum, reach->ld->portnum);
@@ -105,8 +115,8 @@ static struct io_plan *io_tor_connect_after_authenticate(struct io_conn *conn, s
 }
 
 static struct io_plan *io_tor_connect_authenticate(struct io_conn *conn, struct
-						 tor_service_reaching
-						 *reach)
+						   tor_service_reaching
+						   *reach)
 {
 	sprintf((char *)reach->buffer, "AUTHENTICATE %s\r\n",
 		(char *)reach->cookie);
@@ -147,17 +157,17 @@ static struct io_plan *io_tor_connect_after_answer_pi(struct io_conn *conn, stru
 
 		int fd = open((char *)(p + 12), O_RDONLY);
 		if (fd < 0)
-			return io_close(conn);
-		if (!read(fd, buf, MAX_TOR_COOKIE_LEN )) {
+			return io_tor_connect_close(conn);
+		if (!read(fd, buf, MAX_TOR_COOKIE_LEN)) {
 			close(fd);
-			return io_close(conn);
+			return io_tor_connect_close(conn);
 		} else
 			close(fd);
 
 		hex_encode(buf, 32, (char *)reach->cookie, 80);
 		reach->noauth = false;
 	} else
-		return io_close(conn);
+		return io_tor_connect_close(conn);
 
 	return io_tor_connect_authenticate(conn, reach);
 
@@ -197,7 +207,8 @@ static struct io_plan *tor_conn_init(struct io_conn *conn,
 				     struct lightningd *ld)
 {
 	struct addrinfo *ai_tor = tal(ld, struct addrinfo);
-	struct tor_service_reaching *reach = tal(ld, struct tor_service_reaching);
+	struct tor_service_reaching *reach =
+	    tal(ld, struct tor_service_reaching);
 
 	reach->ld = ld;
 
@@ -217,9 +228,10 @@ bool create_tor_hidden_service_conn(struct lightningd * ld)
 
 	fd = socket(AF_INET, SOCK_STREAM, 0);
 	conn = io_new_conn(NULL, fd, &tor_conn_init, ld);
-	//FIXME: SAIBATO maybe return false and handle this
-	if (!conn)
+	if (!conn) {
+		return_from_service_call = true;
 		err(1, "Cannot create new TOR connection");
+	}
 	return true;
 }
 
