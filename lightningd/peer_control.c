@@ -31,6 +31,7 @@
 #include <lightningd/closing_control.h>
 #include <lightningd/connect_control.h>
 #include <lightningd/hsm_control.h>
+#include <lightningd/json.h>
 #include <lightningd/jsonrpc.h>
 #include <lightningd/log.h>
 #include <lightningd/netaddress.h>
@@ -635,6 +636,7 @@ static void gossipd_getpeers_complete(struct subd *gossip, const u8 *msg,
 		json_add_uncommitted_channel(response, p->uncommitted_channel);
 
 		list_for_each(&p->channels, channel, list) {
+			struct channel_id cid;
 			json_object_start(response, NULL);
 			json_add_string(response, "state",
 					channel_state_name(channel));
@@ -645,6 +647,13 @@ static void gossipd_getpeers_complete(struct subd *gossip, const u8 *msg,
 				json_add_short_channel_id(response,
 							  "short_channel_id",
 							  channel->scid);
+			derive_channel_id(&cid,
+					  &channel->funding_txid,
+					  channel->funding_outnum);
+			json_add_string(response, "channel_id",
+					type_to_string(tmpctx,
+						       struct channel_id,
+						       &cid));
 			json_add_txid(response,
 				      "funding_txid",
 				      &channel->funding_txid);
