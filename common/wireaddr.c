@@ -103,10 +103,10 @@ char *fmt_wireaddr_without_port(const tal_t * ctx, const struct wireaddr *a)
 			return "Unprintable-ipv6-address";
 		return tal_fmt(ctx, "[%s]", addrstr);
 	case ADDR_TYPE_TOR_V2:
-		return tal_fmt(ctx, "%s.onion",
+		return tal_fmt(ctx, "%.16s.onion",
 			       b32_encode(addrstr, (u8 *) a->addr, 2));
 	case ADDR_TYPE_TOR_V3:
-		return tal_fmt(ctx, "%s.onion",
+		return tal_fmt(ctx, "%.56s.onion",
 			       b32_encode(addrstr, (u8 *) a->addr, 3));
 	case ADDR_TYPE_PADDING:
 		break;

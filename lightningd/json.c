@@ -131,11 +131,11 @@ void json_add_address(struct json_result *response, const char *fieldname,
 		json_add_num(response, "port", addr->port);
 	} else if (addr->type == ADDR_TYPE_TOR_V2) {
 		json_add_string(response, "type", "torv2");
-		json_add_string(response, "address", tal_fmt(tmpctx, "%.22s", fmt_wireaddr_without_port(tmpctx, addr)));
+		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
 		json_add_num(response, "port", addr->port);
 	} else if (addr->type == ADDR_TYPE_TOR_V3) {
 		json_add_string(response, "type", "torv3");
-		json_add_string(response, "address", tal_fmt(tmpctx, "%.62s", fmt_wireaddr_without_port(tmpctx, addr)));
+		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
 		json_add_num(response, "port", addr->port);
 	}
 	json_object_end(response);
