@@ -366,30 +366,30 @@ static struct io_plan *io_tor_connect(struct io_conn *conn,
 	struct reaching_socks *reach_tor = tal(reach, struct reaching_socks);
 
 	reach_tor->port = htons(reach->addr.port);
-	port_addr = tal_fmt(tmpctx, "%u", reach->daemon->tor_proxyaddrs->port);
+	port_addr = tal_fmt(reach, "%u", reach->daemon->tor_proxyaddrs->port);
 	getaddrinfo((char *)
 		    fmt_wireaddr_without_port(tmpctx,
 					      reach->daemon->tor_proxyaddrs),
 		    port_addr, NULL, &ai_tor);
 	status_trace("Tor proxyaddr : %s",
-		     fmt_wireaddr(tmpctx, reach->daemon->tor_proxyaddrs));
-	reach_tor->host = tal_strdup(tmpctx, "");
+		     fmt_wireaddr(reach, reach->daemon->tor_proxyaddrs));
+	reach_tor->host = tal_strdup(reach, "");
 
 	if ((reach->addr.type) == ADDR_TYPE_TOR_V3)
 		reach_tor->host =
-		    tal_fmt(tmpctx, "%.62s",
+		    tal_fmt(reach, "%.62s",
 			    fmt_wireaddr_without_port(tmpctx, &reach->addr));
 	else if ((reach->addr.type) == ADDR_TYPE_TOR_V2)
 		reach_tor->host =
-		    tal_fmt(tmpctx, "%.22s",
+		    tal_fmt(reach, "%.22s",
 			    fmt_wireaddr_without_port(tmpctx, &reach->addr));
 	else if ((reach->addr.type) == ADDR_TYPE_IPV4)
 		reach_tor->host =
-		    tal_fmt(tmpctx, "%s",
+		    tal_fmt(reach, "%s",
 			    fmt_wireaddr_without_port(tmpctx, &reach->addr));
 	else if ((reach->addr.type) == ADDR_TYPE_IPV6)
 		reach_tor->host =
-		    tal_fmt(tmpctx, "%s",
+		    tal_fmt(reach, "%s",
 			    fmt_wireaddr_without_port(tmpctx, &reach->addr));
 	/* don't be anoining */
 	reach->max_attempts = 1;
