@@ -11,6 +11,7 @@
 #include <wallet/txfilter.h>
 #include <wallet/wallet.h>
 
+
 /* BOLT #1:
  *
  * The default TCP port is 9735. This corresponds to hexadecimal
@@ -71,6 +72,13 @@ struct config {
 
 	/* Do we let the funder set any fee rate they want */
 	bool ignore_fee_limits;
+
+	/* tor support */
+	bool tor_enable_auto_hidden_service;
+
+	/* ipv6 bind disable */
+	bool no_ipv6_bind;
+
 };
 
 struct lightningd {
@@ -173,6 +181,12 @@ struct lightningd {
 	/* Things we've marked as not leaking. */
 	const void **notleaks;
 #endif /* DEVELOPER */
+
+	/* tor support */
+	struct wireaddr *tor_proxyaddrs;
+	struct wireaddr *tor_serviceaddrs;
+	char *tor_service_password;
+	bool use_tor_proxy_always;
 };
 
 const struct chainparams *get_chainparams(const struct lightningd *ld);

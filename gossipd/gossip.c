@@ -23,6 +23,7 @@
 #include <common/status.h>
 #include <common/subdaemon.h>
 #include <common/timeout.h>
+#include <common/tor.h>
 #include <common/type_to_string.h>
 #include <common/utils.h>
 #include <common/version.h>
@@ -49,6 +50,176 @@
 #include <wire/gen_peer_wire.h>
 #include <wire/wire_io.h>
 #include <wire/wire_sync.h>
+
+#define GOSSIP_MAX_REACH_ATTEMPTS 10
+
+#define SOCKS_NOAUTH		0
+#define SOCKS_ERROR 	 0xff
+#define SOCKS_CONNECT		1
+#define SOCKS_TYP_IPV4		1
+#define SOCKS_DOMAIN		3
+#define SOCKS_TYP_IPV6		4
+#define SOCKS_V5            5
+
+#define MAX_SIZE_OF_SOCKS5_REQ_OR_RESP 255
+#define SIZE_OF_RESPONSE 		4
+#define SIZE_OF_REQUEST 		3
+#define SIZE_OF_IPV4_RESPONSE 	6
+#define SIZE_OF_IPV6_RESPONSE 	18
+#define SOCK_REQ_METH_LEN		3
+#define SOCK_REQ_V5_LEN			5
+#define SOCK_REQ_V5_HEADER_LEN	7
+
+/* some crufts can not forward ipv6*/
+#undef BIND_FIRST_TO_IPV6
+
+struct reaching_socks {
+
+	u8 buffer[MAX_SIZE_OF_SOCKS5_REQ_OR_RESP];
+	size_t hlen;
+	in_port_t port;
+	char *host;
+	struct reaching *reach;
+};
+
+static struct io_plan *connect_finish(struct io_conn *,
+				      struct reaching_socks *);
+
+static struct io_plan *connect_finish2(struct io_conn *,
+				       struct reaching_socks *);
+
+static struct io_plan *connect_out(struct io_conn *, struct reaching_socks *);
+
+static struct io_plan *io_tor_connect_after_req_to_connect(struct io_conn *,
+							   struct reaching_socks
+							   *);
+static struct io_plan *io_tor_connect_after_req_host(struct io_conn *,
+						     struct reaching_socks *);
+
+static struct io_plan *io_tor_connect_do_req(struct io_conn *,
+					     struct reaching_socks *);
+
+static struct io_plan *connect_out(struct io_conn *, struct reaching_socks *);
+
+static struct io_plan *io_tor_connect_do_req(struct io_conn *,
+					     struct reaching_socks *);
+
+static struct io_plan *io_tor_connect_after_resp_to_connect(struct io_conn
+							    *conn,
+							    struct
+							    reaching_socks *);
+
+static struct io_plan *io_tor_connect(struct io_conn *, struct reaching *);
+
+static struct io_plan *io_tor_connect_after_resp_to_connect(struct io_conn
+							    *conn,
+							    struct
+							    reaching_socks
+							    *reach)
+{
+	if (reach->buffer[1] == SOCKS_ERROR) {
+		status_trace("Connected out for %s error", reach->host);
+		return io_close(conn);
+	}
+	/* make the V5 request */
+	reach->hlen = strlen(reach->host);
+	reach->buffer[0] = SOCKS_V5;
+	reach->buffer[1] = SOCKS_CONNECT;
+	reach->buffer[2] = 0;
+	reach->buffer[3] = SOCKS_DOMAIN;
+	reach->buffer[4] = reach->hlen;
+
+	memcpy(reach->buffer + SOCK_REQ_V5_LEN, reach->host, reach->hlen);
+	memcpy(reach->buffer + SOCK_REQ_V5_LEN + strlen(reach->host),
+	       &(reach->port), sizeof reach->port);
+
+	return io_write(conn, reach->buffer,
+			SOCK_REQ_V5_HEADER_LEN + reach->hlen,
+			io_tor_connect_after_req_host, reach);
+}
+
+static struct io_plan *io_tor_connect_after_req_to_connect(struct io_conn *conn,
+							   struct reaching_socks
+							   *reach)
+{
+
+	return io_read(conn, reach->buffer, 2,
+		       &io_tor_connect_after_resp_to_connect, reach);
+}
+
+static struct io_plan *io_tor_connect_do_req(struct io_conn *conn,
+					     struct reaching_socks *reach)
+{
+	/* make the init request */
+	reach->buffer[0] = SOCKS_V5;
+	reach->buffer[1] = 1;
+	reach->buffer[2] = SOCKS_NOAUTH;
+
+	return io_write(conn, reach->buffer, SOCK_REQ_METH_LEN,
+			&io_tor_connect_after_req_to_connect, reach);
+}
+
+static struct io_plan *connection_out(struct io_conn *conn,
+				      struct reaching *reach);
+
+static struct io_plan *connect_finish2(struct io_conn *conn,
+				       struct reaching_socks *reach)
+{
+	status_trace("Now try LN connect out for host %s", reach->host);
+	return connection_out(conn, reach->reach);
+}
+
+static struct io_plan *connect_finish(struct io_conn *conn,
+				      struct reaching_socks *reach)
+{
+
+	if ( reach->buffer[1] == '\0') {
+		if ( reach->buffer[3] == SOCKS_TYP_IPV6) {
+			return io_read(conn,
+				       (reach->buffer + SIZE_OF_RESPONSE -
+					SIZE_OF_IPV4_RESPONSE),
+				       SIZE_OF_IPV6_RESPONSE -
+				       SIZE_OF_RESPONSE - SIZE_OF_IPV4_RESPONSE,
+				       &connect_finish2, reach);
+
+		} else if ( reach->buffer[3] == SOCKS_TYP_IPV4) {
+			status_trace("Now try LN connect out for host %s",
+				     reach->host);
+			return connection_out(conn, reach->reach);
+		} else {
+			status_trace
+			    ("Tor connect out for host %s error invalid type return ",
+			     reach->host);
+			return io_close(conn);
+		};
+	} else {
+		status_trace("Tor connect out for host %s error: %x ",
+			     reach->host, reach->buffer[1]);
+		return io_close(conn);
+	}
+}
+
+static struct io_plan *connect_out(struct io_conn *conn,
+				   struct reaching_socks *reach)
+{
+	return io_read(conn, reach->buffer,
+		       SIZE_OF_IPV4_RESPONSE + SIZE_OF_RESPONSE,
+		       &connect_finish, reach);
+
+}
+
+/* called when TOR responds */
+static struct io_plan *io_tor_connect_after_req_host(struct io_conn *conn,
+						     struct reaching_socks
+						     *reach)
+{
+	if (reach->buffer[0] == '0') {
+		status_trace("Connected out over tor for %s failed",
+			     reach->host);
+		return io_close(conn);
+	}
+	return connect_out(conn, reach);
+}
 
 #define HSM_FD 3
 
@@ -84,6 +255,10 @@ struct daemon {
 
 	/* To make sure our node_announcement timestamps increase */
 	u32 last_announce_timestamp;
+
+	struct wireaddr *tor_proxyaddrs;
+	bool use_tor_proxy_always;
+
 };
 
 /* Peers we're trying to reach. */
@@ -177,9 +352,53 @@ struct addrhint {
 /* FIXME: Reorder */
 static struct io_plan *peer_start_gossip(struct io_conn *conn,
 					 struct peer *peer);
-static bool send_peer_with_fds(struct peer *peer, const u8 *msg);
+static bool send_peer_with_fds(struct peer *peer, const u8 * msg);
 static void wake_pkt_out(struct peer *peer);
 static bool try_reach_peer(struct daemon *daemon, const struct pubkey *id);
+
+// called when we want to connect to TOR SOCKS5
+static struct io_plan *io_tor_connect(struct io_conn *conn,
+				      struct reaching *reach)
+{
+	struct addrinfo *ai_tor = tal(reach, struct addrinfo);
+	char *port_addr = tal(reach, char);
+	struct io_plan *plan;
+	struct reaching_socks *reach_tor = tal(reach, struct reaching_socks);
+
+	reach_tor->port = htons(reach->addr.port);
+	port_addr = tal_fmt(reach, "%u", reach->daemon->tor_proxyaddrs->port);
+	getaddrinfo((char *)
+		    fmt_wireaddr_without_port(tmpctx,
+					      reach->daemon->tor_proxyaddrs),
+		    port_addr, NULL, &ai_tor);
+	status_trace("Tor proxyaddr : %s",
+		     fmt_wireaddr(reach, reach->daemon->tor_proxyaddrs));
+	reach_tor->host = tal_strdup(reach, "");
+
+	if ((reach->addr.type) == ADDR_TYPE_TOR_V3)
+		reach_tor->host =
+		    tal_fmt(reach, "%.62s",
+			    fmt_wireaddr_without_port(tmpctx, &reach->addr));
+	else if ((reach->addr.type) == ADDR_TYPE_TOR_V2)
+		reach_tor->host =
+		    tal_fmt(reach, "%.22s",
+			    fmt_wireaddr_without_port(tmpctx, &reach->addr));
+	else if ((reach->addr.type) == ADDR_TYPE_IPV4)
+		reach_tor->host =
+		    tal_fmt(reach, "%s",
+			    fmt_wireaddr_without_port(tmpctx, &reach->addr));
+	else if ((reach->addr.type) == ADDR_TYPE_IPV6)
+		reach_tor->host =
+		    tal_fmt(reach, "%s",
+			    fmt_wireaddr_without_port(tmpctx, &reach->addr));
+	/* don't be anoining */
+	reach->max_attempts = 1;
+	reach_tor->reach = reach;
+
+	plan = io_connect(conn, ai_tor, &io_tor_connect_do_req, reach_tor);
+
+	return plan;
+}
 
 static void destroy_peer(struct peer *peer)
 {
@@ -1472,6 +1691,10 @@ static void setup_listeners(struct daemon *daemon, u16 portnum)
 	addr6.sin6_addr = in6addr_any;
 	addr6.sin6_port = htons(portnum);
 
+	fd1=-1;
+	fd2=-1;
+
+#ifdef BIND_FIRST_TO_IPV6
 	/* IPv6, since on Linux that (usually) binds to IPv4 too. */
 	fd1 = make_listen_fd(AF_INET6, &addr6, sizeof(addr6), true);
 	if (fd1 >= 0) {
@@ -1491,7 +1714,7 @@ static void setup_listeners(struct daemon *daemon, u16 portnum)
 			io_new_listener(daemon, fd1, connection_in, daemon);
 		}
 	}
-
+#endif
 	/* Just in case, aim for the same port... */
 	fd2 = make_listen_fd(AF_INET, &addr, sizeof(addr), false);
 	if (fd2 >= 0) {
@@ -1526,12 +1749,13 @@ static struct io_plan *gossip_init(struct daemon_conn *master,
 	struct bitcoin_blkid chain_hash;
 	u16 port;
 	u32 update_channel_interval;
+	daemon->tor_proxyaddrs = tal_arrz(daemon, struct wireaddr,1);
 
 	if (!fromwire_gossipctl_init(
 		daemon, msg, &daemon->broadcast_interval, &chain_hash,
 		&daemon->id, &port, &daemon->globalfeatures,
 		&daemon->localfeatures, &daemon->wireaddrs, daemon->rgb,
-		daemon->alias, &update_channel_interval)) {
+		daemon->alias, &update_channel_interval, daemon->tor_proxyaddrs, &daemon->use_tor_proxy_always)) {
 		master_badmsg(WIRE_GOSSIPCTL_INIT, msg);
 	}
 	/* Prune time is twice update time */
@@ -1644,6 +1868,14 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		memcpy(&sin.sin_addr, reach->addr.addr, sizeof(sin.sin_addr));
 		ai.ai_addrlen = sizeof(sin);
 		ai.ai_addr = (struct sockaddr *)&sin;
+		io_set_finish(conn, connect_failed, reach);
+
+		if (reach->daemon->tor_proxyaddrs->port > 0)
+		/* We dont use tor proxy if we only have ip */
+ 				if (reach->daemon->use_tor_proxy_always || do_we_use_tor_addr(reach->daemon->wireaddrs))
+								return io_tor_connect(conn, reach);
+
+		return io_connect(conn, &ai, connection_out, reach);
 		break;
 	case ADDR_TYPE_IPV6:
 		ai.ai_family = AF_INET6;
@@ -1653,14 +1885,28 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		memcpy(&sin6.sin6_addr, reach->addr.addr, sizeof(sin6.sin6_addr));
 		ai.ai_addrlen = sizeof(sin6);
 		ai.ai_addr = (struct sockaddr *)&sin6;
+
+		io_set_finish(conn, connect_failed, reach);
+				if (reach->daemon->tor_proxyaddrs->port > 0)
+		/* We dont use tor proxy if we only have ip */
+				if (reach->daemon->use_tor_proxy_always || do_we_use_tor_addr(reach->daemon->wireaddrs))
+								return io_tor_connect(conn, reach);
+
+		return io_connect(conn, &ai, connection_out, reach);
+		break;
+	case ADDR_TYPE_TOR_V2:
+		io_set_finish(conn, connect_failed, reach);
+		return io_tor_connect(conn, reach);
+		break;
+	case ADDR_TYPE_TOR_V3:
+		io_set_finish(conn, connect_failed, reach);
+		return io_tor_connect(conn, reach);
 		break;
 	case ADDR_TYPE_PADDING:
 		/* Shouldn't happen. */
 		return io_close(conn);
 	}
-
-	io_set_finish(conn, connect_failed, reach);
-	return io_connect(conn, &ai, connection_out, reach);
+return io_close(conn);
 }
 
 static void try_connect(struct reaching *reach)
@@ -1672,7 +1918,8 @@ static void try_connect(struct reaching *reach)
 	if (find_peer(reach->daemon, &reach->id)) {
 		status_trace("Already reached %s, not retrying",
 			     type_to_string(tmpctx, struct pubkey, &reach->id));
-		tal_free(reach);
+		/* FIXME: SAIBATO we should not free this here its the orig not a dup ? */
+		/* tal_free(reach); */
 		return;
 	}
 
@@ -1698,6 +1945,12 @@ static void try_connect(struct reaching *reach)
 		break;
 	case ADDR_TYPE_IPV6:
 		fd = socket(AF_INET6, SOCK_STREAM, 0);
+		break;
+	case ADDR_TYPE_TOR_V2:
+		fd = socket(AF_INET, SOCK_STREAM, 0);
+		break;
+	case ADDR_TYPE_TOR_V3:
+		fd = socket(AF_INET, SOCK_STREAM, 0);
 		break;
 	default:
 		fd = -1;
@@ -1747,7 +2000,7 @@ static bool try_reach_peer(struct daemon *daemon, const struct pubkey *id)
 	reach->id = *id;
 	reach->first_attempt = time_now().ts.tv_sec;
 	reach->attempts = 0;
-	reach->max_attempts = 10;
+	reach->max_attempts = GOSSIP_MAX_REACH_ATTEMPTS;
 	list_add_tail(&daemon->reaching, &reach->list);
 	tal_add_destructor(reach, destroy_reaching);
 

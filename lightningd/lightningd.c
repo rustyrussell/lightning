@@ -21,6 +21,7 @@
 #include <common/io_debug.h>
 #include <common/memleak.h>
 #include <common/timeout.h>
+#include <common/tor.h>
 #include <common/utils.h>
 #include <common/version.h>
 #include <common/wireaddr.h>
@@ -78,7 +79,10 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	ld->pidfile = NULL;
 	ld->ini_autocleaninvoice_cycle = 0;
 	ld->ini_autocleaninvoice_expiredby = 86400;
-
+	ld->tor_service_password = tal_arrz(ld, char, 32);
+	ld->tor_proxyaddrs = tal_arrz(ld, struct wireaddr,1);
+	ld->tor_serviceaddrs = tal_arrz(ld, struct wireaddr,1);
+	ld->use_tor_proxy_always = false;
 	return ld;
 }
 
@@ -311,6 +315,13 @@ int main(int argc, char *argv[])
 	/* Ignore SIGPIPE: we look at our write return values*/
 	signal(SIGPIPE, SIG_IGN);
 
+	/* tor support */
+	if (ld->config.tor_enable_auto_hidden_service) {
+		create_tor_hidden_service_conn(ld);
+					while (!check_return_from_service_call())
+					io_loop(NULL, NULL);
+	}
+
 	/* Make sure we can reach other daemons, and versions match. */
 	test_daemons(ld);
 
@@ -392,6 +403,11 @@ int main(int argc, char *argv[])
 	log_info(ld->log, "Server started with public key %s, alias %s (color #%s) and lightningd %s",
 		 type_to_string(tmpctx, struct pubkey, &ld->id),
 		 ld->alias, tal_hex(tmpctx, ld->rgb), version());
+
+	/* Show some info about our addresses */
+	size_t n = tal_count(ld->wireaddrs);
+	for (int i = 0; i < n; i++)
+		log_info(ld->log, "Wireaddr[%d] = %s", i, fmt_wireaddr(tmpctx, &(ld->wireaddrs[i])));
 
 	/* Start the peers. */
 	activate_peers(ld);

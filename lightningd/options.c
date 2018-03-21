@@ -11,6 +11,7 @@
 #include <ccan/tal/str/str.h>
 #include <common/configdir.h>
 #include <common/memleak.h>
+#include <common/tor.h>
 #include <common/version.h>
 #include <common/wireaddr.h>
 #include <errno.h>
@@ -253,6 +254,48 @@ static char *opt_set_offline(struct lightningd *ld)
 	return NULL;
 }
 
+static char *opt_add_torproxy_addr(const char *arg, struct lightningd *ld)
+{
+
+	if (!parse_wireaddr(arg, ld->tor_proxyaddrs,9050,NULL)) {
+	return tal_fmt(NULL, "Unable to parse Tor proxy address '%s'", arg);
+	}
+	return NULL;
+}
+
+static char *opt_add_tor_service_addr(const char *arg, struct lightningd *ld)
+{
+
+	if (!parse_wireaddr(arg, ld->tor_serviceaddrs,9051,NULL)) {
+	return tal_fmt(NULL, "Unable to parse Tor service address '%s'", arg);
+	}
+	return NULL;
+}
+
+
+static char *opt_add_tor_addr(const char *arg, struct lightningd *ld)
+{
+	size_t n = tal_count(ld->wireaddrs);
+	char const *err_msg;
+
+	assert(arg != NULL);
+
+	tal_resize(&ld->wireaddrs, n+1);
+
+	if (!parse_wireaddr(arg, &ld->wireaddrs[n], ld->portnum, &err_msg)) {
+		return tal_fmt(NULL, "Unable to parse TOR address '%s': %s", arg, err_msg);
+	}
+	return NULL;
+}
+
+
+static char *opt_add_tor_service_password(const char *arg, struct lightningd *ld)
+{
+	ld->tor_service_password = tal_fmt(ld, "%.30s", arg);
+	return NULL;
+}
+
+
 static void config_register_opts(struct lightningd *ld)
 {
 	opt_register_noarg("--daemon", opt_set_bool, &ld->daemon,
@@ -313,7 +356,7 @@ static void config_register_opts(struct lightningd *ld)
 			 "Microsatoshi fee for every satoshi in HTLC");
 	opt_register_arg("--ipaddr", opt_add_ipaddr, NULL,
 			 ld,
-			 "Set the IP address (v4 or v6) to announce to the network for incoming connections");
+			 "Set the IP address (v4 or v6) or .onion V2/V3 to announce to the network for incoming connections");
 	opt_register_noarg("--offline", opt_set_offline, ld,
 			   "Start in offline-mode (do not automatically reconnect and do not accept incoming connections");
 
@@ -336,6 +379,18 @@ static void config_register_opts(struct lightningd *ld)
 			 opt_set_u64, opt_show_u64,
 			 &ld->ini_autocleaninvoice_cycle,
 			 "If expired invoice autoclean enabled, invoices that have expired for at least this given seconds are cleaned");
+	opt_register_arg("--proxy", opt_add_torproxy_addr, NULL,
+			ld,"Set a socks v5 proxy IP address and port");
+	opt_register_arg("--tor-service",opt_add_tor_service_addr, NULL,
+			ld,"Set a tor service api IP address and port");
+	opt_register_arg("--tor-external", opt_add_tor_addr, NULL,
+			ld,"Set a Tor onion address and port");
+	opt_register_arg("--tor-service-password", opt_add_tor_service_password, NULL,
+			ld,"Set a Tor hidden service password");
+	opt_register_arg("--tor-auto-listen", opt_set_bool_arg, opt_show_bool,
+			&ld->config.tor_enable_auto_hidden_service , "Generate and use a temp auto hidden-service and show the onion address");
+	opt_register_arg("--always-use-tor-proxy", opt_set_bool_arg, opt_show_bool,
+			&ld->use_tor_proxy_always , "Use the Tor proxy always");
 }
 
 #if DEVELOPER
@@ -419,6 +474,9 @@ static const struct config testnet_config = {
 
 	/* Testnet sucks */
 	.ignore_fee_limits = true,
+
+	/* tor support */
+	.tor_enable_auto_hidden_service = false
 };
 
 /* aka. "Dude, where's my coins?" */
@@ -480,6 +538,9 @@ static const struct config mainnet_config = {
 
 	/* Mainnet should have more stable fees */
 	.ignore_fee_limits = false,
+
+	/* tor support */
+	.tor_enable_auto_hidden_service = false
 };
 
 static void check_config(struct lightningd *ld)
@@ -854,19 +915,32 @@ static void add_config(struct lightningd *ld,
 						 topo->override_fee_rate[0],
 						 topo->override_fee_rate[1],
 						 topo->override_fee_rate[2]);
-		} else if (opt->cb_arg == (void *)opt_add_ipaddr) {
+		} else if (
+		(opt->cb_arg == (void *)opt_add_ipaddr)
+		|| (opt->cb_arg == (void *)opt_add_tor_addr)) {
 			/* This is a bit weird, we can have multiple args */
 			for (size_t i = 0; i < tal_count(ld->wireaddrs); i++) {
 				json_add_string(response,
 						name0,
 						fmt_wireaddr(name0,
-							     ld->wireaddrs+i));
+								 ld->wireaddrs+i));
 			}
 			return;
 #if DEVELOPER
 		} else if (strstarts(name, "dev-")) {
 			/* Ignore dev settings */
 #endif
+		} else if (opt->cb_arg == (void *)opt_add_torproxy_addr)
+		{
+			answer = fmt_wireaddr(name0,
+								ld->tor_proxyaddrs);
+		} else if (opt->cb_arg == (void *)opt_add_tor_service_addr)
+		{
+			answer = fmt_wireaddr(name0,
+								ld->tor_serviceaddrs);
+		} else if (opt->cb_arg == (void *)opt_add_tor_service_password)
+		{
+			answer = tal_fmt(name0,"%s", ld->tor_service_password);
 		} else {
 			/* Insert more decodes here! */
 			abort();
