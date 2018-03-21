@@ -23,8 +23,8 @@
  *             where `checksum = sha3(".onion checksum" | pubkey || version)[:2]`
  */
 
-#define	TOR_V2_ADDRLEN 16
-#define	TOR_V3_ADDRLEN 42
+#define	TOR_V2_ADDRLEN 12
+#define	TOR_V3_ADDRLEN 37
 #define	FQDN_ADDRLEN 255
 
 enum wire_addr_type {
