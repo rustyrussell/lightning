@@ -253,7 +253,10 @@ check-python:
 	@# E731 do not assign a lambda expression, use a def
 	@git ls-files "*.py" | xargs flake8 --ignore=E501,E731 --exclude=contrib/pylightning/lightning/__init__.py
 
-check-source: check-makefile check-source-bolt check-whitespace check-markdown check-spelling check-python
+check-cppcheck:
+	@git ls-files -- "*.c" "*.h" | grep -vE '^ccan/' | xargs cppcheck -q --language=c --std=c11 --error-exitcode=1
+
+check-source: check-makefile check-source-bolt check-whitespace check-markdown check-spelling check-python check-cppcheck
 
 full-check: check check-source
 
