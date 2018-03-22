@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
 	const tal_t *ctx = tal(NULL, char);
 	const char *method;
 	struct bolt11 *b11;
-	struct bolt11_field *extra;
+	struct bolt11_field *extra = NULL;
 	size_t i;
 	char *fail, *description = NULL;
 

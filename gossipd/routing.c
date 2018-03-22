@@ -576,7 +576,7 @@ static struct pending_cannouncement *
 find_pending_cannouncement(struct routing_state *rstate,
 			   const struct short_channel_id *scid)
 {
-	struct pending_cannouncement *i;
+	struct pending_cannouncement *i = NULL;
 
 	list_for_each(&rstate->pending_cannouncement, i, list) {
 		if (structeq(scid, &i->short_channel_id))

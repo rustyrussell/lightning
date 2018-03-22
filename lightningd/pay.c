@@ -79,8 +79,8 @@ static void waitsendpay_resolve(const tal_t *ctx,
 				const struct sha256 *payment_hash,
 				const struct sendpay_result *result)
 {
-	struct sendpay_command *pc;
-	struct sendpay_command *next;
+	struct sendpay_command *pc = NULL;
+	struct sendpay_command *next = NULL;
 	list_for_each_safe(&ld->waitsendpay_commands, pc, next, list) {
 		if (!structeq(payment_hash, &pc->payment_hash))
 			continue;
@@ -393,8 +393,8 @@ static void report_routing_failure(struct log *log,
 void payment_store(struct lightningd *ld,
 		   const struct sha256 *payment_hash)
 {
-	struct sendpay_command *pc;
-	struct sendpay_command *next;
+	struct sendpay_command *pc = NULL;
+	struct sendpay_command *next = NULL;
 	struct sendpay_result *result;
 	const struct wallet_payment *payment;
 

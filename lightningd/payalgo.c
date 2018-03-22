@@ -80,7 +80,7 @@ static void
 json_add_failures(struct json_result *r, char const *n,
 		  const struct list_head *fs)
 {
-	struct pay_failure *f;
+	struct pay_failure *f = NULL;
 	json_array_start(r, n);
 	list_for_each(fs, f, list) {
 		json_add_failure(r, NULL, f);

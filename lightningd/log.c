@@ -98,7 +98,7 @@ static size_t mem_used(const struct log_entry *e)
 
 static size_t prune_log(struct log_book *log)
 {
-	struct log_entry *i, *next, *tail;
+	struct log_entry *i = NULL, *next = NULL, *tail = NULL;
 	size_t skipped = 0, deleted = 0;
 
 	/* Never delete the last one. */
@@ -329,7 +329,7 @@ void log_each_line_(const struct log_book *lr,
 				 void *arg),
 		    void *arg)
 {
-	const struct log_entry *i;
+	const struct log_entry *i = NULL;
 
 	list_for_each(&lr->log, i, list) {
 		func(i->skipped, time_between(i->time, lr->init_time),

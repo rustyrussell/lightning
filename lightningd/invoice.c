@@ -675,7 +675,7 @@ static void json_decodepay(struct command *cmd,
         }
 
         if (!list_empty(&b11->extra_fields)) {
-                struct bolt11_field *extra;
+                struct bolt11_field *extra = NULL;
 
                 json_array_start(response, "extra");
                 list_for_each(&b11->extra_fields, extra, list) {

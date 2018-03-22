@@ -400,7 +400,7 @@ send_error:
 static struct channel *channel_by_channel_id(struct peer *peer,
 					     const struct channel_id *channel_id)
 {
-	struct channel *channel;
+	struct channel *channel = NULL;
 
 	list_for_each(&peer->channels, channel, list) {
 		struct channel_id cid;
@@ -588,7 +588,7 @@ static void gossipd_getpeers_complete(struct subd *gossip, const u8 *msg,
 	struct wireaddr *addrs;
 	struct gossip_getnodes_entry **nodes;
 	struct json_result *response = new_json_result(gpa->cmd);
-	struct peer *p;
+	struct peer *p = NULL;
 
 	if (!fromwire_gossip_getpeers_reply(msg, msg, &ids, &addrs, &nodes)) {
 		command_fail(gpa->cmd, "Bad response from gossipd");
@@ -1107,7 +1107,7 @@ static void json_dev_forget_channel(struct command *cmd, const char *buffer,
 {
 	jsmntok_t *nodeidtok, *forcetok, *scidtok;
 	struct peer *peer;
-	struct channel *channel;
+	struct channel *channel = NULL;
 	struct short_channel_id scid;
 	struct dev_forget_channel_cmd *forget = tal(cmd, struct dev_forget_channel_cmd);
 	forget->cmd = cmd;

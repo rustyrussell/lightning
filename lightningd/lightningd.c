@@ -352,9 +352,9 @@ int main(int argc, char *argv[])
 		fatal("Could not load channels from the database");
 
 	/* TODO(cdecker) Move this into common location for initialization */
-	struct peer *peer;
+	struct peer *peer = NULL;
 	list_for_each(&ld->peers, peer, list) {
-		struct channel *channel;
+		struct channel *channel = NULL;
 
 		list_for_each(&peer->channels, channel, list) {
 			if (!wallet_htlcs_load_for_channel(ld->wallet,

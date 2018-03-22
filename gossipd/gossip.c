@@ -206,7 +206,7 @@ static void destroy_addrhint(struct addrhint *a)
 static struct addrhint *find_addrhint(struct daemon *daemon,
 				      const struct pubkey *id)
 {
-	struct addrhint *a;
+	struct addrhint *a = NULL;
 
 	list_for_each(&daemon->addrhints, a, list) {
 		if (pubkey_eq(&a->id, id))
@@ -1794,7 +1794,7 @@ static struct io_plan *addr_hint(struct io_conn *conn,
 static struct io_plan *get_peers(struct io_conn *conn,
 				 struct daemon *daemon, const u8 *msg)
 {
-	struct peer *peer;
+	struct peer *peer = NULL;
 	size_t n = 0;
 	struct pubkey *id = tal_arr(conn, struct pubkey, n);
 	struct wireaddr *wireaddr = tal_arr(conn, struct wireaddr, n);

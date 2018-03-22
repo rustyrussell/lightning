@@ -1497,7 +1497,7 @@ void wallet_local_htlc_out_delete(struct wallet *wallet,
 static struct wallet_payment *
 find_unstored_payment(struct wallet *wallet, const struct sha256 *payment_hash)
 {
-	struct wallet_payment *i;
+	struct wallet_payment *i = NULL;
 
 	list_for_each(&wallet->unstored_payments, i, list) {
 		if (structeq(payment_hash, &i->payment_hash))
@@ -1843,7 +1843,7 @@ wallet_payment_list(const tal_t *ctx,
 {
 	const struct wallet_payment **payments;
 	sqlite3_stmt *stmt;
-	struct wallet_payment *p;
+	struct wallet_payment *p = NULL;
 	size_t i;
 
 	payments = tal_arr(ctx, const struct wallet_payment *, 0);
