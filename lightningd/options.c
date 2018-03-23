@@ -817,7 +817,11 @@ bool handle_opts(struct lightningd *ld, int argc, char *argv[])
 	check_config(ld);
 
 	if (ld->portnum && tal_count(ld->wireaddrs) == 0)
-		guess_addresses(ld);
+		/* Make sure local ip is not accedently used as wireaddr when tor_auto_listen is set */
+		if (!ld->config.tor_enable_auto_hidden_service)
+				guess_addresses(ld);
+		else
+			log_debug(ld->log, "Not guessing addresses Tor auto addr set");
 	else
 		log_debug(ld->log, "Not guessing addresses: %s",
 			  ld->portnum ? "manually set" : "port set to zero");

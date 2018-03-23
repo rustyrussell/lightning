@@ -211,7 +211,6 @@ bool parse_wireaddr(const char *arg, struct wireaddr * addr, u16 defport,
 
 	if (strends(ip, ".onion")) {
 		if (strlen(ip) < 25) {	//FIXME bool is_V2_or_V3_TOR(addr);
-			//odpzvneidqdf5hdq.onion
 			addr->type = ADDR_TYPE_TOR_V2;
 			addr->addrlen = TOR_V2_ADDRLEN;
 			addr->port = port;
@@ -219,7 +218,6 @@ bool parse_wireaddr(const char *arg, struct wireaddr * addr, u16 defport,
 			memcpy(&addr->addr, tor_dec_bytes, addr->addrlen);
 			res = true;
 		} else {
-			//4ruvswpqec5i2gogopxl4vm5bruzknbvbylov2awbo4rxiq4cimdldad.onion
 			addr->type = ADDR_TYPE_TOR_V3;
 			addr->addrlen = TOR_V3_ADDRLEN;
 			addr->port = port;
