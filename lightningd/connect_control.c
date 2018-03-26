@@ -35,7 +35,7 @@ static struct connect *new_connect(struct lightningd *ld,
 
 void connect_succeeded(struct lightningd *ld, const struct pubkey *id)
 {
-	struct connect *i = NULL, *next = NULL;
+	struct connect *i, *next;
 
 	/* Careful!  Completing command frees connect. */
 	list_for_each_safe(&ld->connects, i, next, list) {
@@ -55,7 +55,7 @@ void connect_succeeded(struct lightningd *ld, const struct pubkey *id)
 void connect_failed(struct lightningd *ld, const struct pubkey *id,
 		    const char *error)
 {
-	struct connect *i = NULL, *next = NULL;
+	struct connect *i, *next;
 
 	/* Careful!  Completing command frees connect. */
 	list_for_each_safe(&ld->connects, i, next, list) {

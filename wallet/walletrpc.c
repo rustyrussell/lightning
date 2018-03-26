@@ -374,7 +374,7 @@ static void json_listfunds(struct command *cmd, const char *buffer UNUSED,
 			   const jsmntok_t *params UNUSED)
 {
 	struct json_result *response = new_json_result(cmd);
-	struct peer *p = NULL;
+	struct peer *p;
 	struct utxo **utxos =
 	    wallet_get_utxos(cmd, cmd->ld->wallet, output_state_available);
 	json_object_start(response, NULL);
@@ -399,7 +399,7 @@ static void json_listfunds(struct command *cmd, const char *buffer UNUSED,
 	/* Add funds that are allocated to channels */
 	json_array_start(response, "channels");
 	list_for_each(&cmd->ld->peers, p, list) {
-		struct channel *c = NULL;
+		struct channel *c;
 		list_for_each(&p->channels, c, list) {
 			json_object_start(response, NULL);
 			json_add_pubkey(response, "peer_id", &p->id);

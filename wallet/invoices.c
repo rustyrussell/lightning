@@ -60,8 +60,8 @@ static void trigger_invoice_waiter_resolve(struct invoices *invoices,
 					   u64 id,
 					   const struct invoice *invoice)
 {
-	struct invoice_waiter *w = NULL;
-	struct invoice_waiter *n = NULL;
+	struct invoice_waiter *w;
+	struct invoice_waiter *n;
 
 	list_for_each_safe(&invoices->waiters, w, n, list) {
 		if (!w->any && w->id != id)
@@ -76,8 +76,8 @@ trigger_invoice_waiter_expire_or_delete(struct invoices *invoices,
 					u64 id,
 					const struct invoice *invoice)
 {
-	struct invoice_waiter *w = NULL;
-	struct invoice_waiter *n = NULL;
+	struct invoice_waiter *w;
+	struct invoice_waiter *n;
 
 	list_for_each_safe(&invoices->waiters, w, n, list) {
 		if (w->any || w->id != id)

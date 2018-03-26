@@ -232,7 +232,7 @@ const char *channel_state_str(enum channel_state state)
 
 struct channel *peer_active_channel(struct peer *peer)
 {
-	struct channel *channel = NULL;
+	struct channel *channel;
 
 	list_for_each(&peer->channels, channel, list) {
 		if (channel_active(channel))

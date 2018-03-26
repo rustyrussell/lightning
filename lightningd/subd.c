@@ -106,7 +106,7 @@ static void add_req(const tal_t *ctx,
 /* Caller must free. */
 static struct subd_req *get_req(struct subd *sd, int reply_type)
 {
-	struct subd_req *sr = NULL;
+	struct subd_req *sr;
 
 	list_for_each(&sd->reqs, sr, list) {
 		if (sr->type + SUBD_REPLY_OFFSET == reply_type)

@@ -1004,7 +1004,7 @@ static PRINTF_FMT(2,3) void *bad(const char *abortstr, const char *fmt, ...)
 
 struct bolt11 *bolt11_out_check(const struct bolt11 *b11, const char *abortstr)
 {
-        struct bolt11_field *extra = NULL;
+        struct bolt11_field *extra;
 
         /* BOLT #2:
          *

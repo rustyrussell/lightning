@@ -1569,7 +1569,7 @@ void notify_new_block(struct lightningd *ld, u32 height)
 
 void notify_feerate_change(struct lightningd *ld)
 {
-	struct peer *peer = NULL;
+	struct peer *peer;
 
 	/* FIXME: We should notify onchaind about NORMAL fee change in case
 	 * it's going to generate more txs. */

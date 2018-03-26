@@ -43,7 +43,7 @@ static void add_tx_to_block(struct block *b,
 static bool we_broadcast(const struct chain_topology *topo,
 			 const struct bitcoin_txid *txid)
 {
-	const struct outgoing_tx *otx = NULL;
+	const struct outgoing_tx *otx;
 
 	list_for_each(&topo->outgoing_txs, otx, list) {
 		if (structeq(&otx->txid, txid))
@@ -180,7 +180,7 @@ static void rebroadcast_txs(struct chain_topology *topo, struct command *cmd)
 	/* Copy txs now (peers may go away, and they own txs). */
 	size_t num_txs = 0;
 	struct txs_to_broadcast *txs;
-	struct outgoing_tx *otx = NULL;
+	struct outgoing_tx *otx;
 
 	txs = tal(topo, struct txs_to_broadcast);
 	txs->cmd = cmd;
