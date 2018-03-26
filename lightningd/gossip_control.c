@@ -262,22 +262,17 @@ static void json_listnodes(struct command *cmd, const char *buffer,
 			  const jsmntok_t *params)
 {
 	u8 *req;
-	jsmntok_t *idtok = NULL;
-	struct pubkey *id = NULL;
+	struct pubkey *id;
 
-	if (!json_get_params(cmd, buffer, params,
-			     "?id", &idtok,
-			     NULL)) {
+	if (!json_params(tmpctx, cmd, buffer, params,
+			 JSON_PARAM_OPT_PUBKEY("id", &id),
+			 NULL)) {
 		return;
 	}
 
-	if (idtok) {
-		id = tal_arr(cmd, struct pubkey, 1);
-		if (!json_tok_pubkey(buffer, idtok, id)) {
-			command_fail(cmd, "Invalid id");
-			return;
-		}
-	}
+	/* getnodes_request wants a tal_arr */
+	if (id)
+		id = tal_dup_arr(tmpctx, struct pubkey, id, 1, 0);
 
 	req = towire_gossip_getnodes_request(cmd, id);
 	subd_req(cmd, cmd->ld->gossip, req, -1, 0, json_getnodes_reply, cmd);
@@ -311,93 +306,83 @@ static void json_getroute_reply(struct subd *gossip UNUSED, const u8 *reply, con
 	command_success(cmd, response);
 }
 
+static const char *json_tok_siphash_seed(const tal_t *ctx,
+					 struct command *cmd,
+					 const char *buffer,
+					 const jsmntok_t *tok,
+					 struct siphash_seed **seed)
+{
+	if (!*seed)
+		*seed = tal(ctx, struct siphash_seed);
+
+	if (tok->end - tok->start > sizeof(**seed))
+		return tal_fmt(cmd, "seed must be less than %zu characters",
+			       sizeof(**seed));
+
+	memset(*seed, 0, sizeof(**seed));
+	memcpy(*seed, buffer + tok->start, tok->end - tok->start);
+	return NULL;
+}
+
+#define JSON_PARAM_OPT_SEED(name, pptr) \
+	JSON_PARAM_ALLOCS_("?"name, pptr, json_tok_siphash_seed)
+
 static void json_getroute(struct command *cmd, const char *buffer, const jsmntok_t *params)
 {
 	struct lightningd *ld = cmd->ld;
-	struct pubkey source = ld->id, destination;
-	jsmntok_t *idtok, *msatoshitok, *riskfactortok, *cltvtok, *fromidtok;
-	jsmntok_t *fuzztok;
-	jsmntok_t *seedtok;
+	struct pubkey *source, destination;
 	u64 msatoshi;
-	unsigned cltv = 9;
 	double riskfactor;
+	unsigned *cltv;
 	/* Higher fuzz means that some high-fee paths can be discounted
 	 * for an even larger value, increasing the scope for route
 	 * randomization (the higher-fee paths become more likely to
 	 * be selected) at the cost of increasing the probability of
 	 * selecting the higher-fee paths. */
-	double fuzz = 75.0;
-	struct siphash_seed seed;
+	double *fuzz;
+	struct siphash_seed *seed;
 
-	if (!json_get_params(cmd, buffer, params,
-			     "id", &idtok,
-			     "msatoshi", &msatoshitok,
-			     "riskfactor", &riskfactortok,
-			     "?cltv", &cltvtok,
-			     "?fromid", &fromidtok,
-			     "?fuzzpercent", &fuzztok,
-			     "?seed", &seedtok,
-			     NULL)) {
+	if (!json_params(tmpctx, cmd, buffer, params,
+			 JSON_PARAM_PUBKEY("id", &destination),
+			 JSON_PARAM_U64("msatoshi", &msatoshi),
+			 JSON_PARAM_DOUBLE("riskfactor", &riskfactor),
+			 JSON_PARAM_OPT_U32("cltv", &cltv),
+			 JSON_PARAM_OPT_PUBKEY("fromid", &source),
+			 JSON_PARAM_OPT_DOUBLE("fuzz", &fuzz),
+			 JSON_PARAM_OPT_SEED("seed", &seed),
+			 NULL)) {
 		return;
 	}
 
-	if (!json_tok_pubkey(buffer, idtok, &destination)) {
-		command_fail(cmd, "Invalid id");
-		return;
+	/* Set defaults. */
+	if (!cltv) {
+		cltv = tal(tmpctx, u32);
+		*cltv = 9;
 	}
 
-	if (cltvtok && !json_tok_number(buffer, cltvtok, &cltv)) {
-		command_fail(cmd, "Invalid cltv");
-		return;
+	if (!source)
+		source = &ld->id;
+
+	if (!fuzz) {
+		fuzz = tal(tmpctx, double);
+		*fuzz = 75.0;
 	}
 
-	if (!json_tok_u64(buffer, msatoshitok, &msatoshi)) {
-		command_fail(cmd, "'%.*s' is not a valid number",
-			     msatoshitok->end - msatoshitok->start,
-			     buffer + msatoshitok->start);
-		return;
+	if (!seed) {
+		seed = tal(tmpctx, struct siphash_seed);
+		randombytes_buf(seed, sizeof(*seed));
 	}
 
-	if (!json_tok_double(buffer, riskfactortok, &riskfactor)) {
-		command_fail(cmd, "'%.*s' is not a valid double",
-			     riskfactortok->end - riskfactortok->start,
-			     buffer + riskfactortok->start);
-		return;
-	}
-
-	if (fromidtok && !json_tok_pubkey(buffer, fromidtok, &source)) {
-		command_fail(cmd, "Invalid from id");
-		return;
-	}
-
-	if (fuzztok &&
-	    !json_tok_double(buffer, fuzztok, &fuzz)) {
-		command_fail(cmd, "'%.*s' is not a valid double",
-			     fuzztok->end - fuzztok->start,
-			     buffer + fuzztok->start);
-		return;
-	}
-	if (!(0.0 <= fuzz && fuzz <= 100.0)) {
+	if (!(0.0 <= *fuzz && *fuzz <= 100.0)) {
 		command_fail(cmd,
 			     "fuzz must be in range 0.0 <= %f <= 100.0",
-			     fuzz);
+			     *fuzz);
 		return;
 	}
 	/* Convert from percentage */
-	fuzz = fuzz / 100.0;
+	*fuzz = *fuzz / 100.0;
 
-	if (seedtok) {
-		if (seedtok->end - seedtok->start > sizeof(seed))
-			command_fail(cmd,
-				     "seed must be < %zu bytes", sizeof(seed));
-
-		memset(&seed, 0, sizeof(seed));
-		memcpy(&seed, buffer + seedtok->start,
-		       seedtok->end - seedtok->start);
-	} else
-		randombytes_buf(&seed, sizeof(seed));
-
-	u8 *req = towire_gossip_getroute_request(cmd, &source, &destination, msatoshi, riskfactor*1000, cltv, &fuzz, &seed);
+	u8 *req = towire_gossip_getroute_request(cmd, source, &destination, msatoshi, riskfactor*1000, *cltv, fuzz, seed);
 	subd_req(ld->gossip, ld->gossip, req, -1, 0, json_getroute_reply, cmd);
 	command_still_pending(cmd);
 }

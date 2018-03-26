@@ -41,25 +41,15 @@ static void json_dev_ping(struct command *cmd,
 {
 	struct peer *peer;
 	u8 *msg;
-	jsmntok_t *idtok, *lentok, *pongbytestok;
-	unsigned int len, pongbytes;
+	u32 len, pongbytes;
 	struct pubkey id;
 	struct subd *owner;
 
-	if (!json_get_params(cmd, buffer, params,
-			     "id", &idtok,
-			     "len", &lentok,
-			     "pongbytes", &pongbytestok,
-			     NULL)) {
-		return;
-	}
-
-	/* FIXME: These checks are horrible, use a peer flag to say it's
-	 * ready to forward! */
-	if (!json_tok_number(buffer, lentok, &len)) {
-		command_fail(cmd, "'%.*s' is not a valid number",
-			     lentok->end - lentok->start,
-			     buffer + lentok->start);
+	if (!json_params(tmpctx, cmd, buffer, params,
+			 JSON_PARAM_PUBKEY("id", &id),
+			 JSON_PARAM_U32("len", &len),
+			 JSON_PARAM_U32("pongbytes", &pongbytes),
+			 NULL)) {
 		return;
 	}
 
@@ -83,23 +73,9 @@ static void json_dev_ping(struct command *cmd,
 		return;
 	}
 
-	if (!json_tok_number(buffer, pongbytestok, &pongbytes)) {
-		command_fail(cmd, "'%.*s' is not a valid number",
-			     pongbytestok->end - pongbytestok->start,
-			     buffer + pongbytestok->start);
-		return;
-	}
-
 	/* Note that > 65531 is valid: it means "no pong reply" */
 	if (pongbytes > 65535) {
 		command_fail(cmd, "pongbytes %u > 65535", pongbytes);
-		return;
-	}
-
-	if (!json_tok_pubkey(buffer, idtok, &id)) {
-		command_fail(cmd, "'%.*s' is not a valid pubkey",
-			     idtok->end - idtok->start,
-			     buffer + idtok->start);
 		return;
 	}
 
@@ -108,6 +84,8 @@ static void json_dev_ping(struct command *cmd,
 	if (peer) {
 		struct channel *channel = peer_active_channel(peer);
 
+		/* FIXME: These checks are horrible, use a peer flag to say it's
+		 * ready to forward! */
 		if (!channel
 		    || !channel->owner
 		    || !streq(channel->owner->name, "lightning_channeld")) {

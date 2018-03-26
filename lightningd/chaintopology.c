@@ -663,15 +663,16 @@ AUTODATA(json_command, &dev_blockheight);
 static void json_dev_setfees(struct command *cmd,
 			     const char *buffer, const jsmntok_t *params)
 {
-	jsmntok_t *ratetok[NUM_FEERATES];
+	u32 *rate[NUM_FEERATES];
 	struct chain_topology *topo = cmd->ld->topology;
 	struct json_result *response;
 
-	if (!json_get_params(cmd, buffer, params,
-			     "?immediate", &ratetok[FEERATE_IMMEDIATE],
-			     "?normal", &ratetok[FEERATE_NORMAL],
-			     "?slow", &ratetok[FEERATE_SLOW],
-			     NULL)) {
+	if (!json_params(tmpctx, cmd, buffer, params,
+			 JSON_PARAM_OPT_U32("immediate",
+					    &rate[FEERATE_IMMEDIATE]),
+			 JSON_PARAM_OPT_U32("normal", &rate[FEERATE_NORMAL]),
+			 JSON_PARAM_OPT_U32("slow", &rate[FEERATE_SLOW]),
+			 NULL)) {
 		return;
 	}
 
@@ -682,16 +683,11 @@ static void json_dev_setfees(struct command *cmd,
 		topo->override_fee_rate = tal_dup_arr(topo, u32, fees,
 						      ARRAY_SIZE(fees), 0);
 	}
+
 	for (size_t i = 0; i < NUM_FEERATES; i++) {
-		if (!ratetok[i])
+		if (!rate[i])
 			continue;
-		if (!json_tok_number(buffer, ratetok[i],
-				     &topo->override_fee_rate[i])) {
-			command_fail(cmd, "Invalid feerate %.*s",
-				     ratetok[i]->end - ratetok[i]->start,
-				     buffer + ratetok[i]->start);
-			return;
-		}
+		topo->override_fee_rate[i] = *rate[i];
 	}
 	log_debug(topo->log,
 		  "dev-setfees: fees now %u/%u/%u",

@@ -106,61 +106,46 @@ void peer_already_connected(struct lightningd *ld, const u8 *msg)
 static void json_connect(struct command *cmd,
 			 const char *buffer, const jsmntok_t *params)
 {
-	jsmntok_t *hosttok, *porttok, *idtok;
 	struct pubkey id;
-	char *id_str;
+	struct json_escaped *host, *id_str;
+	u32 *port;
 	char *atptr;
-	char *ataddr = NULL;
-	int atidx;
 	const char *name;
 	struct wireaddr addr;
 	u8 *msg;
 	const char *err_msg;
 
-	if (!json_get_params(cmd, buffer, params,
-			     "id", &idtok,
-			     "?host", &hosttok,
-			     "?port", &porttok,
-			     NULL)) {
+	if (!json_params(tmpctx, cmd, buffer, params,
+			 JSON_PARAM_STRING("id", &id_str),
+			 JSON_PARAM_OPT_STRING("host", &host),
+			 JSON_PARAM_OPT_U32("port", &port),
+			 NULL)) {
 		return;
 	}
 
 	/* Check for id@addrport form */
-	id_str = tal_strndup(cmd, buffer + idtok->start,
-			     idtok->end - idtok->start);
-	atptr = strchr(id_str, '@');
+	atptr = strchr(id_str->s, '@');
 	if (atptr) {
-		atidx = atptr - id_str;
-		ataddr = tal_strdup(cmd, atptr + 1);
-		/* Cut id. */
-		idtok->end = idtok->start + atidx;
-	}
+		/* Cut id_str */
+		*atptr = '\0';
+		if (host) {
+			command_fail(cmd,
+				     "Can't specify host as both xxx@yyy "
+				     "and separate argument");
+			return;
+		}
+		name = atptr + 1;
+	} else
+		/* If host is NULL, name is NULL */
+		name = host->s;
 
-	if (!json_tok_pubkey(buffer, idtok, &id)) {
-		command_fail(cmd, "id %.*s not valid",
-			     idtok->end - idtok->start,
-			     buffer + idtok->start);
+	if (!pubkey_from_hexstr(id_str->s, strlen(id_str->s), &id)) {
+		command_fail(cmd, "id %s not valid", id_str->s);
 		return;
 	}
-
-	if (hosttok && ataddr) {
-		command_fail(cmd,
-			     "Can't specify host as both xxx@yyy "
-			     "and separate argument");
-		return;
-	}
-
-	/* Get parseable host if provided somehow */
-	if (hosttok)
-		name = tal_strndup(cmd, buffer + hosttok->start,
-				   hosttok->end - hosttok->start);
-	else if (ataddr)
-		name = ataddr;
-	else
-		name = NULL;
 
 	/* Port without host name? */
-	if (porttok && !name) {
+	if (port && !name) {
 		command_fail(cmd, "Can't specify port without host");
 		return;
 	}
@@ -168,15 +153,8 @@ static void json_connect(struct command *cmd,
 	/* Was there parseable host name? */
 	if (name) {
 		/* Is there a port? */
-		if (porttok) {
-			u32 port;
-			if (!json_tok_number(buffer, porttok, &port)) {
-				command_fail(cmd, "Port %.*s not valid",
-					     porttok->end - porttok->start,
-					     buffer + porttok->start);
-				return;
-			}
-			addr.port = port;
+		if (port) {
+			addr.port = *port;
 		} else {
 			addr.port = DEFAULT_PORT;
 		}
