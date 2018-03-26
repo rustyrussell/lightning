@@ -580,37 +580,40 @@ bool json_get_params(struct command *cmd,
 	return true;
 }
 
-const char *json_param_bool(const tal_t *ctx,
+const char *json_param_bool(const tal_t *ctx, struct command *cmd,
 			    const char *buffer, const jsmntok_t *tok, bool **b)
 {
 	if (!*b)
 		*b = tal(ctx, bool);
 	if (json_tok_bool(buffer, tok, *b))
 		return NULL;
-	return "Invalid boolean";
+	return tal_fmt(cmd, "invalid boolean '%.*s'",
+		       tok->end - tok->start, buffer + tok->start);
 }
 
-const char *json_param_u32(const tal_t *ctx,
+const char *json_param_u32(const tal_t *ctx, struct command *cmd,
 			   const char *buffer, const jsmntok_t *tok, u32 **v)
 {
 	if (!*v)
 		*v = tal(ctx, u32);
 	if (json_tok_number(buffer, tok, *v))
 		return NULL;
-	return "Invalid number";
+	return tal_fmt(cmd, "invalid number '%.*s'",
+		       tok->end - tok->start, buffer + tok->start);
 }
 
-const char *json_param_u64(const tal_t *ctx,
+const char *json_param_u64(const tal_t *ctx, struct command *cmd,
 			   const char *buffer, const jsmntok_t *tok, u64 **v)
 {
 	if (!*v)
 		*v = tal(ctx, u64);
 	if (json_tok_u64(buffer, tok, *v))
 		return NULL;
-	return "Invalid 64-bit number";
+	return tal_fmt(cmd, "invalid 64-bit number '%.*s'",
+		       tok->end - tok->start, buffer + tok->start);
 }
 
-const char *json_param_pubkey(const tal_t *ctx,
+const char *json_param_pubkey(const tal_t *ctx, struct command *cmd,
 			      const char *buffer, const jsmntok_t *tok,
 			      struct pubkey **pubkey)
 {
@@ -618,10 +621,11 @@ const char *json_param_pubkey(const tal_t *ctx,
 		*pubkey = tal(ctx, struct pubkey);
 	if (json_tok_pubkey(buffer, tok, *pubkey))
 		return NULL;
-	return "Invalid public key";
+	return tal_fmt(cmd, "invalid public key '%.*s'",
+		       tok->end - tok->start, buffer + tok->start);
 }
 
-const char *json_param_short_channel_id(const tal_t *ctx,
+const char *json_param_short_channel_id(const tal_t *ctx, struct command *cmd,
 					const char *buffer, const jsmntok_t *tok,
 					struct short_channel_id **scid)
 {
@@ -629,10 +633,11 @@ const char *json_param_short_channel_id(const tal_t *ctx,
 		*scid = tal(ctx, struct short_channel_id);
 	if (json_tok_short_channel_id(buffer, tok, *scid))
 		return NULL;
-	return "Invalid short-channel-id";
+	return tal_fmt(cmd, "invalid short_channel_id '%.*s'",
+		       tok->end - tok->start, buffer + tok->start);
 }
 
-const char *json_param_double(const tal_t *ctx,
+const char *json_param_double(const tal_t *ctx, struct command *cmd,
 			      const char *buffer, const jsmntok_t *tok,
 			      double **d)
 {
@@ -640,10 +645,11 @@ const char *json_param_double(const tal_t *ctx,
 		*d = tal(ctx, double);
 	if (json_tok_double(buffer, tok, *d))
 		return NULL;
-	return "Invalid floating point number";
+	return tal_fmt(cmd, "invalid floating-point number '%.*s'",
+		       tok->end - tok->start, buffer + tok->start);
 }
 
-const char *json_param_sha256(const tal_t *ctx,
+const char *json_param_sha256(const tal_t *ctx, struct command *cmd,
 			      const char *buffer, const jsmntok_t *tok,
 			      struct sha256 **sha256)
 {
@@ -653,20 +659,22 @@ const char *json_param_sha256(const tal_t *ctx,
 			tok->end - tok->start,
 			*sha256, sizeof(**sha256)))
 		return NULL;
-	return "Invalid sha256";
+	return tal_fmt(cmd, "invalid sha256 '%.*s': expect 32 hex digits",
+		       tok->end - tok->start, buffer + tok->start);
 }
 
-const char *json_param_string(const tal_t *ctx,
+const char *json_param_string(const tal_t *ctx, struct command *cmd,
 			      const char *buffer, const jsmntok_t *tok,
 			      struct json_escaped **esc)
 {
 	*esc = json_tok_escaped_string(ctx, buffer, tok);
 	if (*esc)
 		return NULL;
-	return "Invalid string";
+	return tal_fmt(cmd, "expected string not '%.*s'",
+		       tok->end - tok->start, buffer + tok->start);
 }
 
-const char *json_param_any(const tal_t *ctx,
+const char *json_param_any(const tal_t *ctx, struct command *cmd,
 			   const char *buffer, const jsmntok_t *tok,
 			   const jsmntok_t **ptr)
 {
@@ -684,6 +692,7 @@ static bool handle_param(const tal_t *ctx,
 			 const jsmntok_t *t,
 			 void **pptr,
 			 const char *(*fn)(const tal_t *ctx,
+					   struct lightningd *ld,
 					   const char *buffer,
 					   const jsmntok_t *tok, void **p))
 {
@@ -701,14 +710,11 @@ static bool handle_param(const tal_t *ctx,
 		return true;
 	}
 
-	err = fn(ctx, buffer, t, pptr);
+	err = fn(ctx, cmd->ld, buffer, t, pptr);
 	if (err) {
 		command_fail_detailed(cmd, JSONRPC2_INVALID_PARAMS, NULL,
-				      "'%s' %s '%.*s'",
-				      paramname,
-				      err,
-				      t->end - t->start,
-				      buffer + t->start);
+				      "%s: %s",
+				      paramname, err);
 		return false;
 	}
 	return true;
@@ -743,6 +749,7 @@ bool json_params(const tal_t *ctx,
 		bool needs_alloc;
 		void *ptr, **pptr;
 		const char *(*fn)(const tal_t *ctx,
+				  struct lightningd *ld,
 				  const char *buffer,
 				  const jsmntok_t *tok, void **p);
 		bool compulsory = true;
@@ -755,6 +762,7 @@ bool json_params(const tal_t *ctx,
 		needs_alloc = va_arg(ap, int);
 		ptr = va_arg(ap, void *);
 		fn = va_arg(ap, const char *(*)(const tal_t *,
+						struct lightningd *ld,
 						const char *,
 						const jsmntok_t *,
 						void **));

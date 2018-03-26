@@ -88,7 +88,8 @@ bool json_params(const tal_t *ctx,
 	name,								\
 	false,								\
 	(ptr)								\
-		+ (sizeof(fn(NULL, (const char *)NULL,			\
+		+ (sizeof(fn(NULL, (struct command *)NULL,		\
+			     (const char *)NULL,			\
 			     (const jsmntok_t *)NULL,			\
 			     (type **)NULL) == (const char *)NULL)) * 0	\
 		+ (sizeof((ptr) == (type *)NULL) * 0),			\
@@ -99,7 +100,8 @@ bool json_params(const tal_t *ctx,
 	name,								\
 	true,								\
 	(pptr)								\
-		+ (sizeof(fn(NULL, (const char *)NULL,			\
+		+ (sizeof(fn(NULL, (struct command *)NULL,		\
+			     (const char *)NULL,			\
 			     (const jsmntok_t *)NULL,			\
 			     (pptr)) == (const char *)NULL)) * 0,	\
 	(fn)
@@ -141,30 +143,31 @@ bool json_params(const tal_t *ctx,
 #define JSON_PARAM_OPT_ANY(name, ptr) \
 	JSON_PARAM_OPT_ANY("?"name, ptr, json_param_any)
 
-/* These all return NULL or an error description.  If the *p is NULL,
- * they allocate off ctx. */
-const char *json_param_bool(const tal_t *ctx,
+/* These all return NULL or an error description (which can allocate
+ * off cmd if necessary).  If the *p is NULL, they allocate it off
+ * ctx. */
+const char *json_param_bool(const tal_t *ctx, struct command *cmd,
 			    const char *buffer, const jsmntok_t *tok, bool **);
-const char *json_param_u32(const tal_t *ctx,
+const char *json_param_u32(const tal_t *ctx, struct command *cmd,
 			   const char *buffer, const jsmntok_t *tok, u32 **);
-const char *json_param_u64(const tal_t *ctx,
+const char *json_param_u64(const tal_t *ctx, struct command *cmd,
 			   const char *buffer, const jsmntok_t *tok, u64 **);
-const char *json_param_pubkey(const tal_t *ctx,
+const char *json_param_pubkey(const tal_t *ctx, struct command *cmd,
 			      const char *buffer, const jsmntok_t *tok,
 			      struct pubkey **);
-const char *json_param_double(const tal_t *ctx,
+const char *json_param_double(const tal_t *ctx, struct command *cmd,
 			      const char *buffer, const jsmntok_t *tok,
 			      double **);
-const char *json_param_sha256(const tal_t *ctx,
+const char *json_param_sha256(const tal_t *ctx, struct command *cmd,
 			      const char *buffer, const jsmntok_t *tok,
 			      struct sha256 **);
-const char *json_param_short_channel_id(const tal_t *ctx,
+const char *json_param_short_channel_id(const tal_t *ctx, struct command *cmd,
 					const char *buffer, const jsmntok_t *tok,
 					struct short_channel_id **);
-const char *json_param_string(const tal_t *ctx,
+const char *json_param_string(const tal_t *ctx, struct command *cmd,
 			      const char *buffer, const jsmntok_t *tok,
 			      struct json_escaped **);
-const char *json_param_any(const tal_t *ctx,
+const char *json_param_any(const tal_t *ctx, struct command *cmd,
 			   const char *buffer, const jsmntok_t *tok,
 			   const jsmntok_t **);
 
