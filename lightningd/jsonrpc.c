@@ -580,6 +580,255 @@ bool json_get_params(struct command *cmd,
 	return true;
 }
 
+const char *json_param_bool(const tal_t *ctx,
+			    const char *buffer, const jsmntok_t *tok, bool **b)
+{
+	if (!*b)
+		*b = tal(ctx, bool);
+	if (json_tok_bool(buffer, tok, *b))
+		return NULL;
+	return "Invalid boolean";
+}
+
+const char *json_param_u32(const tal_t *ctx,
+			   const char *buffer, const jsmntok_t *tok, u32 **v)
+{
+	if (!*v)
+		*v = tal(ctx, u32);
+	if (json_tok_number(buffer, tok, *v))
+		return NULL;
+	return "Invalid number";
+}
+
+const char *json_param_u64(const tal_t *ctx,
+			   const char *buffer, const jsmntok_t *tok, u64 **v)
+{
+	if (!*v)
+		*v = tal(ctx, u64);
+	if (json_tok_u64(buffer, tok, *v))
+		return NULL;
+	return "Invalid 64-bit number";
+}
+
+const char *json_param_pubkey(const tal_t *ctx,
+			      const char *buffer, const jsmntok_t *tok,
+			      struct pubkey **pubkey)
+{
+	if (!*pubkey)
+		*pubkey = tal(ctx, struct pubkey);
+	if (json_tok_pubkey(buffer, tok, *pubkey))
+		return NULL;
+	return "Invalid public key";
+}
+
+const char *json_param_short_channel_id(const tal_t *ctx,
+					const char *buffer, const jsmntok_t *tok,
+					struct short_channel_id **scid)
+{
+	if (!*scid)
+		*scid = tal(ctx, struct short_channel_id);
+	if (json_tok_short_channel_id(buffer, tok, *scid))
+		return NULL;
+	return "Invalid short-channel-id";
+}
+
+const char *json_param_double(const tal_t *ctx,
+			      const char *buffer, const jsmntok_t *tok,
+			      double **d)
+{
+	if (!*d)
+		*d = tal(ctx, double);
+	if (json_tok_double(buffer, tok, *d))
+		return NULL;
+	return "Invalid floating point number";
+}
+
+const char *json_param_sha256(const tal_t *ctx,
+			      const char *buffer, const jsmntok_t *tok,
+			      struct sha256 **sha256)
+{
+	if (!*sha256)
+		*sha256 = tal(ctx, struct sha256);
+	if (!hex_decode(buffer + tok->start,
+			tok->end - tok->start,
+			*sha256, sizeof(**sha256)))
+		return NULL;
+	return "Invalid sha256";
+}
+
+const char *json_param_string(const tal_t *ctx,
+			      const char *buffer, const jsmntok_t *tok,
+			      struct json_escaped **esc)
+{
+	*esc = json_tok_escaped_string(ctx, buffer, tok);
+	if (*esc)
+		return NULL;
+	return "Invalid string";
+}
+
+const char *json_param_any(const tal_t *ctx,
+			   const char *buffer, const jsmntok_t *tok,
+			   const jsmntok_t **ptr)
+{
+	if (!*ptr)
+		*ptr = tal(ctx, jsmntok_t);
+	*ptr = tok;
+	return NULL;
+}
+
+static bool handle_param(const tal_t *ctx,
+			 struct command *cmd,
+			 const char *paramname,
+			 bool compulsory,
+			 const char *buffer,
+			 const jsmntok_t *t,
+			 void **pptr,
+			 const char *(*fn)(const tal_t *ctx,
+					   const char *buffer,
+					   const jsmntok_t *tok, void **p))
+{
+	const char *err;
+
+	if (!t) {
+		if (compulsory) {
+			command_fail_detailed(cmd, JSONRPC2_INVALID_PARAMS, NULL,
+					      "Missing '%s' parameter",
+					      paramname);
+			return false;
+		}
+
+		*pptr = NULL;
+		return true;
+	}
+
+	err = fn(ctx, buffer, t, pptr);
+	if (err) {
+		command_fail_detailed(cmd, JSONRPC2_INVALID_PARAMS, NULL,
+				      "'%s' %s '%.*s'",
+				      paramname,
+				      err,
+				      t->end - t->start,
+				      buffer + t->start);
+		return false;
+	}
+	return true;
+}
+
+bool json_params(const tal_t *ctx,
+		 struct command *cmd,
+		 const char *buffer, const jsmntok_t param[], ...)
+{
+	va_list ap;
+	const char **names;
+	size_t num_names;
+	 /* Uninitialized warnings on p and end */
+	const jsmntok_t *t, *p = NULL, *end = NULL;
+
+	if (param->type == JSMN_ARRAY) {
+		if (param->size == 0)
+			p = NULL;
+		else
+			p = param + 1;
+		end = json_next(param);
+	} else if (param->type != JSMN_OBJECT) {
+		command_fail_detailed(cmd, JSONRPC2_INVALID_PARAMS, NULL,
+				      "Expected array or object for params");
+		return false;
+	}
+
+	num_names = 0;
+	names = tal_arr(cmd, const char *, num_names + 1);
+	va_start(ap, param);
+	while ((names[num_names] = va_arg(ap, const char *)) != NULL) {
+		bool needs_alloc;
+		void *ptr, **pptr;
+		const char *(*fn)(const tal_t *ctx,
+				  const char *buffer,
+				  const jsmntok_t *tok, void **p);
+		bool compulsory = true;
+
+		if (names[num_names][0] == '?') {
+			names[num_names]++;
+			compulsory = false;
+		}
+
+		needs_alloc = va_arg(ap, int);
+		ptr = va_arg(ap, void *);
+		fn = va_arg(ap, const char *(*)(const tal_t *,
+						const char *,
+						const jsmntok_t *,
+						void **));
+
+		if (param->type == JSMN_ARRAY) {
+			t = p;
+			if (p) {
+				p = json_next(p);
+				if (p == end)
+					p = NULL;
+			}
+		} else {
+			t = json_get_member(buffer, param, names[num_names]);
+		}
+
+		/* Convert 'null' to NULL */
+		if (t && t->type == JSMN_PRIMITIVE && buffer[t->start] == 'n') {
+			t = NULL;
+		}
+
+		if (needs_alloc)
+			pptr = ptr;
+		else {
+			assert(ptr);
+			pptr = &ptr;
+		}
+		if (!handle_param(ctx, cmd, names[num_names], compulsory,
+				  buffer, t, pptr, fn)) {
+			va_end(ap);
+			return false;
+		}
+		num_names++;
+		tal_resize(&names, num_names + 1);
+	}
+
+	va_end(ap);
+
+	/* Now make sure there aren't any params which aren't valid */
+	if (param->type == JSMN_ARRAY) {
+		if (param->size > num_names) {
+			tal_free(names);
+			command_fail_detailed(cmd, JSONRPC2_INVALID_PARAMS, NULL,
+					      "Too many parameters:"
+					      " got %u, expected %zu",
+					      param->size, num_names);
+			return false;
+		}
+	} else {
+		end = json_next(param);
+
+		/* Find each parameter among the valid names */
+		for (t = param + 1; t < end; t = json_next(t+1)) {
+			bool found = false;
+			for (size_t i = 0; i < num_names; i++) {
+				if (json_tok_streq(buffer, t, names[i]))
+					found = true;
+			}
+			if (!found) {
+				tal_free(names);
+				command_fail_detailed(cmd,
+						      JSONRPC2_INVALID_PARAMS,
+						      NULL,
+						      "Unknown parameter '%.*s'",
+						      t->end - t->start,
+						      buffer + t->start);
+				return false;
+			}
+		}
+	}
+
+	tal_free(names);
+	return true;
+}
+
 static struct io_plan *write_json(struct io_conn *conn,
 				  struct json_connection *jcon)
 {

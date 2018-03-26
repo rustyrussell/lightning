@@ -69,6 +69,106 @@ struct json_command {
 bool json_get_params(struct command *cmd,
 		     const char *buffer, const jsmntok_t param[], ...);
 
+/* Get the parameters (by position or name).  Followed by JSON_PARAM_XXX...
+ * then NULL.
+ *
+ * Optional parameters are either set to NULL if they are 'null' or
+ * not present, otherwise they are allocated off @ctx.  Non-optional
+ * parameters must be present.
+ *
+ * On any failure, false is returned, and command_fail already called.
+ */
+bool json_params(const tal_t *ctx,
+		 struct command *cmd,
+		 const char *buffer, const jsmntok_t param[], ...);
+
+/* Turns it into the four parameters json_get_params() expects, while
+ * checking that types are correct without double-evaluating @val or @fn. */
+#define JSON_PARAM_(name, type, ptr, fn)				\
+	name,								\
+	false,								\
+	(ptr)								\
+		+ (sizeof(fn(NULL, (const char *)NULL,			\
+			     (const jsmntok_t *)NULL,			\
+			     (type **)NULL) == (const char *)NULL)) * 0	\
+		+ (sizeof((ptr) == (type *)NULL) * 0),			\
+	(fn)
+
+/* This variant takes a pointer-to-pointer */
+#define JSON_PARAM_ALLOCS_(name, pptr, fn)				\
+	name,								\
+	true,								\
+	(pptr)								\
+		+ (sizeof(fn(NULL, (const char *)NULL,			\
+			     (const jsmntok_t *)NULL,			\
+			     (pptr)) == (const char *)NULL)) * 0,	\
+	(fn)
+
+#define JSON_PARAM_BOOL(name, ptr) \
+	JSON_PARAM_(name, bool, ptr, json_param_bool)
+#define JSON_PARAM_U32(name, ptr) \
+	JSON_PARAM_(name, u32, ptr, json_param_u32)
+#define JSON_PARAM_U64(name, ptr) \
+	JSON_PARAM_(name, u64, ptr, json_param_u64)
+#define JSON_PARAM_PUBKEY(name, ptr) \
+	JSON_PARAM_(name, struct pubkey, ptr, json_param_pubkey)
+#define JSON_PARAM_DOUBLE(name, ptr) \
+	JSON_PARAM_(name, double, ptr, json_param_double)
+#define JSON_PARAM_SHA256(name, ptr) \
+	JSON_PARAM_(name, struct sha256, ptr, json_param_sha256)
+#define JSON_PARAM_SHORT_CHANNEL_ID(name, ptr) \
+	JSON_PARAM_(name, struct short_channel_id, ptr, \
+		    json_param_short_channel_id)
+#define JSON_PARAM_STRING(name, pptr) \
+	JSON_PARAM_ALLOCS_(name, pptr, json_param_string)
+#define JSON_PARAM_ANY(name, ptr) \
+	JSON_PARAM_(name, jsmntok_t, ptr, json_param_any)
+
+#define JSON_PARAM_OPT_BOOL(name, pptr) \
+	JSON_PARAM_ALLOCS_("?"name, pptr, json_param_bool)
+#define JSON_PARAM_OPT_U32(name, pptr) \
+	JSON_PARAM_ALLOCS_("?"name, pptr, json_param_u32)
+#define JSON_PARAM_OPT_U64(name, pptr) \
+	JSON_PARAM_ALLOCS_("?"name, pptr, json_param_u64)
+#define JSON_PARAM_OPT_PUBKEY(name, pptr) \
+	JSON_PARAM_ALLOCS_("?"name, pptr, json_param_pubkey)
+#define JSON_PARAM_OPT_DOUBLE(name, pptr) \
+	JSON_PARAM_ALLOCS_("?"name, pptr, json_param_double)
+#define JSON_PARAM_OPT_STRING(name, pptr) \
+	JSON_PARAM_ALLOCS_("?"name, pptr, json_param_string)
+#define JSON_PARAM_OPT_SHORT_CHANNEL_ID(name, pptr) \
+	JSON_PARAM_ALLOCS_("?"name, pptr, json_param_short_channel_id)
+#define JSON_PARAM_OPT_ANY(name, ptr) \
+	JSON_PARAM_OPT_ANY("?"name, ptr, json_param_any)
+
+/* These all return NULL or an error description.  If the *p is NULL,
+ * they allocate off ctx. */
+const char *json_param_bool(const tal_t *ctx,
+			    const char *buffer, const jsmntok_t *tok, bool **);
+const char *json_param_u32(const tal_t *ctx,
+			   const char *buffer, const jsmntok_t *tok, u32 **);
+const char *json_param_u64(const tal_t *ctx,
+			   const char *buffer, const jsmntok_t *tok, u64 **);
+const char *json_param_pubkey(const tal_t *ctx,
+			      const char *buffer, const jsmntok_t *tok,
+			      struct pubkey **);
+const char *json_param_double(const tal_t *ctx,
+			      const char *buffer, const jsmntok_t *tok,
+			      double **);
+const char *json_param_sha256(const tal_t *ctx,
+			      const char *buffer, const jsmntok_t *tok,
+			      struct sha256 **);
+const char *json_param_short_channel_id(const tal_t *ctx,
+					const char *buffer, const jsmntok_t *tok,
+					struct short_channel_id **);
+const char *json_param_string(const tal_t *ctx,
+			      const char *buffer, const jsmntok_t *tok,
+			      struct json_escaped **);
+const char *json_param_any(const tal_t *ctx,
+			   const char *buffer, const jsmntok_t *tok,
+			   const jsmntok_t **);
+
+
 struct json_result *null_response(const tal_t *ctx);
 void command_success(struct command *cmd, struct json_result *response);
 void PRINTF_FMT(2, 3) command_fail(struct command *cmd, const char *fmt, ...);
