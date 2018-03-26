@@ -444,22 +444,18 @@ static void json_listchannels(struct command *cmd, const char *buffer,
 			     const jsmntok_t *params)
 {
 	u8 *req;
-	jsmntok_t *idtok;
-	struct short_channel_id *id = NULL;
+	struct short_channel_id *id;
 
-	if (!json_get_params(cmd, buffer, params,
-			     "?short_channel_id", &idtok,
-			     NULL)) {
+	if (!json_params(tmpctx, cmd, buffer, params,
+			 JSON_PARAM_OPT_SHORT_CHANNEL_ID("short_channel_id",
+							 &id),
+			 NULL)) {
 		return;
 	}
 
-	if (idtok) {
-		id = tal_arr(cmd, struct short_channel_id, 1);
-		if (!json_tok_short_channel_id(buffer, idtok, id)) {
-			command_fail(cmd, "Invalid short_channel_id");
-			return;
-		}
-	}
+	/* towire_gossip_getroute_request wants an array */
+	if (id)
+		id = tal_dup_arr(cmd, struct short_channel_id, id, 1, 0);
 
 	req = towire_gossip_getchannels_request(cmd, id);
 	subd_req(cmd->ld->gossip, cmd->ld->gossip,

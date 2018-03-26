@@ -910,94 +910,88 @@ static void json_sendpay_on_resolve(const struct sendpay_result* r,
 		json_waitsendpay_on_resolve(r, cmd);
 }
 
-static void json_sendpay(struct command *cmd,
-			 const char *buffer, const jsmntok_t *params)
+static const char *json_param_route(const tal_t *ctx,
+				    struct command *cmd,
+				    const char *buffer,
+				    const jsmntok_t *routetok,
+				    struct route_hop **route)
 {
-	jsmntok_t *routetok, *rhashtok;
-	const jsmntok_t *t, *end;
 	size_t n_hops;
-	struct sha256 rhash;
-	struct route_hop *route;
+	const jsmntok_t *end;
 
-	if (!json_get_params(cmd, buffer, params,
-			     "route", &routetok,
-			     "payment_hash", &rhashtok,
-			     NULL)) {
-		return;
-	}
-
-	if (!hex_decode(buffer + rhashtok->start,
-			rhashtok->end - rhashtok->start,
-			&rhash, sizeof(rhash))) {
-		command_fail(cmd, "'%.*s' is not a valid sha256 hash",
-			     rhashtok->end - rhashtok->start,
-			     buffer + rhashtok->start);
-		return;
-	}
-
-	if (routetok->type != JSMN_ARRAY) {
-		command_fail(cmd, "'%.*s' is not an array",
-			     routetok->end - routetok->start,
-			     buffer + routetok->start);
-		return;
-	}
+	if (routetok->type != JSMN_ARRAY)
+		return "must be an array";
 
 	end = json_next(routetok);
-	n_hops = 0;
-	route = tal_arr(cmd, struct route_hop, n_hops);
 
-	for (t = routetok + 1; t < end; t = json_next(t)) {
+	n_hops = 0;
+	*route = tal_arr(ctx, struct route_hop, n_hops);
+
+	for (const jsmntok_t *t = routetok + 1; t < end; t = json_next(t)) {
 		const jsmntok_t *amttok, *idtok, *delaytok, *chantok;
 
-		if (t->type != JSMN_OBJECT) {
-			command_fail(cmd, "Route %zu '%.*s' is not an object",
-				     n_hops,
-				     t->end - t->start,
-				     buffer + t->start);
-			return;
-		}
+		if (t->type != JSMN_OBJECT)
+			return tal_fmt(cmd, "Non-object as array element '%.*s'",
+				       t->end - t->start, buffer + t->start);
+
 		amttok = json_get_member(buffer, t, "msatoshi");
 		idtok = json_get_member(buffer, t, "id");
 		delaytok = json_get_member(buffer, t, "delay");
 		chantok = json_get_member(buffer, t, "channel");
 		if (!amttok || !idtok || !delaytok || !chantok) {
-			command_fail(cmd, "Route %zu needs msatoshi/id/channel/delay",
-				     n_hops);
-			return;
+			return tal_fmt(cmd, "Need msatoshi, id, delay"
+				       " and channel in '%.*s'",
+				       t->end - t->start, buffer + t->start);
 		}
 
 		tal_resize(&route, n_hops + 1);
 
 		/* What that hop will forward */
-		if (!json_tok_number(buffer, amttok, &route[n_hops].amount)) {
-			command_fail(cmd, "Route %zu invalid msatoshi",
-				     n_hops);
-			return;
+		if (!json_tok_number(buffer, amttok, &(*route)[n_hops].amount)) {
+			return tal_fmt(cmd, "invalid amount '%.*s'",
+				       t->end - t->start, buffer + t->start);
 		}
 
 		if (!json_tok_short_channel_id(buffer, chantok,
-					       &route[n_hops].channel_id)) {
-			command_fail(cmd, "Route %zu invalid channel_id", n_hops);
-			return;
+					       &(*route)[n_hops].channel_id)) {
+			return tal_fmt(cmd, "invalid channel '%.*s'",
+				       t->end - t->start, buffer + t->start);
 		}
-		if (!json_tok_pubkey(buffer, idtok, &route[n_hops].nodeid)) {
-			command_fail(cmd, "Route %zu invalid id", n_hops);
-			return;
+		if (!json_tok_pubkey(buffer, idtok, &(*route)[n_hops].nodeid)) {
+			return tal_fmt(cmd, "invalid public key '%.*s'",
+				       t->end - t->start, buffer + t->start);
 		}
-		if (!json_tok_number(buffer, delaytok, &route[n_hops].delay)) {
-			command_fail(cmd, "Route %zu invalid delay", n_hops);
-			return;
+		if (!json_tok_number(buffer, delaytok, &(*route)[n_hops].delay)) {
+			return tal_fmt(cmd, "invalid delay '%.*s'",
+				       t->end - t->start, buffer + t->start);
 		}
 		n_hops++;
 	}
 
-	if (n_hops == 0) {
-		command_fail(cmd, "Empty route");
+	if (n_hops == 0)
+		return "empty route";
+
+	return NULL;
+}
+
+#define JSON_PARAM_ROUTE(name, ptr) \
+	JSON_PARAM_ALLOCS_(name, ptr, json_param_route)
+
+static void json_sendpay(struct command *cmd,
+			 const char *buffer, const jsmntok_t *params)
+{
+	struct sha256 rhash;
+	struct route_hop *route;
+
+	if (!json_params(tmpctx, cmd, buffer, params,
+			 JSON_PARAM_ROUTE("route", &route),
+			 JSON_PARAM_SHA256("payment_hash", &rhash),
+			 NULL)) {
 		return;
 	}
 
 	if (send_payment(cmd, cmd->ld, &rhash, route,
-			  &json_sendpay_on_resolve, cmd))
+			 &json_sendpay_on_resolve, cmd))
 		command_still_pending(cmd);
 }
 
@@ -1017,38 +1011,20 @@ static void waitsendpay_timeout(struct command *cmd)
 static void json_waitsendpay(struct command *cmd, const char *buffer,
 			     const jsmntok_t *params)
 {
-	jsmntok_t *rhashtok;
-	jsmntok_t *timeouttok;
 	struct sha256 rhash;
-	unsigned int timeout;
+	unsigned int *timeout;
 
-	if (!json_get_params(cmd, buffer, params,
-			     "payment_hash", &rhashtok,
-			     "?timeout", &timeouttok,
-			     NULL))
+	if (!json_params(tmpctx, cmd, buffer, params,
+			 JSON_PARAM_SHA256("payment_hash", &rhash),
+			 JSON_PARAM_OPT_U32("timeout", &timeout),
+			 NULL))
 		return;
-
-	if (!hex_decode(buffer + rhashtok->start,
-			rhashtok->end - rhashtok->start,
-			&rhash, sizeof(rhash))) {
-		command_fail(cmd, "'%.*s' is not a valid sha256 hash",
-			     rhashtok->end - rhashtok->start,
-			     buffer + rhashtok->start);
-		return;
-	}
-
-	if (timeouttok && !json_tok_number(buffer, timeouttok, &timeout)) {
-		command_fail(cmd, "'%.*s' is not a valid number",
-			     timeouttok->end - timeouttok->start,
-			     buffer + timeouttok->start);
-		return;
-	}
 
 	if (!wait_payment(cmd, cmd->ld, &rhash, &json_waitsendpay_on_resolve, cmd))
 		return;
 
-	if (timeouttok)
-		new_reltimer(&cmd->ld->timers, cmd, time_from_sec(timeout),
+	if (timeout)
+		new_reltimer(&cmd->ld->timers, cmd, time_from_sec(*timeout),
 			     &waitsendpay_timeout, cmd);
 
 	command_still_pending(cmd);
