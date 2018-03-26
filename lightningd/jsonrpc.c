@@ -94,21 +94,11 @@ static void json_rhash(struct command *cmd,
 		       const char *buffer, const jsmntok_t *params)
 {
 	struct json_result *response = new_json_result(cmd);
-	jsmntok_t *secrettok;
 	struct sha256 secret;
 
-	if (!json_get_params(cmd, buffer, params,
-			     "secret", &secrettok,
-			     NULL)) {
-		return;
-	}
-
-	if (!hex_decode(buffer + secrettok->start,
-			secrettok->end - secrettok->start,
-			&secret, sizeof(secret))) {
-		command_fail(cmd, "'%.*s' is not a valid 32-byte hex value",
-			     secrettok->end - secrettok->start,
-			     buffer + secrettok->start);
+	if (!json_params(tmpctx, cmd, buffer, params,
+			 JSON_PARAM_SHA256("secret", &secret),
+			 NULL)) {
 		return;
 	}
 
@@ -186,16 +176,18 @@ static void json_help(struct command *cmd,
 	unsigned int i;
 	struct json_result *response = new_json_result(cmd);
 	struct json_command **cmdlist = get_cmdlist();
-	jsmntok_t *cmdtok;
+	struct json_escaped *c;
 
-	if (!json_get_params(cmd, buffer, params, "?command", &cmdtok, NULL)) {
+	if (!json_params(tmpctx, cmd, buffer, params,
+			 JSON_PARAM_OPT_STRING("command", &c),
+			 NULL)) {
 		return;
 	}
 
 	json_object_start(response, NULL);
-	if (cmdtok) {
+	if (c) {
 		for (i = 0; i < num_cmdlist; i++) {
-			if (json_tok_streq(buffer, cmdtok, cmdlist[i]->name)) {
+			if (json_escaped_streq(c, cmdlist[i]->name)) {
 				if (!cmdlist[i]->verbose)
 					json_add_string(response,
 							"verbose",
@@ -214,9 +206,7 @@ static void json_help(struct command *cmd,
 				goto done;
 			}
 		}
-		command_fail(cmd, "Unknown command '%.*s'",
-			     cmdtok->end - cmdtok->start,
-			     buffer + cmdtok->start);
+		command_fail(cmd, "Unknown command '%s'", c->s);
 		return;
 	}
 
