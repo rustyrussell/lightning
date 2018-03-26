@@ -6,6 +6,7 @@
 *.pb
 *.gcda
 *.gcno
+.cppcheck-suppress
 TAGS
 ccan/tools/configurator/configurator
 ccan/ccan/cdump/tools/cdump-enumstr
