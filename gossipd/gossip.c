@@ -1612,20 +1612,25 @@ struct io_plan *connection_out(struct io_conn *conn, struct reaching *reach)
 
 static void try_connect(struct reaching *reach);
 
-static void connect_failed(struct io_conn *conn, struct reaching *reach)
+static void unreachable(struct reaching *reach, bool addr_unknown)
 {
 	u32 diff = time_now().ts.tv_sec - reach->first_attempt;
+
+	daemon_conn_send(&reach->daemon->master,
+			 take(towire_gossip_peer_connection_failed(
+				      NULL, &reach->id, diff, reach->attempts,
+				      addr_unknown)));
+	tal_free(reach);
+}
+
+static void connect_failed(struct io_conn *conn, struct reaching *reach)
+{
 	reach->attempts++;
 
 	if (reach->attempts >= reach->max_attempts) {
-		status_info("Failed to connect after %d attempts, giving up "
-			    "after %d seconds",
-			    reach->attempts, diff);
-		daemon_conn_send(
-		    &reach->daemon->master,
-		    take(towire_gossip_peer_connection_failed(
-			NULL, &reach->id, diff, reach->attempts, false)));
-		tal_free(reach);
+		status_info("Failed to connect after %d attempts, giving up",
+			    reach->attempts);
+		unreachable(reach, false);
 	} else {
 		status_trace("Failed connected out for %s, will try again",
 			     type_to_string(tmpctx, struct pubkey, &reach->id));
@@ -1719,13 +1724,7 @@ static void try_connect(struct reaching *reach)
 		/* FIXME: now try node table, dns lookups... */
 		status_info("No address known for %s, giving up",
 			    type_to_string(tmpctx, struct pubkey, &reach->id));
-		daemon_conn_send(
-		    &reach->daemon->master,
-		    take(towire_gossip_peer_connection_failed(
-			NULL, &reach->id,
-			time_now().ts.tv_sec - reach->first_attempt,
-			reach->attempts, true)));
-		tal_free(reach);
+		unreachable(reach, true);
 		return;
 	}
 
