@@ -1645,6 +1645,7 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 	struct addrinfo ai;
 	struct sockaddr_in sin;
 	struct sockaddr_in6 sin6;
+	bool prefer_tor;
 
 	/* FIXME: make generic */
 	ai.ai_flags = 0;
@@ -1652,6 +1653,13 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 	ai.ai_protocol = 0;
 	ai.ai_canonname = NULL;
 	ai.ai_next = NULL;
+
+	if (reach->daemon->tor_proxyaddr)
+		/* We dont use tor proxy if we only have ip */
+		prefer_tor = (reach->daemon->use_tor_proxy_always
+			   || do_we_use_tor_addr(reach->daemon->wireaddrs));
+	else
+		prefer_tor = false;
 
 	switch (reach->addr.type) {
 	case ADDR_TYPE_IPV4:
@@ -1663,10 +1671,10 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		ai.ai_addr = (struct sockaddr *)&sin;
 		io_set_finish(conn, connect_failed, reach);
 
-		if (reach->daemon->tor_proxyaddr->port > 0)
-			/* We dont use tor proxy if we only have ip */
-			if (reach->daemon->use_tor_proxy_always || do_we_use_tor_addr(reach->daemon->wireaddrs))
-				return io_tor_connect(conn, reach->daemon->tor_proxyaddr, &reach->addr, reach);
+		if (prefer_tor)
+			return io_tor_connect(conn,
+					      reach->daemon->tor_proxyaddr,
+					      &reach->addr, reach);
 
 		return io_connect(conn, &ai, connection_out, reach);
 		break;
@@ -1680,11 +1688,10 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		ai.ai_addr = (struct sockaddr *)&sin6;
 
 		io_set_finish(conn, connect_failed, reach);
-		if (reach->daemon->tor_proxyaddr->port > 0)
-			/* We dont use tor proxy if we only have ip */
-			if (reach->daemon->use_tor_proxy_always || do_we_use_tor_addr(reach->daemon->wireaddrs))
-				return io_tor_connect(conn, reach->daemon->tor_proxyaddr,
-						      &reach->addr, reach);
+		if (prefer_tor)
+			return io_tor_connect(conn,
+					      reach->daemon->tor_proxyaddr,
+					      &reach->addr, reach);
 
 		return io_connect(conn, &ai, connection_out, reach);
 		break;
