@@ -11,15 +11,9 @@ void activate_peers(struct lightningd *ld UNNEEDED)
 /* Generated stub for begin_topology */
 void begin_topology(struct chain_topology *topo UNNEEDED)
 { fprintf(stderr, "begin_topology called!\n"); abort(); }
-/* Generated stub for check_return_from_service_call */
-bool check_return_from_service_call(void)
-{ fprintf(stderr, "check_return_from_service_call called!\n"); abort(); }
 /* Generated stub for crashlog_activate */
 void crashlog_activate(const char *argv0 UNNEEDED, struct log *log UNNEEDED)
 { fprintf(stderr, "crashlog_activate called!\n"); abort(); }
-/* Generated stub for create_tor_hidden_service_conn */
-bool create_tor_hidden_service_conn(struct lightningd *ld UNNEEDED)
-{ fprintf(stderr, "create_tor_hidden_service_conn called!\n"); abort(); }
 /* Generated stub for db_begin_transaction_ */
 void db_begin_transaction_(struct db *db UNNEEDED, const char *location UNNEEDED)
 { fprintf(stderr, "db_begin_transaction_ called!\n"); abort(); }
@@ -90,6 +84,9 @@ void subd_shutdown(struct subd *subd UNNEEDED, unsigned int seconds UNNEEDED)
 /* Generated stub for timer_expired */
 void timer_expired(tal_t *ctx UNNEEDED, struct timer *timer UNNEEDED)
 { fprintf(stderr, "timer_expired called!\n"); abort(); }
+/* Generated stub for tor_init */
+void tor_init(struct lightningd *ld UNNEEDED)
+{ fprintf(stderr, "tor_init called!\n"); abort(); }
 /* Generated stub for txfilter_add_derkey */
 void txfilter_add_derkey(struct txfilter *filter UNNEEDED,
 			 const u8 derkey[PUBKEY_DER_LEN])
