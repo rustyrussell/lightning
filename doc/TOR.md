@@ -81,10 +81,10 @@ or the password for the service if cookiefile is not accessable
 --tor-auto-listen true : try to generate an temp V2 onion addr
 
 NOTE if --tor-proxy set all traffic will be rooted over the proxy
-if --ipaddr left empty only the auto generated onion addr will be used for your node
+if --addr is not specified only the auto generated onion addr will be used for your node.
 
 you can also set a fixed onion addr by option
---tor-external = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion  (V2 or V3 is allowed)
+--addr=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion  (V2 or V3 is allowed)
 
 this addr can be created by
 
@@ -100,7 +100,7 @@ HiddenServicePort 9735 127.0.0.1:9735
 in /etc/tor/torrc
 
 the addr for
-the --tor-external option
+the --addr option
 
 you find after /etc/init.d/tor restart
 
@@ -113,7 +113,7 @@ cli/lightning-cli getinfo
 
 some examples:
 
-sudo lightningd/lightningd --network=testnet --ipaddr=127.0.0.1 --port=1234
+sudo lightningd/lightningd --network=testnet --addr=127.0.0.1 --port=1234
 --proxy=127.0.0.1:9050 --tor-auto-listen true --tor-service=127.0.0.1:9051
 
 this will try to generate an V2 auto hidden-service by reading the tor cookie and
@@ -129,13 +129,13 @@ so the node accessable by connect peerid xxxxxxxxxxxxxxxxxxx.onion 1234
 
 
 lightningd/lightningd --network=testnet --port=1234
---proxy=127.0.0.1:9050 --tor-external=xxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion --port 1234
+--proxy=127.0.0.1:9050 --addr=xxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion --port 1234
 
 this will use the hidden-service set by /etc/tor/torrc and use the hidden service
 so the node is  accessable by connect peerid xxxxxxxxxxxxxxxxxxxxxxxx.onion 1234
 or
 lightningd/lightningd --network=testnet --port=1234
---proxy=127.0.0.1:9050 --ipaddr=xxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion --port 1234
+--proxy=127.0.0.1:9050 --addr=xxxxxxxxxxxxxxxxxxxxxxxxxxxx.onion --port 1234
 this will use the hidden-service set by /etc/tor/torrc and use the hidden service
 so the node is only accessable by connect peerid xxxxxxxxxxxxxxxxxxxxxxxonion 1234
 
