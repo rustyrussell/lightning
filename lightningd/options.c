@@ -927,7 +927,7 @@ static void add_config(struct lightningd *ld,
 				json_add_string(response,
 						name0,
 						fmt_wireaddr(name0,
-								 ld->wireaddrs+i));
+							     ld->wireaddrs+i));
 			}
 			return;
 #if DEVELOPER

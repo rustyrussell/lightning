@@ -11,7 +11,6 @@
 #include <wallet/txfilter.h>
 #include <wallet/wallet.h>
 
-
 /* BOLT #1:
  *
  * The default TCP port is 9735. This corresponds to hexadecimal
