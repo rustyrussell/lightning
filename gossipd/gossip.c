@@ -89,7 +89,7 @@ struct daemon {
 	/* To make sure our node_announcement timestamps increase */
 	u32 last_announce_timestamp;
 
-	struct wireaddr *tor_proxyaddrs;
+	struct wireaddr *tor_proxyaddr;
 	bool use_tor_proxy_always;
 
 };
@@ -1538,13 +1538,13 @@ static struct io_plan *gossip_init(struct daemon_conn *master,
 	struct bitcoin_blkid chain_hash;
 	u16 port;
 	u32 update_channel_interval;
-	daemon->tor_proxyaddrs = tal_arrz(daemon, struct wireaddr,1);
 
 	if (!fromwire_gossipctl_init(
 		daemon, msg, &daemon->broadcast_interval, &chain_hash,
 		&daemon->id, &port, &daemon->globalfeatures,
 		&daemon->localfeatures, &daemon->wireaddrs, daemon->rgb,
-		daemon->alias, &update_channel_interval, daemon->tor_proxyaddrs, &daemon->use_tor_proxy_always)) {
+		daemon->alias, &update_channel_interval, &daemon->tor_proxyaddr,
+		&daemon->use_tor_proxy_always)) {
 		master_badmsg(WIRE_GOSSIPCTL_INIT, msg);
 	}
 	/* Prune time is twice update time */
@@ -1658,10 +1658,10 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		ai.ai_addr = (struct sockaddr *)&sin;
 		io_set_finish(conn, connect_failed, reach);
 
-		if (reach->daemon->tor_proxyaddrs->port > 0)
+		if (reach->daemon->tor_proxyaddr->port > 0)
 			/* We dont use tor proxy if we only have ip */
 			if (reach->daemon->use_tor_proxy_always || do_we_use_tor_addr(reach->daemon->wireaddrs))
-				return io_tor_connect(conn, reach->daemon->tor_proxyaddrs, &reach->addr, reach);
+				return io_tor_connect(conn, reach->daemon->tor_proxyaddr, &reach->addr, reach);
 
 		return io_connect(conn, &ai, connection_out, reach);
 		break;
@@ -1675,22 +1675,22 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 		ai.ai_addr = (struct sockaddr *)&sin6;
 
 		io_set_finish(conn, connect_failed, reach);
-		if (reach->daemon->tor_proxyaddrs->port > 0)
+		if (reach->daemon->tor_proxyaddr->port > 0)
 			/* We dont use tor proxy if we only have ip */
 			if (reach->daemon->use_tor_proxy_always || do_we_use_tor_addr(reach->daemon->wireaddrs))
-				return io_tor_connect(conn, reach->daemon->tor_proxyaddrs,
+				return io_tor_connect(conn, reach->daemon->tor_proxyaddr,
 						      &reach->addr, reach);
 
 		return io_connect(conn, &ai, connection_out, reach);
 		break;
 	case ADDR_TYPE_TOR_V2:
 		io_set_finish(conn, connect_failed, reach);
-		return io_tor_connect(conn, reach->daemon->tor_proxyaddrs,
+		return io_tor_connect(conn, reach->daemon->tor_proxyaddr,
 				      &reach->addr, reach);
 		break;
 	case ADDR_TYPE_TOR_V3:
 		io_set_finish(conn, connect_failed, reach);
-		return io_tor_connect(conn, reach->daemon->tor_proxyaddrs,
+		return io_tor_connect(conn, reach->daemon->tor_proxyaddr,
 				      &reach->addr, reach);
 		break;
 	case ADDR_TYPE_PADDING:
