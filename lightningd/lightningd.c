@@ -21,7 +21,6 @@
 #include <common/io_debug.h>
 #include <common/memleak.h>
 #include <common/timeout.h>
-#include <common/tor.h>
 #include <common/utils.h>
 #include <common/version.h>
 #include <common/wireaddr.h>
@@ -33,6 +32,7 @@
 #include <lightningd/jsonrpc.h>
 #include <lightningd/log.h>
 #include <lightningd/options.h>
+#include <lightningd/tor.h>
 #include <onchaind/onchain_wire.h>
 #include <signal.h>
 #include <sys/types.h>

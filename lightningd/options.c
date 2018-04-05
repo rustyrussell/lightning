@@ -11,7 +11,6 @@
 #include <ccan/tal/str/str.h>
 #include <common/configdir.h>
 #include <common/memleak.h>
-#include <common/tor.h>
 #include <common/version.h>
 #include <common/wireaddr.h>
 #include <errno.h>
