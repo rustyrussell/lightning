@@ -33,7 +33,7 @@ enum wire_addr_type {
 	ADDR_TYPE_IPV6 = 2,
 	ADDR_TYPE_TOR_V2 = 3,
 	ADDR_TYPE_TOR_V3 = 4
-	};
+};
 
 /* Structure now fit for tor support */
 struct wireaddr {

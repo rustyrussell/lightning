@@ -14,24 +14,21 @@
 #include <unistd.h>
 
 #define SOCKS_NOAUTH		0
-#define SOCKS_ERROR 	 0xff
+#define SOCKS_ERROR		0xff
 #define SOCKS_CONNECT		1
 #define SOCKS_TYP_IPV4		1
 #define SOCKS_DOMAIN		3
 #define SOCKS_TYP_IPV6		4
-#define SOCKS_V5            5
+#define SOCKS_V5		5
 
-#define MAX_SIZE_OF_SOCKS5_REQ_OR_RESP 255
+#define MAX_SIZE_OF_SOCKS5_REQ_OR_RESP	255
 #define SIZE_OF_RESPONSE 		4
 #define SIZE_OF_REQUEST 		3
-#define SIZE_OF_IPV4_RESPONSE 	6
-#define SIZE_OF_IPV6_RESPONSE 	18
+#define SIZE_OF_IPV4_RESPONSE	 	6
+#define SIZE_OF_IPV6_RESPONSE		18
 #define SOCK_REQ_METH_LEN		3
 #define SOCK_REQ_V5_LEN			5
-#define SOCK_REQ_V5_HEADER_LEN	7
-
-/* some crufts can not forward ipv6*/
-#undef BIND_FIRST_TO_IPV6
+#define SOCK_REQ_V5_HEADER_LEN		7
 
 struct reaching_socks {
 	u8 buffer[MAX_SIZE_OF_SOCKS5_REQ_OR_RESP];
@@ -142,8 +139,8 @@ static struct io_plan *connect_finish(struct io_conn *conn,
 			return connection_out(conn, reach->reach);
 		} else {
 			status_trace
-			    ("Tor connect out for host %s error invalid type return ",
-			     reach->host);
+				("Tor connect out for host %s error invalid type return ",
+				 reach->host);
 			return io_close(conn);
 		};
 	} else {
@@ -198,20 +195,20 @@ struct io_plan *io_tor_connect(struct io_conn *conn,
 
 	if (addr->type == ADDR_TYPE_TOR_V3)
 		reach_tor->host =
-		    tal_fmt(reach, "%.62s",
-			    fmt_wireaddr_without_port(tmpctx, addr));
+			tal_fmt(reach, "%.62s",
+				fmt_wireaddr_without_port(tmpctx, addr));
 	else if (addr->type == ADDR_TYPE_TOR_V2)
 		reach_tor->host =
-		    tal_fmt(reach, "%.22s",
-			    fmt_wireaddr_without_port(tmpctx, addr));
+			tal_fmt(reach, "%.22s",
+				fmt_wireaddr_without_port(tmpctx, addr));
 	else if (addr->type == ADDR_TYPE_IPV4)
 		reach_tor->host =
-		    tal_fmt(reach, "%s",
-			    fmt_wireaddr_without_port(tmpctx, addr));
+			tal_fmt(reach, "%s",
+				fmt_wireaddr_without_port(tmpctx, addr));
 	else if (addr->type == ADDR_TYPE_IPV6)
 		reach_tor->host =
-		    tal_fmt(reach, "%s",
-			    fmt_wireaddr_without_port(tmpctx, addr));
+			tal_fmt(reach, "%s",
+				fmt_wireaddr_without_port(tmpctx, addr));
 	reach_tor->reach = reach;
 
 	plan = io_connect(conn, ai_tor, &io_tor_connect_do_req, reach_tor);

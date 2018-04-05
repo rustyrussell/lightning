@@ -63,7 +63,7 @@ static void tal_freefn(void *ptr)
 
 /* FIXME: Put into ccan/time. */
 #define TIME_FROM_SEC(sec) { { .tv_nsec = 0, .tv_sec = sec } }
-#define TIME_FROM_MSEC(msec) \
+#define TIME_FROM_MSEC(msec)						\
 	{ { .tv_nsec = ((msec) % 1000) * 1000000, .tv_sec = (msec) / 1000 } }
 
 static char *opt_set_u64(const char *arg, u64 *u)
@@ -296,7 +296,7 @@ static char *opt_add_tor_addr(const char *arg, struct lightningd *ld)
 static void config_register_opts(struct lightningd *ld)
 {
 	opt_register_noarg("--daemon", opt_set_bool, &ld->daemon,
-			 "Run in the background, suppress stdout/stderr");
+			   "Run in the background, suppress stdout/stderr");
 	opt_register_arg("--ignore-fee-limits", opt_set_bool_arg, opt_show_bool,
 			 &ld->config.ignore_fee_limits,
 			 "(DANGEROUS) allow peer to set any feerate");
@@ -377,18 +377,18 @@ static void config_register_opts(struct lightningd *ld)
 			 &ld->ini_autocleaninvoice_cycle,
 			 "If expired invoice autoclean enabled, invoices that have expired for at least this given seconds are cleaned");
 	opt_register_arg("--proxy", opt_add_torproxy_addr, NULL,
-			ld,"Set a socks v5 proxy IP address and port");
+			 ld,"Set a socks v5 proxy IP address and port");
 	opt_register_arg("--tor-service",opt_add_tor_service_addr, NULL,
-			ld,"Set a tor service api IP address and port");
+			 ld,"Set a tor service api IP address and port");
 	opt_register_arg("--tor-external", opt_add_tor_addr, NULL,
-			ld,"Set a Tor onion address and port");
+			 ld,"Set a Tor onion address and port");
 	opt_register_arg("--tor-service-password", opt_set_talstr, NULL,
 			 &ld->tor_service_password,
 			 "Set a Tor hidden service password");
 	opt_register_arg("--tor-auto-listen", opt_set_bool_arg, opt_show_bool,
-			&ld->config.tor_enable_auto_hidden_service , "Generate and use a temp auto hidden-service and show the onion address");
+			 &ld->config.tor_enable_auto_hidden_service , "Generate and use a temp auto hidden-service and show the onion address");
 	opt_register_arg("--always-use-tor-proxy", opt_set_bool_arg, opt_show_bool,
-			&ld->use_tor_proxy_always , "Use the Tor proxy always");
+			 &ld->use_tor_proxy_always , "Use the Tor proxy always");
 }
 
 #if DEVELOPER
@@ -640,8 +640,8 @@ static void opt_parse_from_config(struct lightningd *ld)
 	}
 
 	/*
-	For each line we construct a fake argc,argv commandline.
-	argv[1] is the only element that changes between iterations.
+	  For each line we construct a fake argc,argv commandline.
+	  argv[1] is the only element that changes between iterations.
 	*/
 	argc = 2;
 	argv[0] = "lightning config file";
@@ -718,9 +718,9 @@ void register_opts(struct lightningd *ld)
 			 "Specify pid file");
 
 	opt_register_arg(
-	    "--channel-update-interval=<s>", opt_set_u32, opt_show_u32,
-	    &ld->config.channel_update_interval,
-	    "Time in seconds between channel updates for our own channels.");
+		"--channel-update-interval=<s>", opt_set_u32, opt_show_u32,
+		&ld->config.channel_update_interval,
+		"Time in seconds between channel updates for our own channels.");
 
 	opt_register_logging(ld);
 	opt_register_version();
@@ -823,7 +823,7 @@ bool handle_opts(struct lightningd *ld, int argc, char *argv[])
 	if (ld->portnum && tal_count(ld->wireaddrs) == 0)
 		/* Make sure local ip is not accedently used as wireaddr when tor_auto_listen is set */
 		if (!ld->config.tor_enable_auto_hidden_service)
-				guess_addresses(ld);
+			guess_addresses(ld);
 		else
 			log_debug(ld->log, "Not guessing addresses Tor auto addr set");
 	else
@@ -924,8 +924,8 @@ static void add_config(struct lightningd *ld,
 						 topo->override_fee_rate[1],
 						 topo->override_fee_rate[2]);
 		} else if (
-		(opt->cb_arg == (void *)opt_add_ipaddr)
-		|| (opt->cb_arg == (void *)opt_add_tor_addr)) {
+			(opt->cb_arg == (void *)opt_add_ipaddr)
+			|| (opt->cb_arg == (void *)opt_add_tor_addr)) {
 			/* This is a bit weird, we can have multiple args */
 			for (size_t i = 0; i < tal_count(ld->wireaddrs); i++) {
 				json_add_string(response,
