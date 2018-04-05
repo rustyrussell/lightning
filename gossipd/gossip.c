@@ -1737,19 +1737,24 @@ static void try_connect(struct reaching *reach)
 		fd = socket(AF_INET6, SOCK_STREAM, 0);
 		break;
 	case ADDR_TYPE_TOR_V2:
+		if (!reach->daemon->tor_proxyaddr)
+			goto need_tor;
 		fd = socket(AF_INET, SOCK_STREAM, 0);
 		break;
 	case ADDR_TYPE_TOR_V3:
+		if (!reach->daemon->tor_proxyaddr)
+			goto need_tor;
 		fd = socket(AF_INET, SOCK_STREAM, 0);
 		break;
 	default:
+	need_tor:
 		fd = -1;
 		errno = EPROTONOSUPPORT;
 		break;
 	}
 
 	if (fd < 0) {
-		status_broken("Can't open %i socket for %s (%s), giving up",
+		status_info("Can't open %i socket for %s (%s), giving up",
 			      a->addr.type,
 			      type_to_string(tmpctx, struct pubkey, &reach->id),
 			      strerror(errno));
