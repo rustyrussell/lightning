@@ -56,8 +56,8 @@ void towire_wireaddr(u8 **pptr, const struct wireaddr *addr)
 
 char *fmt_wireaddr_without_port(const tal_t * ctx, const struct wireaddr *a)
 {
-	char addrstr[LARGEST_ADDRLEN];
 	char *ret, *hex;
+	char addrstr[LARGEST_ADDRLEN];
 
 	switch (a->type) {
 	case ADDR_TYPE_IPV4:
@@ -69,11 +69,9 @@ char *fmt_wireaddr_without_port(const tal_t * ctx, const struct wireaddr *a)
 			return "Unprintable-ipv6-address";
 		return tal_fmt(ctx, "[%s]", addrstr);
 	case ADDR_TYPE_TOR_V2:
-		return tal_fmt(ctx, "%.16s.onion",
-			       b32_encode(addrstr, (u8 *) a->addr, 2));
 	case ADDR_TYPE_TOR_V3:
-		return tal_fmt(ctx, "%.56s.onion",
-			       b32_encode(addrstr, (u8 *) a->addr, 3));
+		return tal_fmt(ctx, "%s.onion",
+			       b32_encode(tmpctx, a->addr, a->addrlen));
 	case ADDR_TYPE_PADDING:
 		break;
 	}
@@ -149,7 +147,6 @@ bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 defport,
 	struct addrinfo *addrinfo;
 	struct addrinfo hints;
 	int gai_err;
-	u8 tor_dec_bytes[TOR_V3_ADDRLEN];
 	u16 port;
 	char *ip;
 	bool res;
@@ -184,23 +181,29 @@ bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 defport,
 	}
 
 	if (strends(ip, ".onion")) {
-		if (strlen(ip) < 25) {	//FIXME bool is_V2_or_V3_TOR(addr);
+		u8 *dec = b32_decode(tmpctx, ip, strlen(ip) - strlen(".onion"));
+		if (!dec)
+			goto bad_onion;
+
+		if (tal_len(dec) == TOR_V2_ADDRLEN)
 			addr->type = ADDR_TYPE_TOR_V2;
-			addr->addrlen = TOR_V2_ADDRLEN;
-			addr->port = port;
-			b32_decode((u8 *) tor_dec_bytes, (u8 *) ip, 2);
-			memcpy(&addr->addr, tor_dec_bytes, addr->addrlen);
-			res = true;
-		} else {
+		else if (tal_len(dec) == TOR_V3_ADDRLEN)
 			addr->type = ADDR_TYPE_TOR_V3;
-			addr->addrlen = TOR_V3_ADDRLEN;
-			addr->port = port;
-			b32_decode((u8 *) tor_dec_bytes, (u8 *) ip, 3);
-			memcpy(&addr->addr, tor_dec_bytes, addr->addrlen);
-			res = true;
-		}
+		else
+			goto bad_onion;
+
+		addr->addrlen = tal_len(dec) + 2;
+		addr->port = port;
+		memcpy(&addr->addr, dec, tal_len(dec));
+		res = true;
 		goto finish;
-	};
+
+	bad_onion:
+		if (err_msg)
+			*err_msg = "Invalid Tor address";
+		res = false;
+		goto finish;
+	}
 
 	/* Resolve with getaddrinfo */
 	if (!res) {
