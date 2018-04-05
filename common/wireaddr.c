@@ -56,7 +56,7 @@ void towire_wireaddr(u8 **pptr, const struct wireaddr *addr)
 
 char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a)
 {
-	char addrstr[FQDN_ADDRLEN];
+	char addrstr[LARGEST_ADDRLEN];
 	char *ret, *hex;
 
 	switch (a->type) {
@@ -87,7 +87,7 @@ REGISTER_TYPE_TO_STRING(wireaddr, fmt_wireaddr);
 
 char *fmt_wireaddr_without_port(const tal_t * ctx, const struct wireaddr *a)
 {
-	char addrstr[FQDN_ADDRLEN];
+	char addrstr[LARGEST_ADDRLEN];
 	char *ret, *hex;
 
 	switch (a->type) {
