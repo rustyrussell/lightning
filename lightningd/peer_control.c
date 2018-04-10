@@ -895,14 +895,23 @@ static void json_close(struct command *cmd,
 
 	/* Normal case. */
 	if (channel->state == CHANNELD_NORMAL || channel->state == CHANNELD_AWAITING_LOCKIN) {
+		struct json_result *response = new_json_result(cmd);
 		channel_set_state(channel,
 				  channel->state, CHANNELD_SHUTTING_DOWN);
 
-		if (channel->owner)
+		json_object_start(response, NULL);
+		if (channel->owner) {
 			subd_send_msg(channel->owner,
 				      take(towire_channel_send_shutdown(channel)));
-
-		command_success(cmd, null_response(cmd));
+			json_add_string(response, "info",
+					"Negotiating mutual close,"
+					" see listpeers closing_txid"
+					" once negotiation complete");
+		} else
+			json_add_string(response, "info",
+					"Will negotiate close on reconnect");
+		json_object_end(response);
+		command_success(cmd, response);
 	} else
 		command_fail(cmd, "Peer is in state %s",
 			     channel_state_name(channel));

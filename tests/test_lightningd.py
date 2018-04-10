@@ -1181,7 +1181,8 @@ class LightningDTests(BaseLightningDTests):
             assert billboard == ['CHANNELD_NORMAL:Funding transaction locked. Channel announced.']
 
         # This should return, then close.
-        l1.rpc.close(l2.info['id'])
+        c = l1.rpc.close(l2.info['id'])
+        assert c['info'] == "Negotiating mutual close, see listpeers closing_txid once negotiation complete"
         l1.daemon.wait_for_log(' to CHANNELD_SHUTTING_DOWN')
         l2.daemon.wait_for_log(' to CHANNELD_SHUTTING_DOWN')
 
@@ -1234,7 +1235,8 @@ class LightningDTests(BaseLightningDTests):
         l2.stop()
 
         # This should succeed, once l2 restarts.
-        l1.rpc.close(l2.info['id'])
+        c = l1.rpc.close(l2.info['id'])
+        assert c['info'] == "Will negotiate close on reconnect"
         l1.daemon.wait_for_log(' to CHANNELD_SHUTTING_DOWN')
 
         l2.daemon.start()
