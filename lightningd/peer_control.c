@@ -217,6 +217,10 @@ void drop_to_chain(struct lightningd *ld, struct channel *channel)
 	 * if they beat us to the broadcast). */
 	broadcast_tx(ld->topology, channel, channel->last_tx, NULL);
 	remove_sig(channel->last_tx);
+
+	if (!channel->closing_txid)
+		channel->closing_txid = tal(channel, struct bitcoin_txid);
+	bitcoin_txid(channel->last_tx, channel->closing_txid);
 }
 
 void channel_errmsg(struct channel *channel,
@@ -691,6 +695,10 @@ static void gossipd_getpeers_complete(struct subd *gossip, const u8 *msg,
 				     channel->msatoshi_to_us_max);
 			json_add_u64(response, "msatoshi_total",
 				     channel->funding_satoshi * 1000);
+			if (channel->closing_txid)
+				json_add_txid(response,
+					      "closing_txid",
+					      channel->closing_txid);
 
 			/* channel config */
 			json_add_u64(response, "dust_limit_satoshis",

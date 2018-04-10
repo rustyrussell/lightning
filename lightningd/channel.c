@@ -195,6 +195,7 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 	channel->funding_outnum = funding_outnum;
 	channel->funding_satoshi = funding_satoshi;
 	channel->push_msat = push_msat;
+	channel->closing_txid = NULL;
 	channel->remote_funding_locked = remote_funding_locked;
 	channel->scid = tal_steal(channel, scid);
 	channel->our_msatoshi = our_msatoshi;

@@ -1208,6 +1208,9 @@ class LightningDTests(BaseLightningDTests):
         l1.daemon.wait_for_log(r'Owning output .* txid %s' % closetxid)
         l2.daemon.wait_for_log(r'Owning output .* txid %s' % closetxid)
 
+        assert l1.rpc.listpeers(l2.info['id'])['peers'][0]['channels'][0]['closing_txid'] == closetxid
+        assert l2.rpc.listpeers(l1.info['id'])['peers'][0]['channels'][0]['closing_txid'] == closetxid
+
         # Make sure both nodes have grabbed their close tx funds
         assert closetxid in set([o['txid'] for o in l1.rpc.listfunds()['outputs']])
         assert closetxid in set([o['txid'] for o in l2.rpc.listfunds()['outputs']])

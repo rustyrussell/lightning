@@ -64,6 +64,9 @@ struct channel {
 	/* Channel if locked locally. */
 	struct short_channel_id *scid;
 
+	/* Closing txid, for reporting to JSON */
+	struct bitcoin_txid *closing_txid;
+
 	/* Amount going to us, not counting unfinished HTLCs; if we have one. */
 	u64 our_msatoshi;
 	/* Statistics for min and max our_msatoshi. */
