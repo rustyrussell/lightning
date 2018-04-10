@@ -1076,42 +1076,6 @@ static const struct json_command dev_sign_last_tx = {
 };
 AUTODATA(json_command, &dev_sign_last_tx);
 
-static void json_dev_fail(struct command *cmd,
-			  const char *buffer, const jsmntok_t *params)
-{
-	jsmntok_t *peertok;
-	struct peer *peer;
-	struct channel *channel;
-
-	if (!json_get_params(cmd, buffer, params,
-			     "id", &peertok,
-			     NULL)) {
-		return;
-	}
-
-	peer = peer_from_json(cmd->ld, buffer, peertok);
-	if (!peer) {
-		command_fail(cmd, "Could not find peer with that id");
-		return;
-	}
-
-	channel = peer_active_channel(peer);
-	if (!channel) {
-		command_fail(cmd, "Could not find active channel with peer");
-		return;
-	}
-
-	channel_internal_error(channel, "Failing due to dev-fail command");
-	command_success(cmd, null_response(cmd));
-}
-
-static const struct json_command dev_fail_command = {
-	"dev-fail",
-	json_dev_fail,
-	"Fail with peer {id}"
-};
-AUTODATA(json_command, &dev_fail_command);
-
 static void dev_reenable_commit_finished(struct subd *channeld UNUSED,
 					 const u8 *resp UNUSED,
 					 const int *fds UNUSED,

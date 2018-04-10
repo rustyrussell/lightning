@@ -1387,8 +1387,8 @@ class LightningDTests(BaseLightningDTests):
         l1.daemon.wait_for_log('peer_in WIRE_REVOKE_AND_ACK')
 
         # We fail l2, so l1 will reconnect to it.
-        l2.rpc.dev_fail(l1.info['id'])
-        l2.daemon.wait_for_log('Failing due to dev-fail command')
+        l2.rpc.close(l1.info['id'], true)
+        l2.daemon.wait_for_log('Failing due to close force=true')
         l2.daemon.wait_for_log('sendrawtx exit 0')
 
         assert l1.bitcoin.rpc.getmempoolinfo()['size'] == 1
@@ -1490,8 +1490,8 @@ class LightningDTests(BaseLightningDTests):
         self.fund_channel(l1, l2, 10**6)
         self.pay(l1, l2, 200000000)
 
-        l1.rpc.dev_fail(l2.info['id'])
-        l1.daemon.wait_for_log('Failing due to dev-fail command')
+        l1.rpc.close(l2.info['id'], true)
+        l1.daemon.wait_for_log('Failing due to close force=true')
         l1.daemon.wait_for_log('sendrawtx exit 0')
 
         l1.bitcoin.generate_block(1)
@@ -1996,7 +1996,7 @@ class LightningDTests(BaseLightningDTests):
         bitcoind.generate_block(1)
         l1.daemon.wait_for_log('onchaind complete, forgetting peer')
 
-    @unittest.skipIf(not DEVELOPER, "needs DEVELOPER=1 for dev_fail")
+    @unittest.skipIf(not DEVELOPER, "needs DEVELOPER=1 for dev_ignore_htlcs/dev_setfees")
     def test_onchain_different_fees(self):
         """Onchain handling when we've had a range of fees"""
 
@@ -2016,7 +2016,7 @@ class LightningDTests(BaseLightningDTests):
         l1.daemon.wait_for_log('htlc 2: RCVD_ADD_ACK_COMMIT->SENT_ADD_ACK_REVOCATION')
 
         # Drop to chain
-        l1.rpc.dev_fail(l2.info['id'])
+        l1.rpc.close(l2.info['id'], True)
         l1.daemon.wait_for_log('sendrawtx exit 0')
 
         bitcoind.generate_block(1)
@@ -2350,7 +2350,7 @@ class LightningDTests(BaseLightningDTests):
 
         # Now spend the funding tx, generate a block and see others deleting the
         # channel from their network view
-        l1.rpc.dev_fail(l2.info['id'])
+        l1.rpc.close(l2.info['id'], force=True)
         time.sleep(1)
         l1.bitcoin.rpc.generate(1)
 
@@ -2740,7 +2740,7 @@ class LightningDTests(BaseLightningDTests):
         assert(len(l1.db_query("SELECT * FROM htlc_sigs;")) == 1)
 
         # This should reload the htlc_sig
-        l2.rpc.dev_fail(l1.info['id'])
+        l2.rpc.close(l1.info['id'], True)
         l2.stop()
         l1.bitcoin.rpc.generate(1)
         l1.daemon.start()
@@ -3575,8 +3575,8 @@ class LightningDTests(BaseLightningDTests):
         assert l1.rpc.listpeers()['peers'][0]['channels'][0]['msatoshi_to_us'] == 99980000
 
         # Now make sure l1 is watching for unilateral closes
-        l2.rpc.dev_fail(l1.info['id'])
-        l2.daemon.wait_for_log('Failing due to dev-fail command')
+        l2.rpc.close(l1.info['id'], True)
+        l2.daemon.wait_for_log('Failing due to close force=true')
         l2.daemon.wait_for_log('sendrawtx exit 0')
         bitcoind.generate_block(1)
 

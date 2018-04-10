@@ -352,15 +352,6 @@ class LightningRpc(UnixDomainSocketRpc):
         }
         return self.call("dev-sign-last-tx", payload)
 
-    def dev_fail(self, peer_id):
-        """
-        Fail with peer {peer_id}
-        """
-        payload = {
-            "id": peer_id
-        }
-        return self.call("dev-fail", payload)
-
     def dev_reenable_commit(self, peer_id):
         """
         Re-enable the commit timer on peer {id}
