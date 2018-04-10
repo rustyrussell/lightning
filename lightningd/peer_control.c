@@ -863,12 +863,14 @@ AUTODATA(json_command, &listpeers_command);
 static void json_close(struct command *cmd,
 		       const char *buffer, const jsmntok_t *params)
 {
-	jsmntok_t *peertok;
+	jsmntok_t *peertok, *forcetok;
+	bool force;
 	struct peer *peer;
 	struct channel *channel;
 
 	if (!json_get_params(cmd, buffer, params,
 			     "id", &peertok,
+			     "?force", &forcetok,
 			     NULL)) {
 		return;
 	}
@@ -890,6 +892,25 @@ static void json_close(struct command *cmd,
 			return;
 		}
 		command_fail(cmd, "Peer has no active channel");
+		return;
+	}
+
+	if (forcetok && !json_tok_bool(buffer, forcetok, &force)) {
+		command_fail(cmd, "force must be true or false");
+		return;
+	}
+
+	if (force) {
+		struct json_result *response = new_json_result(cmd);
+		json_object_start(response, NULL);
+		json_add_string(response, "info",
+				tal_fmt(tmpctx, "Forced close from state %s,"
+					" see listpeers closing_txid",
+					channel_state_name(channel)));
+		channel_internal_error(channel,
+				       "Failing due to close force=true");
+		json_object_end(response);
+		command_success(cmd, response);
 		return;
 	}
 

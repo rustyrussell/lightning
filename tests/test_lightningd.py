@@ -1251,6 +1251,29 @@ class LightningDTests(BaseLightningDTests):
         wait_forget_channels(l1)
         wait_forget_channels(l2)
 
+    def test_closing_force_while_awaiting_lockin(self):
+        l1, l2 = self.connect()
+
+        self.give_funds(l1, 10**6 + 1000000)
+
+        l1.rpc.fundchannel(l2.info['id'], 10**6)['tx']
+        l1.daemon.wait_for_log('sendrawtx exit 0')
+
+        l2.stop()
+
+        c = l1.rpc.close(l2.info['id'], True)
+        assert c['info'] == "Forced close from state CHANNELD_AWAITING_LOCKIN, see listpeers closing_txid"
+
+        # And should put closing into mempool.
+        l1.daemon.wait_for_log('sendrawtx exit 0')
+        bitcoind.rpc.generate(6)
+        l1.daemon.wait_for_log('Resolved FUNDING_TRANSACTION/FUNDING_OUTPUT by OUR_UNILATERAL')
+        # l2 should catch up once it sees unilateral close.
+        l2.daemon.start()
+        bitcoind.rpc.generate(100)
+        wait_forget_channels(l1)
+        wait_forget_channels(l2)
+
     def test_db_upgrade(self):
         l1 = self.node_factory.get_node()
         l1.stop()

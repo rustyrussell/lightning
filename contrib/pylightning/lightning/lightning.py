@@ -333,12 +333,13 @@ class LightningRpc(UnixDomainSocketRpc):
         }
         return self.call("fundchannel", payload)
 
-    def close(self, peer_id):
+    def close(self, peer_id, force=False):
         """
-        Close the channel with peer {id}
+        Close the channel with peer {id} (if {force} do unilateral close)
         """
         payload = {
-            "id": peer_id
+            "id": peer_id,
+            "force": force
         }
         return self.call("close", payload)
 
