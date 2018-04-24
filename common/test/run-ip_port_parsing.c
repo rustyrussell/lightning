@@ -93,7 +93,7 @@ int main(void)
 	assert(parse_wireaddr("[::ffff:127.0.0.1]:49150", &addr, 1, NULL));
 	assert(addr.port == 49150);
 
-  assert(parse_wireaddr("4ruvswpqec5i2gogopxl4vm5bruzknbvbylov2awbo4rxiq4cimdldad.onion:49150", &addr, 1, NULL));
+	assert(parse_wireaddr("4ruvswpqec5i2gogopxl4vm5bruzknbvbylov2awbo4rxiq4cimdldad.onion:49150", &addr, 1, NULL));
 	assert(addr.port == 49150);
 
 	assert(parse_wireaddr("4ruvswpqec5i2gogopxl4vm5bruzknbvbylov2awbo4rxiq4cimdldad.onion", &addr, 1, NULL));
@@ -102,7 +102,7 @@ int main(void)
 	assert(parse_wireaddr("odpzvneidqdf5hdq.onion:49150", &addr, 1, NULL));
 	assert(addr.port == 49150);
 
-	assert(parse_wireaddr("odpzvneidqdf5hdq.onion.onion", &addr, 1, NULL));
+	assert(parse_wireaddr("odpzvneidqdf5hdq.onion", &addr, 1, NULL));
 	assert(addr.port == 1);
 	tal_free(tmpctx);
 	return 0;

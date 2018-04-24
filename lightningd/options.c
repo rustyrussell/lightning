@@ -916,7 +916,7 @@ static void add_config(struct lightningd *ld,
 						 topo->override_fee_rate[0],
 						 topo->override_fee_rate[1],
 						 topo->override_fee_rate[2]);
-		} else if (opt->cb_arg == (void *)opt_add_ipaddr) {
+		} else if (opt->cb_arg == (void *)opt_add_addr) {
 			/* This is a bit weird, we can have multiple args */
 			for (size_t i = 0; i < tal_count(ld->wireaddrs); i++) {
 				json_add_string(response,
@@ -938,7 +938,8 @@ static void add_config(struct lightningd *ld,
 						      ld->tor_serviceaddr);
 		} else {
 			/* Insert more decodes here! */
-			abort();
+			answer = tal_fmt(name0,"Option --%s probably no handler defined or handled!", name);
+			/* FIXME abort(); */
 		}
 	}
 
