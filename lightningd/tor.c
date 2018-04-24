@@ -53,17 +53,16 @@ static char *tor_response_line(struct lightningd *ld, struct rbuf *rbuf)
 
 		/* Weird response */
 		if (!strstarts(line, "250"))
-			errx(1, "Tor returned '%s'", line);
+			 errx(1, "Tor returned '%s'", line);
 
 		/* Last line */
-		if (!strstarts(line, "250 "))
+		if (!strstarts(line, "250-"))
 			break;
 
 		return line + 4;
 	}
-	return NULL;
+	return line;
 }
-
 static void make_onion(struct lightningd *ld, struct rbuf *rbuf)
 {
 	char *line;
@@ -137,7 +136,7 @@ static void negotiate_auth(struct lightningd *ld, struct rbuf *rbuf)
 				err(1, "Cannot open Tor cookie file '%s'", p);
 
 			tor_send_cmd(ld, rbuf,
-				     tal_fmt(tmpctx, "AUTHENTICATE \"%s\"",
+				     tal_fmt(tmpctx, "AUTHENTICATE %s",
 					     tal_hexstr(tmpctx,
 							contents,
 							tal_len(contents)-1)));
@@ -163,7 +162,7 @@ void tor_init(struct lightningd *ld)
 			&ai_tor) != 0)
 		errx(1, "getaddrinfo failed for Tor service");
 
-	fd = socket(ai_tor->ai_protocol, SOCK_STREAM, 0);
+	fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd < 0)
 		err(1, "Creating stream socket for Tor");
 
