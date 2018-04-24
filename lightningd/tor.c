@@ -53,7 +53,7 @@ static char *tor_response_line(struct lightningd *ld, struct rbuf *rbuf)
 
 		/* Weird response */
 		if (!strstarts(line, "250"))
-			 errx(1, "Tor returned '%s'", line);
+			errx(1, "Tor returned '%s'", line);
 
 		/* Last line */
 		if (!strstarts(line, "250-"))
