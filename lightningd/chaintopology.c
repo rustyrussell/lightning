@@ -338,7 +338,7 @@ static void next_updatefee_timer(struct chain_topology *topo)
 /* Once we're run out of new blocks to add, call this. */
 static void updates_complete(struct chain_topology *topo)
 {
-	if (topo->tip != topo->prev_tip) {
+	if (!structeq(&topo->tip->blkid, &topo->prev_tip)) {
 		/* Tell lightningd about new block. */
 		notify_new_block(topo->bitcoind->ld, topo->tip->height);
 
@@ -352,7 +352,7 @@ static void updates_complete(struct chain_topology *topo)
 		db_set_intvar(topo->bitcoind->ld->wallet->db,
 			      "last_processed_block", topo->tip->height);
 
-		topo->prev_tip = topo->tip;
+		topo->prev_tip = topo->tip->blkid;
 	}
 
 	/* Try again soon. */
@@ -500,7 +500,8 @@ static void init_topo(struct bitcoind *bitcoind UNUSED,
 {
 	topo->root = new_block(topo, blk, topo->first_blocknum);
 	block_map_add(&topo->block_map, topo->root);
-	topo->tip = topo->prev_tip = topo->root;
+	topo->tip = topo->root;
+	topo->prev_tip = topo->tip->blkid;
 
 	/* In case we don't get all the way to updates_complete */
 	db_set_intvar(topo->bitcoind->ld->wallet->db,
