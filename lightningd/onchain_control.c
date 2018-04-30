@@ -47,7 +47,6 @@ static void onchaind_tell_fulfill(struct channel *channel)
 
 static void handle_onchain_init_reply(struct channel *channel, const u8 *msg UNUSED)
 {
-	/* FIXME: We may already be ONCHAIN state when we implement restart! */
 	channel_set_state(channel, FUNDING_SPEND_SEEN, ONCHAIN);
 }
 
@@ -72,12 +71,10 @@ static enum watch_result onchain_tx_watched(struct channel *channel,
 {
 	u32 blockheight = channel->peer->ld->topology->tip->height;
 	if (depth == 0) {
+		/* First time we lose a tx, we kill onchaind; we restart
+		 * in notify_blocks_removed() once it's all over. */
 		log_unusual(channel->log, "Chain reorganization!");
 		channel_set_owner(channel, NULL);
-
-		/* FIXME!
-		topology_rescan(peer->ld->topology, peer->funding_txid);
-		*/
 
 		/* We will most likely be freed, so this is a noop */
 		return KEEP_WATCHING;
@@ -468,10 +465,39 @@ enum watch_result onchaind_funding_spent(struct channel *channel,
 	return KEEP_WATCHING;
 }
 
+static void replay_onchaind_notifications(struct lightningd *ld,
+					  struct channel *chan)
+{
+	struct channeltx *txs;
+
+	txs = wallet_channeltxs_get(ld->wallet, tmpctx, chan->dbid);
+
+	for (size_t j = 0; j < tal_count(txs); j++) {
+		if (txs[j].type == WIRE_ONCHAIN_INIT) {
+			onchaind_funding_spent(chan, txs[j].tx,
+					       txs[j].blockheight);
+
+		} else if (txs[j].type == WIRE_ONCHAIN_SPENT) {
+			onchain_txo_spent(chan, txs[j].tx,
+					  txs[j].input_num,
+					  txs[j].blockheight);
+
+		} else if (txs[j].type == WIRE_ONCHAIN_DEPTH) {
+			onchain_tx_depth(chan, &txs[j].txid,
+					 txs[j].depth);
+
+		} else {
+			fatal("unknown message of type %d during "
+			      "onchaind replay",
+			      txs[j].type);
+		}
+	}
+	tal_free(txs);
+}
+
 void onchaind_replay_channels(struct lightningd *ld)
 {
 	u32 *onchaind_ids;
-	struct channeltx *txs;
 	struct channel *chan;
 
 	db_begin_transaction(ld->wallet->db);
@@ -480,34 +506,35 @@ void onchaind_replay_channels(struct lightningd *ld)
 	for (size_t i = 0; i < tal_count(onchaind_ids); i++) {
 		log_info(ld->log, "Restarting onchaind for channel %d",
 			 onchaind_ids[i]);
-
-		txs = wallet_channeltxs_get(ld->wallet, onchaind_ids,
-					    onchaind_ids[i]);
 		chan = channel_by_dbid(ld, onchaind_ids[i]);
 
-		for (size_t j = 0; j < tal_count(txs); j++) {
-			if (txs[j].type == WIRE_ONCHAIN_INIT) {
-				onchaind_funding_spent(chan, txs[j].tx,
-						       txs[j].blockheight);
-
-			} else if (txs[j].type == WIRE_ONCHAIN_SPENT) {
-				onchain_txo_spent(chan, txs[j].tx,
-						  txs[j].input_num,
-						  txs[j].blockheight);
-
-			} else if (txs[j].type == WIRE_ONCHAIN_DEPTH) {
-				onchain_tx_depth(chan, &txs[j].txid,
-						 txs[j].depth);
-
-			} else {
-				fatal("unknown message of type %d during "
-				      "onchaind replay",
-				      txs[j].type);
-			}
-		}
-		tal_free(txs);
+		replay_onchaind_notifications(ld, chan);
 	}
 	tal_free(onchaind_ids);
 
 	db_commit_transaction(ld->wallet->db);
+}
+
+void notify_blocks_removed(struct lightningd *ld)
+{
+	struct peer *peer;
+
+	/* onchaind dies when told a tx it was watching was removed due to
+	   reorg.  This can actually happy many times; we restart them here
+	   once. */
+	list_for_each(&ld->peers, peer, list) {
+		struct channel *channel;
+
+		list_for_each(&peer->channels, channel, list) {
+			if (channel->state != ONCHAIN)
+				continue;
+			if (channel->owner)
+				continue;
+
+			log_info(ld->log, "Restarting onchaind for channel %s",
+				 type_to_string(tmpctx, struct short_channel_id,
+						channel->scid));
+			replay_onchaind_notifications(ld, channel);
+		}
+	}
 }

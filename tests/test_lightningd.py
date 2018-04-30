@@ -3438,7 +3438,6 @@ class LightningDTests(BaseLightningDTests):
         wait_forget_channels(l1)
         wait_forget_channels(l2)
 
-    @unittest.expectedFailure
     def test_onchaind_reorg_htlc_txs(self):
         l1, l2 = self.connect()
         self.fund_channel(l1, l2, 10**7)

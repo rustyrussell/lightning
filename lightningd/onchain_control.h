@@ -15,6 +15,5 @@ enum watch_result onchaind_funding_spent(struct channel *channel,
 
 void onchaind_replay_channels(struct lightningd *ld);
 
-/* FIXME: Implement */
-static inline void notify_blocks_removed(struct lightningd *ld) { }
+void notify_blocks_removed(struct lightningd *ld);
 #endif /* LIGHTNING_LIGHTNINGD_ONCHAIN_CONTROL_H */
