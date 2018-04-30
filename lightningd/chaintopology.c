@@ -17,6 +17,7 @@
 #include <common/utils.h>
 #include <inttypes.h>
 #include <lightningd/gossip_control.h>
+#include <lightningd/onchain_control.h>
 
 /* Mutual recursion via timer. */
 static void try_extend_tip(struct chain_topology *topo);
@@ -450,6 +451,7 @@ static void remove_tip(struct chain_topology *topo)
 		      b->height,
 		      type_to_string(tmpctx, struct bitcoin_blkid, &b->blkid));
 
+	topo->removing_blocks = true;
 	txs = wallet_transactions_by_height(b, topo->wallet, b->height);
 	n = tal_count(txs);
 
@@ -469,8 +471,14 @@ static void have_new_block(struct bitcoind *bitcoind UNUSED,
 	/* Unexpected predecessor?  Free predecessor, refetch it. */
 	if (!structeq(&topo->tip->blkid, &blk->hdr.prev_hash))
 		remove_tip(topo);
-	else
+	else {
+		/* We may have removed many blocks.  Tell everyone. */
+		if (topo->removing_blocks) {
+			notify_blocks_removed(bitcoind->ld);
+			topo->removing_blocks = false;
+		}
 		add_tip(topo, new_block(topo, blk, topo->tip->height + 1));
+	}
 
 	/* Try for next one. */
 	try_extend_tip(topo);
@@ -502,6 +510,7 @@ static void init_topo(struct bitcoind *bitcoind UNUSED,
 	block_map_add(&topo->block_map, topo->root);
 	topo->tip = topo->root;
 	topo->prev_tip = topo->tip->blkid;
+	topo->removing_blocks = false;
 
 	/* In case we don't get all the way to updates_complete */
 	db_set_intvar(topo->bitcoind->ld->wallet->db,

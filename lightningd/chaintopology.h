@@ -80,9 +80,9 @@ struct chain_topology {
 	struct block *root;
 	struct block *tip;
 	struct bitcoin_blkid prev_tip;
+	bool removing_blocks;
 	struct block_map block_map;
 	u32 feerate[NUM_FEERATES];
-	bool startup;
 
 	/* Where to store blockchain info. */
 	struct wallet *wallet;
