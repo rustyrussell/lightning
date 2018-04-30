@@ -3412,6 +3412,94 @@ class LightningDTests(BaseLightningDTests):
         l2.daemon.wait_for_logs(['sendrawtx exit 0', ' to CLOSINGD_COMPLETE'])
         assert l1.bitcoin.rpc.getmempoolinfo()['size'] == 1
 
+    def test_onchaind_reorg_mutual(self):
+        l1, l2 = self.connect()
+        self.fund_channel(l1, l2, 10**6)
+
+        l1.rpc.close(l2.info['id'])
+        l1.daemon.wait_for_logs(['sendrawtx exit 0', ' to CLOSINGD_COMPLETE'])
+        l2.daemon.wait_for_logs(['sendrawtx exit 0', ' to CLOSINGD_COMPLETE'])
+
+        # Get it into the chain
+        hashes = bitcoind.rpc.generate(1)
+        l1.daemon.wait_for_log(' to ONCHAIN')
+        l2.daemon.wait_for_log(' to ONCHAIN')
+
+        # Now reorg.  onchaind should restart.
+        bitcoind.rpc.invalidateblock(hashes[0])
+        hashes = bitcoind.rpc.generate(2)
+        l1.daemon.wait_for_log('lightning_onchaind.*Status closed, but not exited.')
+        l2.daemon.wait_for_log('lightning_onchaind.*Status closed, but not exited.')
+
+        l1.daemon.wait_for_log('State changed from ONCHAIN to FUNDING_SPEND_SEEN')
+        l2.daemon.wait_for_log('State changed from ONCHAIN to FUNDING_SPEND_SEEN')
+        bitcoind.rpc.generate(100)
+
+        wait_forget_channels(l1)
+        wait_forget_channels(l2)
+
+    @unittest.expectedFailure
+    def test_onchaind_reorg_htlc_txs(self):
+        l1, l2 = self.connect()
+        self.fund_channel(l1, l2, 10**7)
+        self.pay(l1, l2, 1000000000)
+
+        # Set up payments both ways, so we can close with them still live.
+        l1.rpc.dev_ignore_htlcs(id=l2.info['id'], ignore=True)
+        l2.rpc.dev_ignore_htlcs(id=l1.info['id'], ignore=True)
+
+        p1 = self.pay(l1, l2, 10000000, async=True)
+        l1.daemon.wait_for_log('htlc 0: RCVD_ADD_ACK_COMMIT->SENT_ADD_ACK_REVOCATION')
+
+        p2 = self.pay(l2, l1, 20000000, async=True)
+        l2.daemon.wait_for_log('htlc 0: RCVD_ADD_ACK_COMMIT->SENT_ADD_ACK_REVOCATION')
+
+        # Force a unilateral close.
+        l1.rpc.dev_fail(l2.info['id'])
+        l1.daemon.wait_for_log('sendrawtx exit 0')
+
+        # Mine it
+        bitcoind.generate_block(1)
+
+        l1.daemon.wait_for_logs(['Propose handling OUR_UNILATERAL/OUR_HTLC by OUR_HTLC_TIMEOUT_TX (.*) after 6 blocks',
+                                 'Propose handling OUR_UNILATERAL/DELAYED_OUTPUT_TO_US by OUR_DELAYED_RETURN_TO_WALLET (.*) after 5 blocks',
+                                 'Propose handling OUR_UNILATERAL/THEIR_HTLC by THEIR_HTLC_TIMEOUT_TO_THEM \(IGNORING\) after 6 blocks'])
+        l2.daemon.wait_for_logs(['Propose handling THEIR_UNILATERAL/OUR_HTLC by OUR_HTLC_TIMEOUT_TO_US (.*) after 6 blocks',
+                                 'Propose handling THEIR_UNILATERAL/THEIR_HTLC by THEIR_HTLC_TIMEOUT_TO_THEM \(IGNORING\) after 6 blocks'])
+
+        # So, 6 blocks later, HTLC txs are sent.
+        hashes = bitcoind.generate_block(6)
+        l1.daemon.wait_for_logs(['sendrawtx exit 0']*2)
+        l2.daemon.wait_for_log('sendrawtx exit 0')
+        bitcoind.generate_block(1)
+        l1.daemon.wait_for_logs(['by our proposal']*2)
+        l2.daemon.wait_for_log('by our proposal')
+
+        # Now we reorg, which will *kick out* those txs.
+        bitcoind.rpc.invalidateblock(hashes[0])
+        bitcoind.wait_for_log('InvalidChainFound: invalid block={}'.format(hashes[0]))
+        bitcoind.generate_block(8)
+
+        # It will restart, and re-recognize.
+        l1.daemon.wait_for_logs(['Propose handling OUR_UNILATERAL/OUR_HTLC by OUR_HTLC_TIMEOUT_TX (.*) after 6 blocks',
+                                 'Propose handling OUR_UNILATERAL/DELAYED_OUTPUT_TO_US by OUR_DELAYED_RETURN_TO_WALLET (.*) after 5 blocks',
+                                 'Propose handling OUR_UNILATERAL/THEIR_HTLC by THEIR_HTLC_TIMEOUT_TO_THEM \(IGNORING\) after 6 blocks'])
+        l2.daemon.wait_for_logs(['Propose handling THEIR_UNILATERAL/OUR_HTLC by OUR_HTLC_TIMEOUT_TO_US (.*) after 6 blocks',
+                                 'Propose handling THEIR_UNILATERAL/THEIR_HTLC by THEIR_HTLC_TIMEOUT_TO_THEM \(IGNORING\) after 6 blocks'])
+        l1.daemon.wait_for_logs(['sendrawtx exit 0']*2)
+        l2.daemon.wait_for_log('sendrawtx exit 0')
+        bitcoind.generate_block(1)
+        l1.daemon.wait_for_logs(['by our proposal']*2
+                                + ['Propose handling OUR_HTLC_TIMEOUT_TX/DELAYED_OUTPUT_TO_US by OUR_DELAYED_RETURN_TO_WALLET .* after 5 blocks'])
+        l2.daemon.wait_for_log('by our proposal')
+
+        bitcoind.generate_block(5)                                
+        l1.daemon.wait_for_log('sendrawtx exit 0')
+
+        bitcoind.generate_block(100)
+        wait_forget_channels(l1)
+        wait_forget_channels(l2)
+        
     @unittest.skipIf(not DEVELOPER, "needs DEVELOPER=1")
     def test_bech32_funding(self):
         # Don't get any funds from previous runs.
