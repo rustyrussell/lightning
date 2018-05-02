@@ -643,7 +643,7 @@ class LightningDTests(BaseLightningDTests):
         l2 = self.node_factory.get_node()
         # Force l3 to give its address.
         l3port = self.node_factory.get_next_port()
-        l3 = self.node_factory.get_node(options={"ipaddr": "127.0.0.1:{}".format(l3port)})
+        l3 = self.node_factory.get_node(options={"addr": "127.0.0.1:{}".format(l3port)})
 
         l2.rpc.connect(l3.info['id'], 'localhost', l3.info['port'])
 
