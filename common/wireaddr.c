@@ -220,20 +220,6 @@ bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 defport,
 
 	memset(&addr->addr, 0, sizeof(addr->addr));
 
-	/* Addresses starting with '/' are local socket paths */
-	if (ip[0] == '/') {
-		/* Check if the path is too long */
-		if (strlen(ip) > sizeof(addr->addr)) {
-			goto finish;
-		}
-		addr->type = ADDR_TYPE_PADDING;
-		addr->addrlen = strlen(ip);
-		addr->port = 0;
-		memcpy(&addr->addr, ip, addr->addrlen);
-		res = true;
-		goto finish;
-	}
-
 	if (inet_pton(AF_INET, ip, &v4) == 1) {
 		addr->type = ADDR_TYPE_IPV4;
 		addr->addrlen = 4;

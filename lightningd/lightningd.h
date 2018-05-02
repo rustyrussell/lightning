@@ -89,9 +89,6 @@ struct lightningd {
 	char *config_dir;
 	char *rpc_filename;
 
-	/* Local socket for incoming connections */
-	u8 *localsocket_filename;
-
 	/* Configuration settings. */
 	struct config config;
 
@@ -115,7 +112,7 @@ struct lightningd {
 	u16 portnum;
 
 	/* Addresses to announce to the network (tal_count()) */
-	struct wireaddr *wireaddrs;
+	struct wireaddr_or_sockname *wireaddrs;
 
 	/* Bearer of all my secrets. */
 	int hsm_fd;

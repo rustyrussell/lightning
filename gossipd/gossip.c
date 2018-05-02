@@ -128,7 +128,7 @@ struct daemon {
 
 	u8 alias[33];
 	u8 rgb[3];
-	struct wireaddr *wireaddrs;
+	struct wireaddr_or_sockname *wireaddrs;
 
 	/* To make sure our node_announcement timestamps increase */
 	u32 last_announce_timestamp;
@@ -148,7 +148,7 @@ struct reaching {
 	struct pubkey id;
 
 	/* FIXME: Support multiple address. */
-	struct wireaddr addr;
+	struct wireaddr_or_sockname addr;
 
 	/* Whether connect command is waiting for the result. */
 	bool master_needs_response;
@@ -191,7 +191,7 @@ struct peer {
 	struct pubkey id;
 
 	/* Where it's connected to. */
-	struct wireaddr addr;
+	struct wireaddr_or_sockname addr;
 
 	/* Feature bitmaps. */
 	u8 *gfeatures, *lfeatures;
@@ -213,7 +213,7 @@ struct addrhint {
 
 	struct pubkey id;
 	/* FIXME: use array... */
-	struct wireaddr addr;
+	struct wireaddr_or_sockname addr;
 };
 
 /* FIXME: Reorder */
@@ -308,7 +308,7 @@ new_local_peer_state(struct peer *peer, const struct crypto_state *cs)
 static struct peer *new_peer(const tal_t *ctx,
 			     struct daemon *daemon,
 			     const struct pubkey *their_id,
-			     const struct wireaddr *addr,
+			     const struct wireaddr_or_sockname *addr,
 			     const struct crypto_state *cs)
 {
 	struct peer *peer = tal(ctx, struct peer);
@@ -521,7 +521,7 @@ static struct io_plan *read_init(struct io_conn *conn, struct peer *peer)
  * we have the features. */
 static struct io_plan *init_new_peer(struct io_conn *conn,
 				     const struct pubkey *their_id,
-				     const struct wireaddr *addr,
+				     const struct wireaddr_or_sockname *addr,
 				     const struct crypto_state *cs,
 				     struct daemon *daemon)
 {
@@ -565,7 +565,9 @@ static u8 *create_node_announcement(const tal_t *ctx, struct daemon *daemon,
 		memset(sig, 0, sizeof(*sig));
 	}
 	for (i = 0; i < tal_count(daemon->wireaddrs); i++)
-		towire_wireaddr(&addresses, daemon->wireaddrs+i);
+		if (!daemon->wireaddrs[i].is_sockname)
+			towire_wireaddr(&addresses,
+					&daemon->wireaddrs[i].u.wireaddr);
 
 	announcement =
 	    towire_node_announcement(ctx, sig, features, timestamp,
@@ -1518,7 +1520,7 @@ static void gossip_refresh_network(struct daemon *daemon)
 
 static struct io_plan *connection_in(struct io_conn *conn, struct daemon *daemon)
 {
-	struct wireaddr addr;
+	struct wireaddr_or_sockname addr;
 	struct sockaddr_storage s;
 	socklen_t len = sizeof(s);
 
@@ -1530,24 +1532,24 @@ static struct io_plan *connection_in(struct io_conn *conn, struct daemon *daemon
 
 	if (s.ss_family == AF_INET6) {
 		struct sockaddr_in6 *s6 = (void *)&s;
-		addr.type = ADDR_TYPE_IPV6;
-		addr.addrlen = sizeof(s6->sin6_addr);
-		BUILD_ASSERT(sizeof(s6->sin6_addr) <= sizeof(addr.addr));
-		memcpy(addr.addr, &s6->sin6_addr, addr.addrlen);
-		addr.port = ntohs(s6->sin6_port);
+		addr.is_sockname = false;
+		addr.u.wireaddr.type = ADDR_TYPE_IPV6;
+		addr.u.wireaddr.addrlen = sizeof(s6->sin6_addr);
+		BUILD_ASSERT(sizeof(s6->sin6_addr) <= sizeof(addr.u.wireaddr.addr));
+		memcpy(addr.u.wireaddr.addr, &s6->sin6_addr, addr.u.wireaddr.addrlen);
+		addr.u.wireaddr.port = ntohs(s6->sin6_port);
 	} else if (s.ss_family == AF_INET) {
 		struct sockaddr_in *s4 = (void *)&s;
-		addr.type = ADDR_TYPE_IPV4;
-		addr.addrlen = sizeof(s4->sin_addr);
-		BUILD_ASSERT(sizeof(s4->sin_addr) <= sizeof(addr.addr));
-		memcpy(addr.addr, &s4->sin_addr, addr.addrlen);
-		addr.port = ntohs(s4->sin_port);
+		addr.is_sockname = false;
+		addr.u.wireaddr.type = ADDR_TYPE_IPV4;
+		addr.u.wireaddr.addrlen = sizeof(s4->sin_addr);
+		BUILD_ASSERT(sizeof(s4->sin_addr) <= sizeof(addr.u.wireaddr.addr));
+		memcpy(addr.u.wireaddr.addr, &s4->sin_addr, addr.u.wireaddr.addrlen);
+		addr.u.wireaddr.port = ntohs(s4->sin_port);
 	} else if (s.ss_family == AF_UNIX) {
 		struct sockaddr_un *sun = (void *)&s;
-		addr.type = ADDR_TYPE_PADDING;
-		addr.addrlen = sizeof(sun->sun_path);
-		memcpy(addr.addr, &sun->sun_path, addr.addrlen);
-		addr.port = 0;
+		addr.is_sockname = true;
+		memcpy(addr.u.sockname, &sun->sun_path, sizeof(sun->sun_path));
 	} else {
 		status_broken("Unknown socket type %i for incoming conn",
 			      s.ss_family);
@@ -1559,7 +1561,7 @@ static struct io_plan *connection_in(struct io_conn *conn, struct daemon *daemon
 				   init_new_peer, daemon);
 }
 
-static void setup_listeners(struct daemon *daemon, u16 portnum, const char *localsocket)
+static void setup_listeners(struct daemon *daemon, u16 portnum)
 {
 	struct sockaddr_in addr;
 	struct sockaddr_in6 addr6;
@@ -1624,11 +1626,14 @@ static void setup_listeners(struct daemon *daemon, u16 portnum, const char *loca
 			      "Could not bind to a network address on port %u",
 			      portnum);
 
-	/* Optional UNIX socket */
-	if (localsocket) {
+	/* Optional UNIX sockets */
+	for (size_t i = 0; i < tal_count(daemon->wireaddrs); i++) {
+		if (!daemon->wireaddrs[i].is_sockname)
+			continue;
+
 		memset(&sun, 0, sizeof(sun));
 		sun.sun_family = AF_UNIX;
-		strcpy(sun.sun_path, (char*)localsocket);
+		strcpy(sun.sun_path, daemon->wireaddrs[i].u.sockname);
 
 		fd3 = make_listen_fd(AF_UNIX, &sun, sizeof(sun), false);
 		if (fd3 >= 0) {
@@ -1682,12 +1687,11 @@ static struct io_plan *gossip_activate(struct daemon_conn *master,
 				       const u8 *msg)
 {
 	u16 port;
-	u8* localsocket;
 
-	if (!fromwire_gossipctl_activate(msg, msg, &port, &localsocket))
+	if (!fromwire_gossipctl_activate(msg, &port))
 		master_badmsg(WIRE_GOSSIPCTL_ACTIVATE, msg);
 
-	setup_listeners(daemon, port, (const char*)localsocket);
+	setup_listeners(daemon, port);
 
 	/* OK, we're ready! */
 	daemon_conn_send(&daemon->master,
@@ -1727,7 +1731,7 @@ static struct io_plan *resolve_channel_req(struct io_conn *conn,
 
 static struct io_plan *handshake_out_success(struct io_conn *conn,
 					     const struct pubkey *id,
-					     const struct wireaddr *addr,
+					     const struct wireaddr_or_sockname *addr,
 					     const struct crypto_state *cs,
 					     struct reaching *reach)
 {
@@ -1801,31 +1805,36 @@ static struct io_plan *conn_init(struct io_conn *conn, struct reaching *reach)
 	ai.ai_canonname = NULL;
 	ai.ai_next = NULL;
 
-	switch (reach->addr.type) {
-	case ADDR_TYPE_IPV4:
-		ai.ai_family = AF_INET;
-		sin.sin_family = AF_INET;
-		sin.sin_port = htons(reach->addr.port);
-		memcpy(&sin.sin_addr, reach->addr.addr, sizeof(sin.sin_addr));
-		ai.ai_addrlen = sizeof(sin);
-		ai.ai_addr = (struct sockaddr *)&sin;
-		break;
-	case ADDR_TYPE_IPV6:
-		ai.ai_family = AF_INET6;
-		memset(&sin6, 0, sizeof(sin6));
-		sin6.sin6_family = AF_INET6;
-		sin6.sin6_port = htons(reach->addr.port);
-		memcpy(&sin6.sin6_addr, reach->addr.addr, sizeof(sin6.sin6_addr));
-		ai.ai_addrlen = sizeof(sin6);
-		ai.ai_addr = (struct sockaddr *)&sin6;
-		break;
-	case ADDR_TYPE_PADDING:
+	if (reach->addr.is_sockname) {
 		ai.ai_family = AF_UNIX;
 		sun.sun_family = AF_UNIX;
-		memcpy(&sun.sun_path, reach->addr.addr, sizeof(sun.sun_path));
+		memcpy(&sun.sun_path, reach->addr.u.sockname, sizeof(sun.sun_path));
 		ai.ai_addrlen = sizeof(sun);
 		ai.ai_addr = (struct sockaddr *)&sun;
-		break;
+	} else {
+		const struct wireaddr *addr = &reach->addr.u.wireaddr;
+		switch (addr->type) {
+		case ADDR_TYPE_IPV4:
+			ai.ai_family = AF_INET;
+			sin.sin_family = AF_INET;
+			sin.sin_port = htons(addr->port);
+			memcpy(&sin.sin_addr, addr->addr, sizeof(sin.sin_addr));
+			ai.ai_addrlen = sizeof(sin);
+			ai.ai_addr = (struct sockaddr *)&sin;
+			break;
+		case ADDR_TYPE_IPV6:
+			ai.ai_family = AF_INET6;
+			memset(&sin6, 0, sizeof(sin6));
+			sin6.sin6_family = AF_INET6;
+			sin6.sin6_port = htons(addr->port);
+			memcpy(&sin6.sin6_addr, addr->addr, sizeof(sin6.sin6_addr));
+			ai.ai_addrlen = sizeof(sin6);
+			ai.ai_addr = (struct sockaddr *)&sin6;
+			break;
+		case ADDR_TYPE_PADDING:
+			/* Shouldn't happen. */
+			return io_close(conn);
+		}
 	}
 
 	io_set_finish(conn, connect_failed, reach);
@@ -1848,12 +1857,14 @@ seed_resolve_addr(const tal_t *ctx, const struct pubkey *id, const u16 port)
 	status_trace("Resolving %s", addr);
 
 	a = tal(ctx, struct addrhint);
-	if (!wireaddr_from_hostname(&a->addr, addr, port, NULL)) {
+	a->addr.is_sockname = false;
+	if (!wireaddr_from_hostname(&a->addr.u.wireaddr, addr, port, NULL)) {
 		status_trace("Could not resolve %s", addr);
 		return tal_free(a);
 	} else {
 		status_trace("Resolved %s to %s", addr,
-			     type_to_string(ctx, struct wireaddr, &a->addr));
+			     type_to_string(ctx, struct wireaddr,
+					    &a->addr.u.wireaddr));
 		return a;
 	}
 }
@@ -1881,7 +1892,8 @@ gossip_resolve_addr(const tal_t *ctx,
 	 * we should copy all addresses.
 	 * For now getting first address should be fine. */
 	a = tal(ctx, struct addrhint);
-	a->addr = node->addresses[0];
+	a->addr.is_sockname = false;
+	a->addr.u.wireaddr = node->addresses[0];
 
 	return a;
 }
@@ -1942,27 +1954,28 @@ static void try_reach_peer(struct daemon *daemon, const struct pubkey *id,
 		return;
 	}
 
-	/* Might not even be able to create eg. IPv6 sockets */
-	switch (a->addr.type) {
-	case ADDR_TYPE_IPV4:
-		fd = socket(AF_INET, SOCK_STREAM, 0);
-		break;
-	case ADDR_TYPE_IPV6:
-		fd = socket(AF_INET6, SOCK_STREAM, 0);
-		break;
-	case ADDR_TYPE_PADDING:
+	if (a->addr.is_sockname)
 		fd = socket(AF_UNIX, SOCK_STREAM, 0);
-		break;
-	default:
-		fd = -1;
-		errno = EPROTONOSUPPORT;
-		break;
+	else {
+		/* Might not even be able to create eg. IPv6 sockets */
+		switch (a->addr.u.wireaddr.type) {
+		case ADDR_TYPE_IPV4:
+			fd = socket(AF_INET, SOCK_STREAM, 0);
+			break;
+		case ADDR_TYPE_IPV6:
+			fd = socket(AF_INET6, SOCK_STREAM, 0);
+			break;
+		default:
+			fd = -1;
+			errno = EPROTONOSUPPORT;
+			break;
+		}
 	}
 
 	if (fd < 0) {
 		char *err = tal_fmt(tmpctx,
 				    "Can't open %i socket for %s (%s), giving up",
-				    a->addr.type,
+				    a->addr.is_sockname ? -1 : a->addr.u.wireaddr.type,
 				    type_to_string(tmpctx, struct pubkey, id),
 				    strerror(errno));
 		status_debug("%s", err);
@@ -2106,7 +2119,7 @@ static struct io_plan *get_peers(struct io_conn *conn,
 	struct peer *peer;
 	size_t n = 0;
 	struct pubkey *id = tal_arr(conn, struct pubkey, n);
-	struct wireaddr *wireaddr = tal_arr(conn, struct wireaddr, n);
+	struct wireaddr_or_sockname *wireaddr = tal_arr(conn, struct wireaddr_or_sockname, n);
 	const struct gossip_getnodes_entry **nodes;
 	struct pubkey *specific_id = NULL;
 	struct node_map_iter it;

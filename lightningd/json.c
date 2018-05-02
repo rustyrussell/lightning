@@ -1,6 +1,7 @@
 #include "json.h"
 #include <arpa/inet.h>
 #include <ccan/str/hex/hex.h>
+#include <ccan/tal/str/str.h>
 #include <common/json.h>
 #include <common/type_to_string.h>
 #include <common/wireaddr.h>
@@ -133,3 +134,15 @@ void json_add_address(struct json_result *response, const char *fieldname,
 	json_object_end(response);
 }
 
+void json_add_address_or_sockname(struct json_result *response,
+				  const char *fieldname,
+				  const struct wireaddr_or_sockname *addr)
+{
+	if (addr->is_sockname) {
+		json_object_start(response, fieldname);
+		json_add_string(response, "type", "local socket");
+		json_add_string(response, "socket", addr->u.sockname);
+		json_object_end(response);
+	} else
+		json_add_address(response, fieldname, &addr->u.wireaddr);
+}

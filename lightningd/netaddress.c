@@ -283,16 +283,21 @@ static bool guess_one_address(struct lightningd *ld,
 
 void guess_addresses(struct lightningd *ld)
 {
+    struct wireaddr addr;
     size_t n = tal_count(ld->wireaddrs);
 
     log_debug(ld->log, "Trying to guess public addresses...");
 
-    /* We allocate an extra, then remove if it's not needed. */
-    tal_resize(&ld->wireaddrs, n+1);
-    if (guess_one_address(ld, &ld->wireaddrs[n], ld->portnum, ADDR_TYPE_IPV4)) {
-        n++;
+    if (guess_one_address(ld, &addr, ld->portnum, ADDR_TYPE_IPV4)) {
         tal_resize(&ld->wireaddrs, n+1);
+	ld->wireaddrs[n].is_sockname = false;
+	ld->wireaddrs[n].u.wireaddr = addr;
+        n++;
     }
-    if (!guess_one_address(ld, &ld->wireaddrs[n], ld->portnum, ADDR_TYPE_IPV6))
-        tal_resize(&ld->wireaddrs, n);
+    if (guess_one_address(ld, &addr, ld->portnum, ADDR_TYPE_IPV6)) {
+        tal_resize(&ld->wireaddrs, n+1);
+	ld->wireaddrs[n].is_sockname = false;
+	ld->wireaddrs[n].u.wireaddr = addr;
+        n++;
+    }
 }

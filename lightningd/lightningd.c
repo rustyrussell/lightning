@@ -71,7 +71,7 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	list_head_init(&ld->waitsendpay_commands);
 	list_head_init(&ld->sendpay_commands);
 	list_head_init(&ld->close_commands);
-	ld->wireaddrs = tal_arr(ld, struct wireaddr, 0);
+	ld->wireaddrs = tal_arr(ld, struct wireaddr_or_sockname, 0);
 	ld->portnum = DEFAULT_PORT;
 	timers_init(&ld->timers, time_mono());
 	ld->topology = new_topology(ld, ld->log);
@@ -302,9 +302,6 @@ int main(int argc, char *argv[])
 	ld->daemon_dir = find_daemon_dir(ld, argv[0]);
 	if (!ld->daemon_dir)
 		errx(1, "Could not find daemons");
-
-	/* Don't accept local connections by default */
-	ld->localsocket_filename = NULL;
 
 	register_opts(ld);
 

@@ -35,7 +35,7 @@ static void peer_nongossip(struct subd *gossip, const u8 *msg,
 {
 	struct pubkey id;
 	struct crypto_state cs;
-	struct wireaddr addr;
+	struct wireaddr_or_sockname addr;
 	u8 *gfeatures, *lfeatures, *in_pkt;
 
 	if (!fromwire_gossip_peer_nongossip(msg, msg,
@@ -227,7 +227,7 @@ static void gossip_activate_done(struct subd *gossip UNUSED,
 
 void gossip_activate(struct lightningd *ld)
 {
-	const u8 *msg = towire_gossipctl_activate(NULL, ld->portnum, ld->localsocket_filename);
+	const u8 *msg = towire_gossipctl_activate(NULL, ld->portnum);
 	subd_req(ld->gossip, ld->gossip, take(msg), -1, 0,
 		 gossip_activate_done, NULL);
 

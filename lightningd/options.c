@@ -146,26 +146,14 @@ static char *opt_add_addr(const char *arg, struct lightningd *ld)
 	assert(arg != NULL);
 
 	tal_resize(&ld->wireaddrs, n+1);
-
-	if (!parse_wireaddr(arg, &ld->wireaddrs[n], ld->portnum, &err_msg)) {
-		return tal_fmt(NULL, "Unable to parse IP address '%s': %s", arg, err_msg);
+	if (!parse_wireaddr_or_sockname(arg, &ld->wireaddrs[n], ld->portnum,
+					&err_msg)) {
+		return tal_fmt(NULL, "Unable to parse address '%s': %s",
+			       arg, err_msg);
 	}
 
 	return NULL;
 
-}
-
-static char *opt_add_localsocket(const char *arg, struct lightningd *ld)
-{
-	assert(arg != NULL);
-
-	ld->localsocket_filename = tal_free(ld->localsocket_filename);
-
-	if (strlen(arg) > 108)
-		return tal_fmt(NULL, "Local socket path '%s' is over 108 characters", arg);
-	ld->localsocket_filename = tal_arrz(ld, u8, strlen(arg));
-	strncpy((char*)ld->localsocket_filename, arg, strlen(arg));
-	return NULL;
 }
 
 static char *opt_add_ipaddr(const char *arg, struct lightningd *ld)
@@ -342,9 +330,6 @@ static void config_register_opts(struct lightningd *ld)
 	opt_register_arg("--addr", opt_add_addr, NULL,
 			 ld,
 			 "Set the IP address (v4 or v6) to announce to the network for incoming connections");
-	opt_register_arg("--local-socket", opt_add_localsocket, NULL,
-			 ld,
-			 "Set a local socket for incoming connections");
 	opt_register_noarg("--offline", opt_set_offline, ld,
 			   "Start in offline-mode (do not automatically reconnect and do not accept incoming connections");
 
@@ -885,8 +870,6 @@ static void add_config(struct lightningd *ld,
 				answer = tal_hexstr(name0, ld->rgb, 3);
 		} else if (opt->cb_arg == (void *)opt_set_alias) {
 			answer = (const char *)ld->alias;
-		} else if (opt->cb_arg == (void *)opt_add_localsocket) {
-			answer = (const char *)ld->localsocket_filename;
 		} else if (opt->cb_arg == (void *)arg_log_to_file) {
 			answer = ld->logfile;
 		} else if (opt->cb_arg == (void *)opt_set_fee_rates) {
@@ -901,7 +884,7 @@ static void add_config(struct lightningd *ld,
 			for (size_t i = 0; i < tal_count(ld->wireaddrs); i++) {
 				json_add_string(response,
 						name0,
-						fmt_wireaddr(name0,
+						fmt_wireaddr_or_sockname(name0,
 							     ld->wireaddrs+i));
 			}
 			return;

@@ -152,7 +152,8 @@ static void json_getinfo(struct command *cmd,
 		json_add_num(response, "port", cmd->ld->portnum);
 		json_array_start(response, "address");
 		for (size_t i = 0; i < tal_count(cmd->ld->wireaddrs); i++)
-			json_add_address(response, NULL, cmd->ld->wireaddrs+i);
+			json_add_address_or_sockname(response, NULL,
+						     cmd->ld->wireaddrs+i);
 		json_array_end(response);
 	}
 	json_add_string(response, "version", version());
