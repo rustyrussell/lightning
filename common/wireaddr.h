@@ -48,4 +48,21 @@ char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a);
 bool wireaddr_from_hostname(struct wireaddr *addr, const char *hostname,
 			    const u16 port, const char **err_msg);
 
+/* For internal use, where we can also supply a local socket. */
+struct wireaddr_or_sockname {
+	bool is_sockname;
+	union {
+		struct wireaddr wireaddr;
+		char sockname[108];
+	} u;
+};
+bool parse_wireaddr_or_sockname(const char *arg, struct wireaddr_or_sockname *addr, u16 port, const char **err_msg);
+
+void towire_wireaddr_or_sockname(u8 **pptr,
+				 const struct wireaddr_or_sockname *addr);
+bool fromwire_wireaddr_or_sockname(const u8 **cursor, size_t *max,
+				   struct wireaddr_or_sockname *addr);
+char *fmt_wireaddr_or_sockname(const tal_t *ctx,
+			       const struct wireaddr_or_sockname *a);
+
 #endif /* LIGHTNING_COMMON_WIREADDR_H */

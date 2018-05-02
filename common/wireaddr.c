@@ -46,6 +46,32 @@ void towire_wireaddr(u8 **pptr, const struct wireaddr *addr)
 	towire_u16(pptr, addr->port);
 }
 
+void towire_wireaddr_or_sockname(u8 **pptr,
+				 const struct wireaddr_or_sockname *addr)
+{
+	towire_bool(pptr, addr->is_sockname);
+	if (addr->is_sockname)
+		towire_u8_array(pptr, (const u8 *)addr->u.sockname,
+				sizeof(addr->u.sockname));
+	else
+		towire_wireaddr(pptr, &addr->u.wireaddr);
+}
+
+bool fromwire_wireaddr_or_sockname(const u8 **cursor, size_t *max,
+				   struct wireaddr_or_sockname *addr)
+{
+	addr->is_sockname = fromwire_bool(cursor, max);
+	if (addr->is_sockname) {
+		fromwire_u8_array(cursor, max, (u8 *)addr->u.sockname,
+				  sizeof(addr->u.sockname));
+		/* Must be NUL terminated */
+		if (!memchr(addr->u.sockname, 0, sizeof(addr->u.sockname)))
+			fromwire_fail(cursor, max);
+		return *cursor != NULL;
+	} else
+		return fromwire_wireaddr(cursor, max, &addr->u.wireaddr);
+}
+
 char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a)
 {
 	char addrstr[INET6_ADDRSTRLEN];
@@ -70,6 +96,15 @@ char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a)
 	return ret;
 }
 REGISTER_TYPE_TO_STRING(wireaddr, fmt_wireaddr);
+
+char *fmt_wireaddr_or_sockname(const tal_t *ctx,
+			       const struct wireaddr_or_sockname *a)
+{
+	if (a->is_sockname)
+		return tal_fmt(ctx, "%s", a->u.sockname);
+	return fmt_wireaddr(ctx, &a->u.wireaddr);
+}
+REGISTER_TYPE_TO_STRING(wireaddr_or_sockname, fmt_wireaddr_or_sockname);
 
 /* Valid forms:
  *
@@ -221,4 +256,24 @@ finish:
 	if (!res && err_msg && !*err_msg)
 		*err_msg = "Error parsing hostname";
 	return res;
+}
+
+bool parse_wireaddr_or_sockname(const char *arg, struct wireaddr_or_sockname *addr, u16 port, const char **err_msg)
+{
+	/* Addresses starting with '/' are local socket paths */
+	if (arg[0] == '/') {
+		addr->is_sockname = true;
+
+		/* Check if the path is too long */
+		if (strlen(arg) >= sizeof(addr->u.sockname)) {
+			if (err_msg)
+				*err_msg = "Socket name too long";
+			return false;
+		}
+		strcpy(addr->u.sockname, arg);
+		return true;
+	}
+
+	addr->is_sockname = false;
+	return parse_wireaddr(arg, &addr->u.wireaddr, port, err_msg);
 }
