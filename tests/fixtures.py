@@ -9,11 +9,13 @@ import tempfile
 import utils
 
 
-TEST_DIR = tempfile.mkdtemp(prefix='ltests-')
-VALGRIND = os.getenv("NO_VALGRIND", "0") == "0"
-DEVELOPER = os.getenv("DEVELOPER", "0") == "1"
-TEST_DEBUG = os.getenv("TEST_DEBUG", "0") == "1"
+with open('config.vars') as configfile:
+    config = dict([(line.rstrip().split('=', 1)) for line in configfile])
 
+TEST_DIR = tempfile.mkdtemp(prefix='ltests-')
+VALGRIND = os.getenv("VALGRIND", config['VALGRIND']) == "0"
+DEVELOPER = os.getenv("DEVELOPER", config['DEVELOPER']) == "1"
+TEST_DEBUG = os.getenv("TEST_DEBUG", "0") == "1"
 
 # A dict in which we count how often a particular test has run so far. Used to
 # give each attempt its own numbered directory, and avoid clashes.
