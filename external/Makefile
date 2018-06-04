@@ -23,7 +23,7 @@ EXTERNAL_LDLIBS := -Lexternal $(patsubst lib%.a,-l%,$(notdir $(EXTERNAL_LIBS)))
 
 # Might exist, but need updating.  Nuke and rebuild.
 submodcheck-%: FORCE
-	if git submodule status external/$* | grep -q '^[-+]'; then rm -rf external/$*; git submodule update --init external/$*; fi
+	if git submodule status external/$* | grep -q '^[-+]'; then git submodule sync external/$* && rm -rf external/$* && git submodule update --init --remote external/$*; fi
 
 # We build libsodium, since Ubuntu xenial has one too old.
 external/libsodium.a: external/libsodium/src/libsodium/libsodium.la
