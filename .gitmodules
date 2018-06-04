@@ -9,7 +9,7 @@
 	url = https://github.com/jedisct1/libsodium.git
 [submodule "external/libbacktrace"]
 	path = external/libbacktrace
-	url = https://github.com/ianlancetaylor/libbacktrace.git
+	url = https://github.com/rustyrussell/libbacktrace.git
 [submodule "external/libwally-core"]
 	path = external/libwally-core
 	url = https://github.com/ElementsProject/libwally-core.git
