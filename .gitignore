@@ -18,6 +18,7 @@ tools/check-bolt
 coverage
 ccan/config.h
 __pycache__
+config.vars
 
 # Ignore some generated binaries
 lightningd/test/run-channel
