@@ -1,6 +1,6 @@
   #include <lightningd/log.h>
 
-static void wallet_fatal(const char *fmt, ...);
+static void NORETURN PRINTF_FMT(1,2) wallet_fatal(const char *fmt, ...);
 #define fatal wallet_fatal
 #include "test_utils.h"
 
@@ -19,6 +19,7 @@ static void db_log_(struct log *log UNUSED, enum log_level level UNUSED, const c
 #include <ccan/mem/mem.h>
 #include <ccan/tal/str/str.h>
 #include <common/memleak.h>
+#include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -437,6 +438,7 @@ bool fromwire_hsm_get_channel_basepoints_reply(const void *p UNNEEDED,
 }
 
 static char *wallet_err;
+static jmp_buf wallet_jmp;
 static void wallet_fatal(const char *fmt, ...)
 {
 	va_list ap;
@@ -450,6 +452,7 @@ static void wallet_fatal(const char *fmt, ...)
 	va_start(ap, fmt);
 	wallet_err = tal_vfmt(NULL, fmt, ap);
 	va_end(ap);
+	longjmp(wallet_jmp, 1);
 }
 
 #define transaction_wrap(db, ...)					\
@@ -903,9 +906,23 @@ static bool test_htlc_crud(struct lightningd *ld, const tal_t *ctx)
 		  tal_fmt(ctx, "Save htlc_in failed: %s", wallet_err));
 	CHECK_MSG(in.dbid != 0, "HTLC DB ID was not set.");
 	/* Saving again should get us a collision */
-	CHECK_MSG(!transaction_wrap(w->db, wallet_htlc_save_in(w, chan, &in)),
-		  "Saving two HTLCs with the same data must not succeed.");
-	CHECK(wallet_err);
+	db_begin_transaction(w->db);
+	if (setjmp(wallet_jmp) == 0) {
+		wallet_htlc_save_in(w, chan, &in);
+		TEST_FAILURE("Saving two HTLCs with the same data must not succeed.");
+	} else {
+#if DEVELOPER
+		/* Clean up statement linked list. */
+		struct db_statement *dbstat;
+
+		dbstat = list_top(&db_statements, struct db_statement, list);
+		list_del_from(&db_statements, &dbstat->list);
+		tal_free(dbstat);
+#endif /* DEVELOPER */
+		CHECK(wallet_err);
+	}
+
+	db_commit_transaction(w->db);
 	wallet_err = tal_free(wallet_err);
 
 	/* Update */
@@ -919,9 +936,23 @@ static bool test_htlc_crud(struct lightningd *ld, const tal_t *ctx)
 		  tal_fmt(ctx, "Save htlc_out failed: %s", wallet_err));
 	CHECK_MSG(out.dbid != 0, "HTLC DB ID was not set.");
 
-	CHECK_MSG(!transaction_wrap(w->db, wallet_htlc_save_out(w, chan, &out)),
-		  "Saving two HTLCs with the same data must not succeed.");
-	CHECK(wallet_err);
+	/* Saving again should get us a collision */
+	db_begin_transaction(w->db);
+	if (setjmp(wallet_jmp) == 0) {
+		wallet_htlc_save_in(w, chan, &in);
+		TEST_FAILURE("Saving two HTLCs with the same data must not succeed.");
+	} else {
+#if DEVELOPER
+		/* Clean up statement linked list. */
+		struct db_statement *dbstat;
+
+		dbstat = list_top(&db_statements, struct db_statement, list);
+		list_del_from(&db_statements, &dbstat->list);
+		tal_free(dbstat);
+#endif /* DEVELOPER */
+		CHECK(wallet_err);
+	}
+	db_commit_transaction(w->db);
 	wallet_err = tal_free(wallet_err);
 
 	/* Attempt to load them from the DB again */
