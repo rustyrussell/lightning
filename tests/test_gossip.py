@@ -4,6 +4,7 @@ from utils import wait_for
 import json
 import logging
 import os
+import struct
 import subprocess
 import time
 import unittest
@@ -799,3 +800,29 @@ def test_gossip_addresses(node_factory, bitcoind):
         {'type': 'torv2', 'address': '3fyb44wdhnd2ghhl.onion', 'port': 1234},
         {'type': 'torv3', 'address': 'vww6ybal4bd7szmgncyruucpgfkqahzddi37ktceo3ah7ngmcopnpyyd.onion', 'port': 9735}
     ]
+
+
+def test_gossipfrom(node_factory):
+    l1, l2 = node_factory.line_graph(2, announce=True)
+
+    # This doesn't naturally terminate, so we give it 5 seconds.
+    out=None
+    try:
+        subprocess.run(['devtools/gossipfrom',
+                        '--initial-sync',
+                        '{}@localhost:{}'.format(l1.info['id'], l1.port)],
+                       timeout=5, stdout=subprocess.PIPE)
+    except subprocess.TimeoutExpired as err:
+        out = err.output
+
+    assert out
+    num_msgs = 0
+    while len(out):
+        l, t = struct.unpack('>HH', out[0:4])
+        # channel_announcement node_announcement or channel_update
+        assert t == 256 or t == 257 or t == 258
+        out = out[2+l:]
+        num_msgs += 1
+
+    # one channel announcement, two channel_updates, two node announcements.
+    assert num_msgs == 5
