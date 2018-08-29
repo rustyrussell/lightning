@@ -441,7 +441,7 @@ static enum channel_add_err add_htlc(struct channel *channel,
 	 * sender's reserve. */
 	if (enforce_aggregate_limits
 	    && balance_msat - fee_msat < (s64)channel_reserve_msat(channel, sender)) {
-		status_trace("balance = %"PRIu64
+		status_trace("balance would be = %"PRIi64
 			     ", fee is %"PRIu64
 			     ", reserve is %"PRIu64,
 			     balance_msat, fee_msat,
