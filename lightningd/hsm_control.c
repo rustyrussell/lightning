@@ -27,7 +27,6 @@ int hsm_get_client_fd(struct lightningd *ld,
 	int hsm_fd;
 	u8 *msg;
 
-	assert(dbid);
 	msg = towire_hsm_client_hsmfd(NULL, id, dbid, capabilities);
 	if (!wire_sync_write(ld->hsm_fd, take(msg)))
 		fatal("Could not write to HSM: %s", strerror(errno));
