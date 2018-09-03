@@ -129,6 +129,11 @@ def node_factory(directory, test_name, bitcoind, executor):
     if err_count:
         raise ValueError("{} nodes had bad reestablish".format(err_count))
 
+    for node in nf.nodes:
+        err_count += checkBadHSMRequest(node)
+    if err_count:
+        raise ValueError("{} nodes had bad hsm requests".format(err_count))
+
     if not ok:
         raise Exception("At least one lightning exited with unexpected non-zero return code")
 
@@ -191,6 +196,12 @@ def checkBadGossipOrder(node):
 
 def checkBadReestablish(node):
     if node.daemon.is_in_log('Bad reestablish'):
+        return 1
+    return 0
+
+
+def checkBadHSMRequest(node):
+    if node.daemon.is_in_log('bad hsm request'):
         return 1
     return 0
 
