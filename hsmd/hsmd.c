@@ -65,10 +65,7 @@ static struct {
 	struct ext_key bip32;
 } secretstuff;
 
-/*~ We keep track of clients, but there's not much to keep.  'dc' is a simple
- * wrapper for the queuing messages to/from the client, 'master' is the one
- * for lightningd, which we use to complain about bad requests from
- * clients. */
+/*~ We keep track of clients, but there's not much to keep. */
 struct client {
 	/* The connection to lightningd itself */
 	struct client *master;
@@ -217,7 +214,10 @@ static struct client *new_client(struct client *master,
 	 *   master -> c->conn
 	 *
 	 * We want to the c->conn to own 'c', so that if the io_conn closes,
-	 * the client is freed: */
+	 * the client is freed:
+	 *
+	 *   master -> c->conn -> c.
+	 */
 	tal_steal(c->conn, c);
 
 	/* We put the special zero-db HSM connections into an array, the rest
@@ -313,8 +313,9 @@ static void get_channel_seed(const struct pubkey *peer_id, u64 dbid,
 	 * should migrate to. */
 	hsm_channel_secret_base(&channel_base);
 	pubkey_to_der(input, peer_id);
-	/*~ For all that talk about platform-independence, note that this is
-	 * the endian-dependent! */
+	/*~ For all that talk about platform-independence, note that this
+	 * field is endian-dependent!  But let's face it, little-endian won.
+	 * In related news, we don't support EBCDIC or middle-endian. */
 	memcpy(input + PUBKEY_DER_LEN, &dbid, sizeof(dbid));
 
 	hkdf_sha256(channel_seed, sizeof(*channel_seed),
@@ -1125,7 +1126,7 @@ static struct io_plan *handle_check_future_secret(struct io_conn *conn,
 
 	/*~ Note the special secret_eq_consttime: we generate foo_eq for many
 	 * types using ccan/structeq, but not 'struct secret' because any
-	 * comparison risks leaking information about the secret if it is 
+	 * comparison risks leaking information about the secret if it is
 	 * timing dependent. */
 	return req_reply(conn, c,
 			 take(towire_hsm_check_future_secret_reply(NULL,
@@ -1287,7 +1288,15 @@ static void sign_all_inputs(struct bitcoin_tx *tx, struct utxo **utxos)
 
 	/*~ Deep in my mind there's a continuous battle: should arrays be
 	 * named as singular or plural?  Is consistency the sign of a weak
-	 * mind? */
+	 * mind?
+	 *
+	 * ZmnSCPxj answers thusly: One must make peace with the fact, that
+	 * the array itself is singular, yet its contents are plural. Do you
+	 * name the array, or do you name its contents? Is the array itself
+	 * the thing and the whole of the thing, or is it its contents that
+	 * define what it is?
+	 *
+	 *... I'm not sure that helps! */
 	assert(tal_count(tx->input) == tal_count(utxos));
 	for (size_t i = 0; i < tal_count(utxos); i++) {
 		struct pubkey inkey;
