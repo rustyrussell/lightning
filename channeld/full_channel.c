@@ -59,12 +59,9 @@ struct channel *new_full_channel(const tal_t *ctx,
 
 static void htlc_arr_append(const struct htlc ***arr, const struct htlc *htlc)
 {
-	size_t n;
 	if (!arr)
 		return;
-	n = tal_count(*arr);
-	tal_resize(arr, n+1);
-	(*arr)[n] = htlc;
+	*tal_arr_expand(arr) = htlc;
 }
 
 /* What does adding the HTLC do to the balance for this side */
@@ -182,7 +179,7 @@ static void add_htlcs(struct bitcoin_tx ***txs,
 		      const struct keyset *keyset,
 		      enum side side)
 {
-	size_t i, n;
+	size_t i;
 	struct bitcoin_txid txid;
 	u32 feerate_per_kw = channel->view[side].feerate_per_kw;
 
@@ -224,13 +221,10 @@ static void add_htlcs(struct bitcoin_tx ***txs,
 		}
 
 		/* Append to array. */
-		n = tal_count(*txs);
-		assert(n == tal_count(*wscripts));
+		assert(tal_count(*txs) == tal_count(*wscripts));
 
-		tal_resize(wscripts, n+1);
-		tal_resize(txs, n+1);
-		(*wscripts)[n] = wscript;
-		(*txs)[n] = tx;
+		*tal_arr_expand(wscripts) = wscript;
+		*tal_arr_expand(txs) = tx;
 	}
 }
 
@@ -645,18 +639,6 @@ static void htlc_incstate(struct channel *channel,
 	}
 }
 
-static void append_htlc(const struct htlc ***htlcs, const struct htlc *h)
-{
-	size_t n;
-
-	if (!htlcs)
-		return;
-
-	n = tal_count(*htlcs);
-	tal_resize(htlcs, n+1);
-	(*htlcs)[n] = h;
-}
-
 /* Returns flags which were changed. */
 static int change_htlcs(struct channel *channel,
 			enum side sidechanged,
@@ -677,7 +659,7 @@ static int change_htlcs(struct channel *channel,
 			if (h->state == htlc_states[i]) {
 				htlc_incstate(channel, h, sidechanged);
 				dump_htlc(h, prefix);
-				append_htlc(htlcs, h);
+				htlc_arr_append(htlcs, h);
 				cflags |= (htlc_state_flags(htlc_states[i])
 					   ^ htlc_state_flags(h->state));
 			}
