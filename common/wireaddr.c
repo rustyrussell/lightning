@@ -36,6 +36,11 @@ bool fromwire_wireaddr(const u8 **cursor, size_t *max, struct wireaddr *addr)
 		addr->addrlen = TOR_V3_ADDRLEN;
 		break;
 	default:
+		/* Return byte we consumed! */
+		if (*cursor) {
+			(*cursor)--;
+			(*max)++;
+		}
 		return false;
 	}
 	fromwire(cursor, max, addr->addr, addr->addrlen);

@@ -85,18 +85,31 @@ hexdump:
 static void printwire_addresses(const u8 **cursor, size_t *plen, size_t len)
 {
 	struct wireaddr addr;
+	const u8 *subcursor = *cursor;
+	size_t addr_len = len;
 
 	printf("[");
-	while (*plen && fromwire_wireaddr(cursor, plen, &addr))
+	while (len && fromwire_wireaddr(&subcursor, &len, &addr))
 		printf(" %s", fmt_wireaddr(NULL, &addr));
-	if (!*cursor)
-		return;
-
-	if (*plen != 0) {
-		printf(" UNKNOWN:");
-		if (!print_hexstring(cursor, plen, len))
-			return;
+	if (!subcursor) {
+		printf(" **CORRUPT**");
+		goto hexdump;
 	}
+
+	if (len != 0) {
+		printf(" UNKNOWN:");
+		print_hexstring(&subcursor, &len, len);
+	}
+	printf(" ]\n");
+
+	/* We consumed this, update manually. */
+	*cursor += addr_len;
+	*plen -= addr_len;
+	return;
+
+hexdump:
+	/* This consumes addr_len bytes */
+	print_hexstring(cursor, plen, addr_len);
 	printf(" ]\n");
 }
 
@@ -142,6 +155,14 @@ static void printwire_encoded_short_ids(const u8 **cursor, size_t *plen, size_t 
 
 void printwire_u8_array(const char *fieldname, const u8 **cursor, size_t *plen, size_t len)
 {
+	/* Save each subfield checking this. */
+	if (*plen < len) {
+		printf("[ **TRUNCATED** ");
+		print_hexstring(cursor, plen, len);
+		printf(" ]\n");
+		return;
+	}
+
 	if (streq(fieldname, "node_announcement.alias")) {
 		printwire_alias(cursor, plen, len);
 		return;
