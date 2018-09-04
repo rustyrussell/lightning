@@ -345,7 +345,7 @@ int connectd_init(struct lightningd *ld)
 	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, fds) != 0)
 		fatal("Could not socketpair for connectd<->gossipd");
 
-	hsmfd = hsm_get_client_fd(ld, &ld->id, 0, HSM_CAP_ECDH);
+	hsmfd = hsm_get_global_fd(ld, HSM_CAP_ECDH);
 
 	ld->connectd = new_global_subd(ld, "lightning_connectd",
 				       connect_wire_type_name, connectd_msg,

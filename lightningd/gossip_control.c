@@ -145,7 +145,7 @@ void gossip_init(struct lightningd *ld, int connectd_fd)
 	u8 *msg;
 	int hsmfd;
 
-	hsmfd = hsm_get_client_fd(ld, &ld->id, 0, HSM_CAP_SIGN_GOSSIP);
+	hsmfd = hsm_get_global_fd(ld, HSM_CAP_SIGN_GOSSIP);
 
 	ld->gossip = new_global_subd(ld, "lightning_gossipd",
 				     gossip_wire_type_name, gossip_msg,
