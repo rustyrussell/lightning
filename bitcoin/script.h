@@ -150,4 +150,8 @@ bool scripteq(const u8 *s1, const u8 *s2);
 /* OP_0 + PUSH(32-byte-hash) */
 #define BITCOIN_SCRIPTPUBKEY_P2WSH_LEN (1 + 1 + 32)
 
+/* Mask a script, removing OP_MASK and following pushes.  NULL on
+ * malformed */
+u8 *script_mask(const tal_t *ctx, const u8 *script);
+
 #endif /* LIGHTNING_BITCOIN_SCRIPT_H */

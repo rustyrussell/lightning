@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <bitcoin/block.h>
 #include <bitcoin/pullpush.h>
+#include <bitcoin/script.h>
 #include <bitcoin/tx.h>
 #include <ccan/cast/cast.h>
 #include <ccan/crypto/sha256/sha256.h>
@@ -211,6 +212,18 @@ static void hash_outputs(struct sha256_double *h, const struct bitcoin_tx *tx,
 	sha256_double_done(&ctx, h);
 }
 
+static void push_masked_witness(const u8 *script,
+				void (*push)(const void *, size_t, void *),
+				void *pushp)
+{
+	u8 *masked = script_mask(NULL, script);
+
+	/* We don't hand this code invalid scripts! */
+	assert(masked);
+	push_varint_blob(masked, push, pushp);
+	tal_free(masked);
+}
+
 static void hash_for_segwit(struct sha256_ctx *ctx,
 			    const struct bitcoin_tx *tx,
 			    unsigned int input_num,
@@ -240,7 +253,10 @@ static void hash_for_segwit(struct sha256_ctx *ctx,
 	push_le32(tx->input[input_num].index, push_sha, ctx);
 
 	/*     5. scriptCode of the input (varInt for the length + script) */
-	push_varint_blob(witness_script, push_sha, ctx);
+	if (sighash_type & SIGHASH_MASK)
+		push_masked_witness(witness_script, push_sha, ctx);
+	else
+		push_varint_blob(witness_script, push_sha, ctx);
 
 	/*     6. value of the output spent by this input (8-byte little end) */
 	push_le64(*tx->input[input_num].amount, push_sha, ctx);

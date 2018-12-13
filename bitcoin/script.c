@@ -36,6 +36,8 @@
 #define OP_HASH160	0xA9
 #define OP_CHECKSEQUENCEVERIFY	0xB2
 #define OP_CHECKLOCKTIMEVERIFY	0xB1
+/* Not a real opcode! */
+#define OP_MASK	0xFF
 
 /* Bitcoin's OP_HASH160 is RIPEMD(SHA256()) */
 static void hash160(struct ripemd160 *redeemhash, const void *mem, size_t len)
@@ -733,4 +735,82 @@ bool scripteq(const u8 *s1, const u8 *s2)
 	if (tal_count(s1) != tal_count(s2))
 		return false;
 	return memcmp(s1, s2, tal_count(s1)) == 0;
+}
+
+/* Returns 0 if not a push, or not valid, otherwise length including
+ * byte at off. */
+static size_t op_push_len(const u8 *script, size_t off)
+{
+	size_t len, pushlen;
+
+	/* Simple case; direct push. */
+	if (script[off] < 76) {
+		len = 1 + script[off];
+		goto done;
+	}
+
+	/* Multi-byte pushes. */
+	if (script[off] == OP_PUSHDATA1)
+		pushlen = 1;
+	else if (script[off] == OP_PUSHDATA2)
+		pushlen = 2;
+	else if (script[off] == OP_PUSHDATA4)
+		pushlen = 4;
+	else
+		return 0;
+
+	/* Can't read amount if it's past end. */
+	if (off + pushlen > tal_count(script))
+		return 0;
+
+	/* Number of bytes is little-endian. */
+	len = 0;
+	for (size_t i = 0; i < pushlen; i++)
+		len += (script[off + i] << (pushlen - 1 - i));
+
+	/* Add opcode itself. */
+	len++;
+
+done:
+	/* Make sure it's in bounds */
+	if (off + len > tal_count(script))
+		return 0;
+	return len;
+}
+
+u8 *script_mask(const tal_t *ctx, const u8 *script)
+{
+	/* This is safe, it can't get longer. */
+	u8 *dest = tal_arr(NULL, u8, tal_count(script));
+	size_t destlen, op_len;
+	bool masked = false;
+
+	/* We assume script is valid! */
+	for (size_t i = destlen = 0; i < tal_count(script); i += op_len) {
+		if (masked) {
+			/* We can only mask a push! */
+			op_len = op_push_len(script, i);
+			if (!op_len)
+				return tal_free(dest);
+			masked = false;
+			continue;
+		}
+
+		/* If it's a MASK opcode, skip. */
+		if (script[i] == OP_MASK) {
+			masked = true;
+			continue;
+		}
+
+		/* We either skip entire push, or one opcode. */
+		op_len = op_push_len(script, i);
+		if (op_len == 0)
+			op_len = 1;
+		memcpy(dest + destlen, script + i, op_len);
+		destlen += op_len;
+	}
+
+	/* Cut to size */
+	tal_resize(&dest, destlen);
+	return dest;
 }
