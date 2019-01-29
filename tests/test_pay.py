@@ -1359,10 +1359,10 @@ def test_pay_routeboost(node_factory, bitcoind):
         assert [h['channel'] for h in attempts[1]['routehint']] == [r['short_channel_id'] for r in routel3l5]
 
 
-@unittest.skipIf(not DEVELOPER, "needs DEVELOPER=1")
+@unittest.skipIf(not DEVELOPER, "needs dev-disconnect, dev-no-htlc-commit-timer")
 def test_partial_payment(node_factory, bitcoind, executor):
     # We want to test two payments at the same time, before we send commit
-    l1, l2, l3, l4 = node_factory.get_nodes(4, [{}] + [{'disconnect': ['=WIRE_UPDATE_ADD_HTLC-nocommit']}] * 2 + [{}])
+    l1, l2, l3, l4 = node_factory.get_nodes(4, [{}] + [{'disconnect': ['=WIRE_UPDATE_ADD_HTLC-nocommit', 'dev-no-htlc-commit-timer': None]}] * 2 + [{}])
 
     # Two routes to l4: one via l2, and one via l3.
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
@@ -1410,4 +1410,7 @@ def test_partial_payment(node_factory, bitcoind, executor):
     l2.rpc.dev_reenable_commit(l4.info['id'])
     l3.rpc.dev_reenable_commit(l4.info['id'])
 
-    # FIXME: waitsendpay needs a 'parallel_id' field.
+    with pytest.raises(RpcError, match=r'WIRE_INCORRECT_OR_UNKNOWN_PAYMENT_DETAILS'):
+        l1.rpc.waitsendpay(inv['payment_hash'], parallel_id=1)
+    with pytest.raises(RpcError, match=r'WIRE_INCORRECT_OR_UNKNOWN_PAYMENT_DETAILS'):
+        l1.rpc.waitsendpay(inv['payment_hash'], parallel_id=2)

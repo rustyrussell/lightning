@@ -306,13 +306,14 @@ class LightningRpc(UnixDomainSocketRpc):
         }
         return self.call("sendpay", payload)
 
-    def waitsendpay(self, payment_hash, timeout=None):
+    def waitsendpay(self, payment_hash, timeout=None, parallel_id=None):
         """
         Wait for payment for preimage of {payment_hash} to complete
         """
         payload = {
             "payment_hash": payment_hash,
-            "timeout": timeout
+            "timeout": timeout,
+            "parallel_id": parallel_id,
         }
         return self.call("waitsendpay", payload)
 

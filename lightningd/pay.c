@@ -852,14 +852,16 @@ static struct command_result *json_waitsendpay(struct command *cmd,
 	struct sha256 *rhash;
 	unsigned int *timeout;
 	struct command_result *res;
+	u64 *parallel_id;
 
 	if (!param(cmd, buffer, params,
 		   p_req("payment_hash", param_sha256, &rhash),
 		   p_opt("timeout", param_number, &timeout),
+		   p_opt_def("parallel_id", param_u64, &parallel_id, 0),
 		   NULL))
 		return command_param_failed();
 
-	res = wait_payment(cmd->ld, cmd, rhash, /* FIXME: Set parallel_id! */0);
+	res = wait_payment(cmd->ld, cmd, rhash, *parallel_id);
 	if (res)
 		return res;
 
