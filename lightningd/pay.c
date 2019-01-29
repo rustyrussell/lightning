@@ -602,11 +602,12 @@ send_payment(struct lightningd *ld,
 	size_t i, n_hops = tal_count(route);
 	struct hop_data *hop_data = tal_arr(tmpctx, struct hop_data, n_hops);
 	struct pubkey *ids = tal_arr(tmpctx, struct pubkey, n_hops);
-	struct wallet_payment *payment = NULL;
+	const struct wallet_payment **payments;
 	struct htlc_out *hout;
 	struct short_channel_id *channels;
 	struct routing_failure *fail;
 	struct channel *channel;
+	u64 msat_already_pending = 0;
 
 	/* Expiry for HTLCs is absolute.  And add one to give some margin. */
 	base_expiry = get_block_height(ld->topology) + 1;
@@ -630,34 +631,41 @@ send_payment(struct lightningd *ld,
 	memset(&hop_data[i].channel_id, 0, sizeof(struct short_channel_id));
 	hop_data[i].amt_forward = route[i].amount;
 
-	/* Now, do we already have a payment? */
-	payment = wallet_payment_by_hash(tmpctx, ld->wallet, rhash, parallel_id);
-	if (payment) {
-		/* FIXME: We should really do something smarter here! */
-		log_debug(ld->log, "send_payment: found previous");
-		if (payment->status == PAYMENT_PENDING) {
-			log_add(ld->log, "Payment is still in progress");
-			return json_sendpay_in_progress(cmd, payment);
+	/* Now, do we already have one or more payments? */
+	payments = wallet_payment_list(tmpctx, ld->wallet, rhash);
+	for (i = 0; i < tal_count(payments); i++) {
+		/* Must match other payment parameters. */
+		if (payments[i]->msatoshi_total != msatoshi_total) {
+			return command_fail(cmd, PAY_RHASH_ALREADY_USED,
+					    "Already attempted "
+					    "with amount %"PRIu64,
+					    payments[i]->msatoshi_total);
 		}
-		if (payment->status == PAYMENT_COMPLETE) {
-			log_add(ld->log, "... succeeded");
-			/* Must match successful payment parameters. */
-			if (payment->msatoshi != msatoshi) {
-				return command_fail(cmd, PAY_RHASH_ALREADY_USED,
-						    "Already succeeded "
-						    "with amount %"PRIu64,
-						    payment->msatoshi);
-			}
-			if (!pubkey_eq(&payment->destination, &ids[n_hops-1])) {
-				return command_fail(cmd, PAY_RHASH_ALREADY_USED,
-						    "Already succeeded to %s",
-						    type_to_string(tmpctx,
-								   struct pubkey,
-								   &payment->destination));
-			}
-			return sendpay_success(cmd, payment);
+		if (!pubkey_eq(&payments[i]->destination, &ids[n_hops-1])) {
+			return command_fail(cmd, PAY_RHASH_ALREADY_USED,
+					    "Already paid to to %s",
+					    type_to_string(tmpctx,
+							   struct pubkey,
+							   &payments[i]->destination));
 		}
-		log_add(ld->log, "... retrying");
+
+		/* Already complete?  Fine. */
+		if (payments[i]->status == PAYMENT_COMPLETE)
+			return sendpay_success(cmd, payments[i]);
+		else if (payments[i]->status == PAYMENT_PENDING) {
+			if (payments[i]->parallel_id == parallel_id)
+				return json_sendpay_in_progress(cmd, payments[i]);
+			msat_already_pending += payments[i]->msatoshi;
+		}
+	}
+
+	/* If we already have more pending than total, don't pay more!
+	 * Otherwise receipient might accept, and anyone could accept this new
+	 * partial payment now preimage is revealed. */
+	if (msat_already_pending > msatoshi_total) {
+		return command_fail(cmd, PAY_IN_PROGRESS,
+				    "Already have %"PRIu64" of %"PRIu64" msat payments in progress",
+				    msat_already_pending, msatoshi_total);
 	}
 
 	channel = active_channel_by_id(ld, &ids[0], NULL);
@@ -701,19 +709,19 @@ send_payment(struct lightningd *ld,
 	for (i = 0; i < n_hops; ++i)
 		channels[i] = route[i].channel_id;
 
-	/* If we're retrying, delete all trace of previous one.  We delete
+	/* If we may be retrying, delete all trace of previous one.  We delete
 	 * outgoing HTLC, too, otherwise it gets reported to onchaind as
 	 * a possibility, and we end up in handle_missing_htlc_output->
 	 * onchain_failed_our_htlc->payment_failed with no payment.
 	 */
-	if (payment) {
-		wallet_payment_delete(ld->wallet, rhash, payment->parallel_id);
+	if (tal_count(payments) != 0) {
+		wallet_payment_delete(ld->wallet, rhash, parallel_id);
 		wallet_local_htlc_out_delete(ld->wallet, channel, rhash,
-					     payment->parallel_id);
+					     parallel_id);
 	}
 
 	/* If hout fails, payment should be freed too. */
-	payment = tal(hout, struct wallet_payment);
+	struct wallet_payment *payment = tal(hout, struct wallet_payment);
 	payment->id = 0;
 	payment->payment_hash = *rhash;
 	payment->parallel_id = parallel_id;
