@@ -1227,7 +1227,8 @@ void wallet_htlc_save_out(struct wallet *wallet,
 	    " payment_hash,"
 	    " payment_key,"
 	    " hstate,"
-	    " routing_onion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+	    " routing_onion,"
+	    " parallel_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
 
 	sqlite3_bind_int64(stmt, 1, chan->dbid);
 	sqlite3_bind_int64(stmt, 2, out->key.id);
@@ -1248,6 +1249,10 @@ void wallet_htlc_save_out(struct wallet *wallet,
 
 	sqlite3_bind_blob(stmt, 10, &out->onion_routing_packet,
 			  sizeof(out->onion_routing_packet), SQLITE_TRANSIENT);
+	if (!out->am_origin)
+		sqlite3_bind_null(stmt, 11);
+	else
+		sqlite3_bind_int64(stmt, 11, out->parallel_id);
 
 	db_exec_prepared(wallet->db, stmt);
 
@@ -1293,7 +1298,7 @@ void wallet_htlc_update(struct wallet *wallet, const u64 htlc_dbid,
 	"id, channel_htlc_id, msatoshi, cltv_expiry, hstate, "	\
 	"payment_hash, payment_key, routing_onion, "		\
 	"failuremsg, malformed_onion,"				\
-	"origin_htlc, shared_secret"
+	"origin_htlc, shared_secret, parallel_id"
 
 static bool wallet_stmt2htlc_in(struct channel *channel,
 				sqlite3_stmt *stmt, struct htlc_in *in)
@@ -1369,6 +1374,7 @@ static bool wallet_stmt2htlc_out(struct channel *channel,
 		out->am_origin = false;
 	} else {
 		out->origin_htlc_id = 0;
+		out->parallel_id = sqlite3_column_int64(stmt, 11);
 		out->am_origin = true;
 	}
 
@@ -1593,15 +1599,16 @@ void wallet_local_htlc_out_delete(struct wallet *wallet,
 {
 	sqlite3_stmt *stmt;
 
-	/* FIXME: Put parallel_id into locally-generated htlc_out, select here! */
 	stmt = db_prepare(wallet->db,
 			  "DELETE FROM channel_htlcs"
 			  " WHERE direction = ?"
 			  " AND origin_htlc = ?"
-			  " AND payment_hash = ?");
+			  " AND payment_hash = ?"
+			  " AND parallel_id = ?;");
 	sqlite3_bind_int(stmt, 1, DIRECTION_OUTGOING);
 	sqlite3_bind_int(stmt, 2, 0);
 	sqlite3_bind_sha256(stmt, 3, payment_hash);
+	sqlite3_bind_int64(stmt, 4, parallel_id);
 
 	db_exec_prepared(wallet->db, stmt);
 }

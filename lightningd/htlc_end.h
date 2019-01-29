@@ -77,6 +77,9 @@ struct htlc_out {
 	/* Is this a locally-generated payment?  Implies ->in is NULL. */
 	bool am_origin;
 
+	/* If am_origin, this is the parallel_id of the payment. */
+	u64 parallel_id;
+
 	/* Where it's from, if not going to us. */
 	struct htlc_in *in;
 };
@@ -134,6 +137,7 @@ struct htlc_out *new_htlc_out(const tal_t *ctx,
 			      const struct sha256 *payment_hash,
 			      const u8 *onion_routing_packet,
 			      bool am_origin,
+			      u64 parallel_id,
 			      struct htlc_in *in);
 
 void connect_htlc_in(struct htlc_in_map *map, struct htlc_in *hin);

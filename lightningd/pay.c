@@ -404,7 +404,7 @@ void payment_failed(struct lightningd *ld, const struct htlc_out *hout,
 
 	payment = wallet_payment_by_hash(tmpctx, ld->wallet,
 					 &hout->payment_hash,
-					 /* FIXME: Set parallel_id! */0);
+					 hout->parallel_id);
 
 #ifdef COMPAT_V052
 	/* Prior to "pay: delete HTLC when we delete payment." we would
@@ -478,11 +478,13 @@ void payment_failed(struct lightningd *ld, const struct htlc_out *hout,
 	}
 
 	/* Save to DB */
-	payment_store(ld, &hout->payment_hash, /* FIXME: Set parallel_id! */ 0);
-	wallet_payment_set_status(ld->wallet, &hout->payment_hash, /* FIXME: Set parallel_id! */ 0,
+	payment_store(ld, &hout->payment_hash, hout->parallel_id);
+	wallet_payment_set_status(ld->wallet, &hout->payment_hash,
+				  hout->parallel_id,
 				  PAYMENT_FAILED, NULL);
 	wallet_payment_set_failinfo(ld->wallet,
-				    &hout->payment_hash, /* FIXME: Set parallel_id! */ 0,
+				    &hout->payment_hash,
+				    hout->parallel_id,
 				    fail ? NULL : hout->failuremsg,
 				    pay_errcode == PAY_DESTINATION_PERM_FAIL,
 				    fail ? fail->erring_index : -1,
@@ -683,7 +685,7 @@ send_payment(struct lightningd *ld,
 
 	failcode = send_htlc_out(channel, route[0].amount,
 				 base_expiry + route[0].delay,
-				 rhash, onion, NULL, &hout);
+				 rhash, parallel_id, onion, NULL, &hout);
 	if (failcode) {
 		fail = immediate_routing_failure(cmd, ld,
 						 failcode,

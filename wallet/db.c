@@ -364,6 +364,7 @@ char *dbmigrations[] = {
     "DROP TABLE temp_payments;",
     "UPDATE payments SET msatoshi_total = msatoshi;",
     "UPDATE payments SET parallel_id = 0;",
+    "ALTER TABLE channel_htlcs ADD parallel_id INTEGER;",
     NULL,
 };
 

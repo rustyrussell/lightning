@@ -431,6 +431,7 @@ static void htlc_offer_timeout(struct channel *channel)
 
 enum onion_type send_htlc_out(struct channel *out, u64 amount, u32 cltv,
 			      const struct sha256 *payment_hash,
+			      u64 parallel_id,
 			      const u8 *onion_routing_packet,
 			      struct htlc_in *in,
 			      struct htlc_out **houtp)
@@ -452,7 +453,8 @@ enum onion_type send_htlc_out(struct channel *out, u64 amount, u32 cltv,
 
 	/* Make peer's daemon own it, catch if it dies. */
 	hout = new_htlc_out(out->owner, out, amount, cltv,
-			    payment_hash, onion_routing_packet, in == NULL, in);
+			    payment_hash, onion_routing_packet, in == NULL,
+			    parallel_id, in);
 	tal_add_destructor(hout, destroy_hout_subd_died);
 
 	/* Give channel 30 seconds to commit (first) htlc. */
@@ -548,7 +550,7 @@ static void forward_htlc(struct htlc_in *hin,
 
 	failcode = send_htlc_out(next, amt_to_forward,
 				 outgoing_cltv_value, &hin->payment_hash,
-				 next_onion, hin, NULL);
+				 0, next_onion, hin, NULL);
 	if (!failcode)
 		return;
 
@@ -959,8 +961,7 @@ static bool update_out_htlc(struct channel *channel,
 		/* For our own HTLCs, we commit payment to db lazily */
 		if (hout->origin_htlc_id == 0)
 			payment_store(ld,
-				      &hout->payment_hash,
-				      /* FIXME: Set parallel_id! */ 0);
+				      &hout->payment_hash, hout->parallel_id);
 	}
 
 	if (!htlc_out_update_state(channel, hout, newstate))
