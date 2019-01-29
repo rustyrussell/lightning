@@ -1,6 +1,6 @@
 from fixtures import *  # noqa: F401,F403
 from lightning import RpcError
-from utils import DEVELOPER, wait_for, only_one, sync_blockheight
+from utils import DEVELOPER, wait_for, only_one, sync_blockheight, EXPERIMENTAL_FEATURES
 
 
 import copy
@@ -1360,6 +1360,7 @@ def test_pay_routeboost(node_factory, bitcoind):
 
 
 @unittest.skipIf(not DEVELOPER, "needs dev-disconnect, dev-no-htlc-commit-timer")
+@unittest.skipIf(not EXPERIMENTAL_FEATURES, "needs parallel_id support")
 def test_partial_payment(node_factory, bitcoind, executor):
     # We want to test two payments at the same time, before we send commit
     l1, l2, l3, l4 = node_factory.get_nodes(4, [{}] + [{'disconnect': ['=WIRE_UPDATE_ADD_HTLC-nocommit', 'dev-no-htlc-commit-timer': None]}] * 2 + [{}])

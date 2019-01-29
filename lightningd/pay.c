@@ -814,6 +814,12 @@ static struct command_result *json_sendpay(struct command *cmd,
 		route[i].direction = direction ? *direction : 0;
 	}
 
+#if !EXPERIMENTAL_FEATURES
+	if (*parallel_id)
+		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
+				    "parallel_id requires --enable-experimental-features");
+#endif /* EXPERIMENTAL_FEATURES */
+
 	/* The given msatoshi is the actual payment that the payee is
 	 * requesting. The final hop amount is what we actually give, which can
 	 * be from the msatoshi to twice msatoshi. */
