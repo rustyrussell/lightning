@@ -1213,7 +1213,6 @@ void wallet_htlc_save_out(struct wallet *wallet,
 	/* We absolutely need the incoming HTLC to be persisted before
 	 * we can persist it's dependent */
 	assert(out->in == NULL || out->in->dbid != 0);
-	out->origin_htlc_id = out->in?out->in->dbid:0;
 
 	stmt = db_prepare(
 	    wallet->db,
@@ -1344,7 +1343,9 @@ static bool wallet_stmt2htlc_in(struct channel *channel,
 }
 
 static bool wallet_stmt2htlc_out(struct channel *channel,
-				sqlite3_stmt *stmt, struct htlc_out *out)
+				 sqlite3_stmt *stmt,
+				 struct htlc_out *out,
+				 struct htlc_in_map *htlcs_in)
 {
 	bool ok = true;
 	out->dbid = sqlite3_column_int64(stmt, 0);
@@ -1370,17 +1371,25 @@ static bool wallet_stmt2htlc_out(struct channel *channel,
 	out->failcode = sqlite3_column_int(stmt, 9);
 
 	if (sqlite3_column_type(stmt, 10) != SQLITE_NULL) {
-		out->origin_htlc_id = sqlite3_column_int64(stmt, 10);
+		u64 in_id = sqlite3_column_int64(stmt, 10);
 		out->am_origin = false;
+		out->in = find_htlc_in_by_dbid(htlcs_in, in_id);
+		if (!out->in && !out->preimage) {
+#ifdef COMPAT_V061
+			log_broken(channel->peer->ld->log,
+				   "Missing preimage for orphaned HTLC; replacing with zeros");
+			out->preimage = talz(out, struct preimage);
+#else
+			fatal("Unable to find corresponding htlc_in %"PRIu64
+			      " for unfulfilled htlc_out %"PRIu64,
+			      in_id, out->dbid);
+#endif
+		}
 	} else {
-		out->origin_htlc_id = 0;
 		out->parallel_id = sqlite3_column_int64(stmt, 11);
 		out->am_origin = true;
+		out->in = NULL;
 	}
-
-	/* Need to defer wiring until we can look up all incoming
-	 * htlcs, will wire using origin_htlc_id */
-	out->in = NULL;
 
 	return ok;
 }
@@ -1422,15 +1431,14 @@ static void fixup_hin(struct wallet *wallet, struct htlc_in *hin)
 #endif
 }
 
-bool wallet_htlcs_load_for_channel(struct wallet *wallet,
-				   struct channel *chan,
-				   struct htlc_in_map *htlcs_in,
-				   struct htlc_out_map *htlcs_out)
+bool wallet_htlcs_load_in_for_channel(struct wallet *wallet,
+				      struct channel *chan,
+				      struct htlc_in_map *htlcs_in)
 {
 	bool ok = true;
-	int incount = 0, outcount = 0;
+	int incount = 0;
 
-	log_debug(wallet->log, "Loading HTLCs for channel %"PRIu64, chan->dbid);
+	log_debug(wallet->log, "Loading in HTLCs for channel %"PRIu64, chan->dbid);
 	sqlite3_stmt *stmt = db_query(
 	    wallet->db,
 	    "SELECT " HTLC_FIELDS " FROM channel_htlcs WHERE "
@@ -1451,6 +1459,19 @@ bool wallet_htlcs_load_for_channel(struct wallet *wallet,
 		incount++;
 	}
 	db_stmt_done(stmt);
+	log_debug(wallet->log, "Restored %d incoming HTLCS", incount);
+
+	return ok;
+}
+
+bool wallet_htlcs_load_out_for_channel(struct wallet *wallet,
+				       struct channel *chan,
+				       struct htlc_in_map *htlcs_in,
+				       struct htlc_out_map *htlcs_out)
+{
+	bool ok = true;
+	int outcount = 0;
+	sqlite3_stmt *stmt;
 
 	stmt = db_query(
 	    wallet->db,
@@ -1465,14 +1486,15 @@ bool wallet_htlcs_load_for_channel(struct wallet *wallet,
 
 	while (ok && sqlite3_step(stmt) == SQLITE_ROW) {
 		struct htlc_out *out = tal(chan, struct htlc_out);
-		ok &= wallet_stmt2htlc_out(chan, stmt, out);
+		ok &= wallet_stmt2htlc_out(chan, stmt, out, htlcs_in);
 		connect_htlc_out(htlcs_out, out);
 		/* Cannot htlc_out_check because we haven't wired the
 		 * dependencies in yet */
 		outcount++;
 	}
 	db_stmt_done(stmt);
-	log_debug(wallet->log, "Restored %d incoming and %d outgoing HTLCS", incount, outcount);
+
+	log_debug(wallet->log, "Restored %d outgoing HTLCS", outcount);
 
 	return ok;
 }

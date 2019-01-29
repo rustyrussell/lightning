@@ -1044,11 +1044,13 @@ static bool test_htlc_crud(struct lightningd *ld, const tal_t *ctx)
 	db_begin_transaction(w->db);
 	CHECK(!wallet_err);
 
-	CHECK_MSG(wallet_htlcs_load_for_channel(w, chan, htlcs_in, htlcs_out),
-		  "Failed loading HTLCs");
+	CHECK_MSG(wallet_htlcs_load_in_for_channel(w, chan, htlcs_in),
+		  "Failed loading in HTLCs");
+	CHECK_MSG(wallet_htlcs_load_out_for_channel(w, chan, htlcs_in, htlcs_out),
+		  "Failed loading out HTLCs");
 	db_commit_transaction(w->db);
 
-	htlcs_reconnect(w->ld, htlcs_in, htlcs_out);
+	htlcs_fail_unforwarded(w->ld, htlcs_in, htlcs_out);
 	CHECK(!wallet_err);
 
 	hin = htlc_in_map_get(htlcs_in, &in.key);

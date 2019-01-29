@@ -959,7 +959,7 @@ static bool update_out_htlc(struct channel *channel,
 						     FORWARD_OFFERED);
 
 		/* For our own HTLCs, we commit payment to db lazily */
-		if (hout->origin_htlc_id == 0)
+		if (hout->am_origin)
 			payment_store(ld,
 				      &hout->payment_hash, hout->parallel_id);
 	}
@@ -1713,15 +1713,14 @@ static void fixup_hout(struct lightningd *ld, struct htlc_out *hout)
 #endif /* COMPAT_V061 */
 
 /**
- * htlcs_reconnect -- Link outgoing HTLCs to their origins after initial db load
+ * htlcs_fail_unforwarded -- fail htlcs which we didn't forward yet.
  *
- * For each outgoing HTLC find the incoming HTLC that triggered it. If
- * we are the origin of the transfer then we cannot resolve the
- * incoming HTLC in which case we just leave it `NULL`.
+ * We simply fail them, rather than trying to forward them now; it's a tiny
+ * corner case.
  */
-void htlcs_reconnect(struct lightningd *ld,
-		     struct htlc_in_map *htlcs_in,
-		     struct htlc_out_map *htlcs_out)
+void htlcs_fail_unforwarded(struct lightningd *ld,
+			    struct htlc_in_map *htlcs_in,
+			    struct htlc_out_map *htlcs_out)
 {
 	struct htlc_in_map_iter ini;
 	struct htlc_out_map_iter outi;
@@ -1749,32 +1748,6 @@ void htlcs_reconnect(struct lightningd *ld,
 			continue;
 		}
 
-		/* For fulfilled HTLCs, we fulfill incoming before outgoing is
-		 * completely resolved, so it's possible that we don't find
-		 * the incoming. */
-		for (hin = htlc_in_map_first(htlcs_in, &ini); hin;
-		     hin = htlc_in_map_next(htlcs_in, &ini)) {
-			if (hout->origin_htlc_id == hin->dbid) {
-				log_debug(ld->log,
-					  "Found corresponding htlc_in %" PRIu64
-					  " for htlc_out %" PRIu64,
-					  hin->dbid, hout->dbid);
-				htlc_out_connect_htlc_in(hout, hin);
-				break;
-			}
-		}
-
-		if (!hout->in && !hout->preimage) {
-#ifdef COMPAT_V061
-			log_broken(ld->log,
-				   "Missing preimage for orphaned HTLC; replacing with zeros");
-			hout->preimage = talz(hout, struct preimage);
-#else
-			fatal("Unable to find corresponding htlc_in %"PRIu64
-			      " for unfulfilled htlc_out %"PRIu64,
-			      hout->origin_htlc_id, hout->dbid);
-#endif
-		}
 #ifdef COMPAT_V061
 		fixup_hout(ld, hout);
 #endif

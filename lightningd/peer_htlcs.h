@@ -59,8 +59,8 @@ void onchain_fulfilled_htlc(struct channel *channel,
 
 void htlcs_notify_new_block(struct lightningd *ld, u32 height);
 
-void htlcs_reconnect(struct lightningd *ld,
-		     struct htlc_in_map *htlcs_in,
-		     struct htlc_out_map *htlcs_out);
+void htlcs_fail_unforwarded(struct lightningd *ld,
+			    struct htlc_in_map *htlcs_in,
+			    struct htlc_out_map *htlcs_out);
 
 #endif /* LIGHTNING_LIGHTNINGD_PEER_HTLCS_H */

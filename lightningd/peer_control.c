@@ -1044,22 +1044,35 @@ void load_channels_from_wallet(struct lightningd *ld)
 	if (!wallet_channels_load_active(ld, ld->wallet))
 		fatal("Could not load channels from the database");
 
-	/* This is a poor-man's db join :( */
+	/* First we load the incoming htlcs */
 	list_for_each(&ld->peers, peer, list) {
 		struct channel *channel;
 
 		list_for_each(&peer->channels, channel, list) {
-			if (!wallet_htlcs_load_for_channel(ld->wallet,
-							   channel,
-							   &ld->htlcs_in,
-							   &ld->htlcs_out)) {
-				fatal("could not load htlcs for channel");
+			if (!wallet_htlcs_load_in_for_channel(ld->wallet,
+							      channel,
+							      &ld->htlcs_in)) {
+				fatal("could not load incoming htlcs for channel");
 			}
 		}
 	}
 
-	/* Now connect HTLC pointers together */
-	htlcs_reconnect(ld, &ld->htlcs_in, &ld->htlcs_out);
+	/* Now we load the outgoing HTLCs, so we can connect them. */
+	list_for_each(&ld->peers, peer, list) {
+		struct channel *channel;
+
+		list_for_each(&peer->channels, channel, list) {
+			if (!wallet_htlcs_load_out_for_channel(ld->wallet,
+							       channel,
+							       &ld->htlcs_in,
+							       &ld->htlcs_out)) {
+				fatal("could not load outgoing htlcs for channel");
+			}
+		}
+	}
+
+	/* If we shutdown without forwarding an htlc, fail it now. */
+	htlcs_fail_unforwarded(ld, &ld->htlcs_in, &ld->htlcs_out);
 }
 
 static struct command_result *json_disconnect(struct command *cmd,

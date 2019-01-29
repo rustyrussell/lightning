@@ -28,6 +28,19 @@ struct htlc_in *find_htlc_in(const struct htlc_in_map *map,
 	return htlc_in_map_get(map, &key);
 }
 
+struct htlc_in *find_htlc_in_by_dbid(const struct htlc_in_map *htlcs_in, u64 dbid)
+{
+	struct htlc_in *hin;
+	struct htlc_in_map_iter ini;
+
+	for (hin = htlc_in_map_first(htlcs_in, &ini); hin;
+	     hin = htlc_in_map_next(htlcs_in, &ini)) {
+		if (hin->dbid == dbid)
+			return hin;
+	}
+	return NULL;
+}
+
 static void destroy_htlc_in(struct htlc_in *hend, struct htlc_in_map *map)
 {
 	htlc_in_map_del(map, hend);
