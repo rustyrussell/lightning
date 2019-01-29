@@ -8,7 +8,7 @@ lightning-sendpay - Command for sending a payment via a route.
 
 SYNOPSIS
 --------
-*sendpay* 'route' 'payment_hash' ['description'] ['msatoshi']
+*sendpay* 'route' 'payment_hash' ['description'] ['msatoshi'] ['parallel_id']
 
 DESCRIPTION
 -----------
@@ -33,19 +33,18 @@ The 'description' parameter, if provided, will be returned in
 The 'msatoshi' amount, if provided, is the amount that will be
 recorded as the target payment value.
 If not specified, it will be the final amount to the destination.
-If specified, then the final amount at the destination must be
-from the specified 'msatoshi' to twice the specified 'msatoshi',
-inclusive.
-This is intended to obscure payments by overpaying slightly at
-the destination;
-the actual target payment is what should be specified as the
-'msatoshi' argument.
+
+The 'parallel_id' value, if provided and non-zero, allows for multiple parallel
+partial payments with the same 'payment_hash'.  The 'msatoshi' amount
+(which must be provided) for each *sendpay* with matching
+'payment_hash' must be equal, and *sendpay* will fail if there are
+already 'msatoshi' worth of payments pending.
 
 Once a payment has succeeded, calls to *sendpay* with the same 'payment_hash'
 but a different 'msatoshi' or destination will fail; this prevents
 accidental multiple payments.
 Calls to *sendpay* with the same 'payment_hash', 'msatoshi', and destination as a
-previous successful payment (even if a different route) will return
+previous successful payment (even if a different route or 'parallel_id') will return
 immediately with success.
 
 RETURN VALUE

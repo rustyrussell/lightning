@@ -225,11 +225,11 @@ void payment_succeeded(struct lightningd *ld, struct htlc_out *hout,
 	struct wallet_payment *payment;
 
 	wallet_payment_set_status(ld->wallet, &hout->payment_hash,
-				  /* FIXME: Set parallel_id! */ 0,
+				  hout->parallel_id,
 				  PAYMENT_COMPLETE, rval);
 	payment = wallet_payment_by_hash(tmpctx, ld->wallet,
 					 &hout->payment_hash,
-					 /* FIXME: Set parallel_id! */ 0);
+					 hout->parallel_id);
 	assert(payment);
 
 	tell_waiters_success(ld, &hout->payment_hash, payment);
@@ -650,9 +650,22 @@ send_payment(struct lightningd *ld,
 		}
 
 		/* Already complete?  Fine. */
+		log_debug(ld->log, "Payment %zu/%zu: %"PRIu64" %s",
+			  i, tal_count(payments),
+			  payments[i]->msatoshi,
+			  payments[i]->status == PAYMENT_COMPLETE ? "COMPLETE"
+			  : payments[i]->status == PAYMENT_PENDING ? "PENDING"
+			  : "FAILED");
 		if (payments[i]->status == PAYMENT_COMPLETE)
 			return sendpay_success(cmd, payments[i]);
 		else if (payments[i]->status == PAYMENT_PENDING) {
+			/* Can't mix non-parallel and parallel payments! */
+			if (!payments[i]->parallel_id != !parallel_id) {
+				return command_fail(cmd, PAY_IN_PROGRESS,
+						    "Already have %s payment in progress",
+						    payments[i]->parallel_id ? "parallel" : "non-parallel");
+			}
+			/* Dup is fine. */
 			if (payments[i]->parallel_id == parallel_id)
 				return json_sendpay_in_progress(cmd, payments[i]);
 			msat_already_pending += payments[i]->msatoshi;
@@ -662,7 +675,7 @@ send_payment(struct lightningd *ld,
 	/* If we already have more pending than total, don't pay more!
 	 * Otherwise receipient might accept, and anyone could accept this new
 	 * partial payment now preimage is revealed. */
-	if (msat_already_pending > msatoshi_total) {
+	if (msat_already_pending >= msatoshi_total) {
 		return command_fail(cmd, PAY_IN_PROGRESS,
 				    "Already have %"PRIu64" of %"PRIu64" msat payments in progress",
 				    msat_already_pending, msatoshi_total);
@@ -761,7 +774,7 @@ static struct command_result *json_sendpay(struct command *cmd,
 	size_t i;
 	struct sha256 *rhash;
 	struct route_hop *route;
-	u64 *msatoshi;
+	u64 *msatoshi, *parallel_id;
 	const char *description;
 	struct command_result *res;
 
@@ -770,6 +783,7 @@ static struct command_result *json_sendpay(struct command *cmd,
 		   p_req("payment_hash", param_sha256, &rhash),
 		   p_opt("description", param_escaped_string, &description),
 		   p_opt("msatoshi", param_u64, &msatoshi),
+		   p_opt_def("parallel_id", param_u64, &parallel_id, 0),
 		   NULL))
 		return command_param_failed();
 
@@ -803,21 +817,13 @@ static struct command_result *json_sendpay(struct command *cmd,
 	/* The given msatoshi is the actual payment that the payee is
 	 * requesting. The final hop amount is what we actually give, which can
 	 * be from the msatoshi to twice msatoshi. */
+	if (*parallel_id && !msatoshi)
+		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
+				    "Must specify msatoshi with parallel_id");
 
-	/* if not: msatoshi <= finalhop.amount <= 2 * msatoshi, fail. */
-	if (msatoshi) {
-		if (!(*msatoshi <= route[routetok->size-1].amount &&
-		      route[routetok->size-1].amount <= 2 * *msatoshi)) {
-			return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
-					    "msatoshi %"PRIu64" out of range",
-					    *msatoshi);
-		}
-	}
-
-	res = send_payment(cmd->ld, cmd, rhash, /* FIXME: Set parallel_id! */ 0,
+	res = send_payment(cmd->ld, cmd, rhash, *parallel_id,
 			   route,
-			   msatoshi ? *msatoshi : route[routetok->size-1].amount,
-			   /* FIXME: Set msatoshi_total! */
+			   route[routetok->size-1].amount,
 			   msatoshi ? *msatoshi : route[routetok->size-1].amount,
 			   description);
 	if (res)
