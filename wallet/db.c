@@ -356,6 +356,14 @@ char *dbmigrations[] = {
     ");",
     /* Add a direction for failed payments. */
     "ALTER TABLE payments ADD faildirection INTEGER;", /* erring_direction */
+    /* We can now have multiple payments in progress for a single hash, so
+     * add two fields.  The primary key is payment_hash & parallel_id. */
+    "ALTER TABLE payments RENAME TO temp_payments;",
+    "CREATE TABLE payments (id INTEGER UNIQUE, timestamp INTEGER, status INTEGER, payment_hash BLOB, destination BLOB, msatoshi INTEGER, payment_preimage BLOB, path_secrets BLOB, route_nodes BLOB, route_channels TEXT, failonionreply BLOB, faildestperm INTEGER, failindex INTEGER, failcode INTEGER, failnode BLOB, failchannel BLOB, failupdate BLOB, msatoshi_sent INTEGER, faildetail TEXT, description TEXT, faildirection INTEGER, msatoshi_total INTEGER, parallel_id INTEGER, PRIMARY KEY (payment_hash, parallel_id));",
+    "INSERT INTO payments (id, timestamp, status, payment_hash, destination, msatoshi, payment_preimage, path_secrets, route_nodes, route_channels, failonionreply, faildestperm, failindex, failcode, failnode, failchannel, failupdate, msatoshi_sent, faildetail, description, faildirection) SELECT id, timestamp, status, payment_hash, destination, msatoshi, payment_preimage, path_secrets, route_nodes, route_channels, failonionreply, faildestperm, failindex, failcode, failnode, failchannel, failupdate, msatoshi_sent, faildetail, description, faildirection FROM temp_payments;",
+    "DROP TABLE temp_payments;",
+    "UPDATE payments SET msatoshi_total = msatoshi;",
+    "UPDATE payments SET parallel_id = 0;",
     NULL,
 };
 

@@ -377,7 +377,8 @@ void payment_failed(struct lightningd *ld UNNEEDED, const struct htlc_out *hout 
 		    const char *localfail UNNEEDED)
 { fprintf(stderr, "payment_failed called!\n"); abort(); }
 /* Generated stub for payment_store */
-void payment_store(struct lightningd *ld UNNEEDED, const struct sha256 *payment_hash UNNEEDED)
+void payment_store(struct lightningd *ld UNNEEDED,
+		   const struct sha256 *payment_hash UNNEEDED, u64 parallel_id UNNEEDED)
 { fprintf(stderr, "payment_store called!\n"); abort(); }
 /* Generated stub for payment_succeeded */
 void payment_succeeded(struct lightningd *ld UNNEEDED, struct htlc_out *hout UNNEEDED,
@@ -1077,29 +1078,37 @@ static bool test_payment_crud(struct lightningd *ld, const tal_t *ctx)
 	t->id = 0;
 	t->msatoshi = 100;
 	t->msatoshi_sent = 101;
+	t->msatoshi_total = t->msatoshi;
 	t->status = PAYMENT_PENDING;
 	t->payment_preimage = NULL;
 	memset(&t->payment_hash, 1, sizeof(t->payment_hash));
+	t->parallel_id = 0;
 
 	db_begin_transaction(w->db);
 	wallet_payment_setup(w, tal_dup(NULL, struct wallet_payment, t));
-	wallet_payment_store(w, &t->payment_hash);
-	t2 = wallet_payment_by_hash(ctx, w, &t->payment_hash);
+	wallet_payment_store(w, &t->payment_hash, 0);
+	t2 = wallet_payment_by_hash(ctx, w, &t->payment_hash, t->parallel_id);
 	CHECK(t2 != NULL);
 	CHECK(t2->status == t->status);
+	CHECK(sha256_eq(&t2->payment_hash, &t->payment_hash));
+	CHECK(t2->parallel_id == t->parallel_id);
 	CHECK(pubkey_cmp(&t2->destination, &t->destination) == 0);
 	CHECK(t2->msatoshi == t->msatoshi);
 	CHECK(t2->msatoshi_sent == t->msatoshi_sent);
+	CHECK(t2->msatoshi_total == t->msatoshi_total);
 	CHECK(!t2->payment_preimage);
 
 	t->status = PAYMENT_COMPLETE;
 	t->payment_preimage = tal(w, struct preimage);
 	memset(t->payment_preimage, 2, sizeof(*t->payment_preimage));
-	wallet_payment_set_status(w, &t->payment_hash, t->status,
+	wallet_payment_set_status(w, &t->payment_hash, t->parallel_id,
+				  t->status,
 				  t->payment_preimage);
-	t2 = wallet_payment_by_hash(ctx, w, &t->payment_hash);
+	t2 = wallet_payment_by_hash(ctx, w, &t->payment_hash, t->parallel_id);
 	CHECK(t2 != NULL);
 	CHECK(t2->status == t->status);
+	CHECK(sha256_eq(&t2->payment_hash, &t->payment_hash));
+	CHECK(t2->parallel_id == t->parallel_id);
 	CHECK(pubkey_cmp(&t2->destination, &t->destination) == 0);
 	CHECK(t2->msatoshi == t->msatoshi);
 	CHECK(t2->msatoshi_sent == t->msatoshi_sent);

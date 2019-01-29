@@ -212,11 +212,16 @@ struct wallet_payment {
 	struct list_node list;
 	u64 id;
 	u32 timestamp;
+
+	/* The combination of these two fields is unique: */
 	struct sha256 payment_hash;
+	u64 parallel_id;
+
 	enum wallet_payment_status status;
 	struct pubkey destination;
 	u64 msatoshi;
 	u64 msatoshi_sent;
+	u64 msatoshi_total;
 	/* If and only if PAYMENT_COMPLETE */
 	struct preimage *payment_preimage;
 	/* Needed for recovering from routing failures. */
@@ -838,7 +843,8 @@ void wallet_payment_setup(struct wallet *wallet, struct wallet_payment *payment)
  * Stores the payment in the database.
  */
 void wallet_payment_store(struct wallet *wallet,
-			  const struct sha256 *payment_hash);
+			  const struct sha256 *payment_hash,
+			  u64 parallel_id);
 
 /**
  * wallet_payment_delete - Remove a payment
@@ -846,7 +852,8 @@ void wallet_payment_store(struct wallet *wallet,
  * Removes the payment from the database.
  */
 void wallet_payment_delete(struct wallet *wallet,
-			   const struct sha256 *payment_hash);
+			   const struct sha256 *payment_hash,
+			   u64 parallel_id);
 
 /**
  * wallet_local_htlc_out_delete - Remove a local outgoing failed HTLC
@@ -857,7 +864,8 @@ void wallet_payment_delete(struct wallet *wallet,
  */
 void wallet_local_htlc_out_delete(struct wallet *wallet,
 				  struct channel *chan,
-				  const struct sha256 *payment_hash);
+				  const struct sha256 *payment_hash,
+				  u64 parallel_id);
 
 /**
  * wallet_payment_by_hash - Retrieve a specific payment
@@ -866,7 +874,8 @@ void wallet_local_htlc_out_delete(struct wallet *wallet,
  */
 struct wallet_payment *
 wallet_payment_by_hash(const tal_t *ctx, struct wallet *wallet,
-				const struct sha256 *payment_hash);
+		       const struct sha256 *payment_hash,
+		       u64 parallel_id);
 
 /**
  * wallet_payment_set_status - Update the status of the payment
@@ -875,9 +884,10 @@ wallet_payment_by_hash(const tal_t *ctx, struct wallet *wallet,
  * its state.
  */
 void wallet_payment_set_status(struct wallet *wallet,
-				const struct sha256 *payment_hash,
-			        const enum wallet_payment_status newstatus,
-			        const struct preimage *preimage);
+			       const struct sha256 *payment_hash,
+			       u64 parallel_id,
+			       const enum wallet_payment_status newstatus,
+			       const struct preimage *preimage);
 
 /**
  * wallet_payment_get_failinfo - Get failure information for a given
@@ -889,6 +899,7 @@ void wallet_payment_set_status(struct wallet *wallet,
 void wallet_payment_get_failinfo(const tal_t *ctx,
 				 struct wallet *wallet,
 				 const struct sha256 *payment_hash,
+				 u64 parallel_id,
 				 /* outputs */
 				 u8 **failonionreply,
 				 bool *faildestperm,
@@ -905,6 +916,7 @@ void wallet_payment_get_failinfo(const tal_t *ctx,
  */
 void wallet_payment_set_failinfo(struct wallet *wallet,
 				 const struct sha256 *payment_hash,
+				 u64 parallel_id,
 				 const u8 *failonionreply,
 				 bool faildestperm,
 				 int failindex,

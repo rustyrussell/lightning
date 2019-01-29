@@ -225,9 +225,11 @@ void payment_succeeded(struct lightningd *ld, struct htlc_out *hout,
 	struct wallet_payment *payment;
 
 	wallet_payment_set_status(ld->wallet, &hout->payment_hash,
+				  /* FIXME: Set parallel_id! */ 0,
 				  PAYMENT_COMPLETE, rval);
 	payment = wallet_payment_by_hash(tmpctx, ld->wallet,
-					 &hout->payment_hash);
+					 &hout->payment_hash,
+					 /* FIXME: Set parallel_id! */ 0);
 	assert(payment);
 
 	tell_waiters_success(ld, &hout->payment_hash, payment);
@@ -370,14 +372,16 @@ remote_routing_failure(const tal_t *ctx,
 	return routing_failure;
 }
 
-void payment_store(struct lightningd *ld, const struct sha256 *payment_hash)
+void payment_store(struct lightningd *ld,
+		   const struct sha256 *payment_hash, u64 parallel_id)
 {
 	struct sendpay_command *pc;
 	struct sendpay_command *next;
 	const struct wallet_payment *payment;
 
-	wallet_payment_store(ld->wallet, payment_hash);
-	payment = wallet_payment_by_hash(tmpctx, ld->wallet, payment_hash);
+	wallet_payment_store(ld->wallet, payment_hash, parallel_id);
+	payment = wallet_payment_by_hash(tmpctx, ld->wallet,
+					 payment_hash, parallel_id);
 	assert(payment);
 
 	/* Trigger any sendpay commands waiting for the store to occur. */
@@ -399,7 +403,8 @@ void payment_failed(struct lightningd *ld, const struct htlc_out *hout,
 	int pay_errcode;
 
 	payment = wallet_payment_by_hash(tmpctx, ld->wallet,
-					 &hout->payment_hash);
+					 &hout->payment_hash,
+					 /* FIXME: Set parallel_id! */0);
 
 #ifdef COMPAT_V052
 	/* Prior to "pay: delete HTLC when we delete payment." we would
@@ -423,6 +428,7 @@ void payment_failed(struct lightningd *ld, const struct htlc_out *hout,
 			    type_to_string(tmpctx, struct sha256,
 					   &hout->payment_hash));
 		wallet_payment_set_status(ld->wallet, &hout->payment_hash,
+					  payment->parallel_id,
 					  PAYMENT_FAILED, NULL);
 		return;
 	}
@@ -472,11 +478,11 @@ void payment_failed(struct lightningd *ld, const struct htlc_out *hout,
 	}
 
 	/* Save to DB */
-	payment_store(ld, &hout->payment_hash);
-	wallet_payment_set_status(ld->wallet, &hout->payment_hash,
+	payment_store(ld, &hout->payment_hash, /* FIXME: Set parallel_id! */ 0);
+	wallet_payment_set_status(ld->wallet, &hout->payment_hash, /* FIXME: Set parallel_id! */ 0,
 				  PAYMENT_FAILED, NULL);
 	wallet_payment_set_failinfo(ld->wallet,
-				    &hout->payment_hash,
+				    &hout->payment_hash, /* FIXME: Set parallel_id! */ 0,
 				    fail ? NULL : hout->failuremsg,
 				    pay_errcode == PAY_DESTINATION_PERM_FAIL,
 				    fail ? fail->erring_index : -1,
@@ -496,7 +502,8 @@ void payment_failed(struct lightningd *ld, const struct htlc_out *hout,
  * Return callback if we called already, otherwise NULL. */
 static struct command_result *wait_payment(struct lightningd *ld,
 					   struct command *cmd,
-					   const struct sha256 *payment_hash)
+					   const struct sha256 *payment_hash,
+					   u64 parallel_id)
 {
 	struct wallet_payment *payment;
 	u8 *failonionreply;
@@ -510,7 +517,8 @@ static struct command_result *wait_payment(struct lightningd *ld,
 	struct routing_failure *fail;
 	int faildirection;
 
-	payment = wallet_payment_by_hash(tmpctx, ld->wallet, payment_hash);
+	payment = wallet_payment_by_hash(tmpctx, ld->wallet,
+					 payment_hash, parallel_id);
 	if (!payment) {
 		return command_fail(cmd, PAY_NO_SUCH_PAYMENT,
 				    "Never attempted payment for '%s'",
@@ -528,7 +536,9 @@ static struct command_result *wait_payment(struct lightningd *ld,
 
 	case PAYMENT_FAILED:
 		/* Get error from DB */
-		wallet_payment_get_failinfo(tmpctx, ld->wallet, payment_hash,
+		wallet_payment_get_failinfo(tmpctx, ld->wallet,
+					    payment_hash,
+					    parallel_id,
 					    &failonionreply,
 					    &faildestperm,
 					    &failindex,
@@ -575,8 +585,10 @@ static struct command_result *
 send_payment(struct lightningd *ld,
 	     struct command *cmd,
 	     const struct sha256 *rhash,
+	     u64 parallel_id,
 	     const struct route_hop *route,
 	     u64 msatoshi,
+	     u64 msatoshi_total,
 	     const char *description TAKES)
 {
 	const u8 *onion;
@@ -617,7 +629,7 @@ send_payment(struct lightningd *ld,
 	hop_data[i].amt_forward = route[i].amount;
 
 	/* Now, do we already have a payment? */
-	payment = wallet_payment_by_hash(tmpctx, ld->wallet, rhash);
+	payment = wallet_payment_by_hash(tmpctx, ld->wallet, rhash, parallel_id);
 	if (payment) {
 		/* FIXME: We should really do something smarter here! */
 		log_debug(ld->log, "send_payment: found previous");
@@ -693,18 +705,21 @@ send_payment(struct lightningd *ld,
 	 * onchain_failed_our_htlc->payment_failed with no payment.
 	 */
 	if (payment) {
-		wallet_payment_delete(ld->wallet, rhash);
-		wallet_local_htlc_out_delete(ld->wallet, channel, rhash);
+		wallet_payment_delete(ld->wallet, rhash, payment->parallel_id);
+		wallet_local_htlc_out_delete(ld->wallet, channel, rhash,
+					     payment->parallel_id);
 	}
 
 	/* If hout fails, payment should be freed too. */
 	payment = tal(hout, struct wallet_payment);
 	payment->id = 0;
 	payment->payment_hash = *rhash;
+	payment->parallel_id = parallel_id;
 	payment->destination = ids[n_hops - 1];
 	payment->status = PAYMENT_PENDING;
 	payment->msatoshi = msatoshi;
 	payment->msatoshi_sent = route[0].amount;
+	payment->msatoshi_total = msatoshi_total;
 	payment->timestamp = time_now().ts.tv_sec;
 	payment->payment_preimage = NULL;
 	payment->path_secrets = tal_steal(payment, path_secrets);
@@ -789,7 +804,10 @@ static struct command_result *json_sendpay(struct command *cmd,
 		}
 	}
 
-	res = send_payment(cmd->ld, cmd, rhash, route,
+	res = send_payment(cmd->ld, cmd, rhash, /* FIXME: Set parallel_id! */ 0,
+			   route,
+			   msatoshi ? *msatoshi : route[routetok->size-1].amount,
+			   /* FIXME: Set msatoshi_total! */
 			   msatoshi ? *msatoshi : route[routetok->size-1].amount,
 			   description);
 	if (res)
@@ -825,7 +843,7 @@ static struct command_result *json_waitsendpay(struct command *cmd,
 		   NULL))
 		return command_param_failed();
 
-	res = wait_payment(cmd->ld, cmd, rhash);
+	res = wait_payment(cmd->ld, cmd, rhash, /* FIXME: Set parallel_id! */0);
 	if (res)
 		return res;
 

@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_LIGHTNINGD_PAY_H
 #define LIGHTNING_LIGHTNINGD_PAY_H
 #include "config.h"
+#include <ccan/short_types/short_types.h>
 
 struct htlc_out;
 struct lightningd;
@@ -14,6 +15,7 @@ void payment_failed(struct lightningd *ld, const struct htlc_out *hout,
 		    const char *localfail);
 
 /* Inform payment system to save the payment. */
-void payment_store(struct lightningd *ld, const struct sha256 *payment_hash);
+void payment_store(struct lightningd *ld,
+		   const struct sha256 *payment_hash, u64 parallel_id);
 
 #endif /* LIGHTNING_LIGHTNINGD_PAY_H */

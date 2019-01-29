@@ -1588,10 +1588,12 @@ struct htlc_stub *wallet_htlc_stubs(const tal_t *ctx, struct wallet *wallet,
 
 void wallet_local_htlc_out_delete(struct wallet *wallet,
 				  struct channel *chan,
-				  const struct sha256 *payment_hash)
+				  const struct sha256 *payment_hash,
+				  u64 parallel_id)
 {
 	sqlite3_stmt *stmt;
 
+	/* FIXME: Put parallel_id into locally-generated htlc_out, select here! */
 	stmt = db_prepare(wallet->db,
 			  "DELETE FROM channel_htlcs"
 			  " WHERE direction = ?"
@@ -1605,12 +1607,15 @@ void wallet_local_htlc_out_delete(struct wallet *wallet,
 }
 
 static struct wallet_payment *
-find_unstored_payment(struct wallet *wallet, const struct sha256 *payment_hash)
+find_unstored_payment(struct wallet *wallet,
+		      const struct sha256 *payment_hash,
+		      u64 parallel_id)
 {
 	struct wallet_payment *i;
 
 	list_for_each(&wallet->unstored_payments, i, list) {
-		if (sha256_eq(payment_hash, &i->payment_hash))
+		if (sha256_eq(payment_hash, &i->payment_hash)
+		    && i->parallel_id == parallel_id)
 			return i;
 	}
 	return NULL;
@@ -1623,19 +1628,20 @@ static void destroy_unstored_payment(struct wallet_payment *payment)
 
 void wallet_payment_setup(struct wallet *wallet, struct wallet_payment *payment)
 {
-	assert(!find_unstored_payment(wallet, &payment->payment_hash));
+	assert(!find_unstored_payment(wallet, &payment->payment_hash, payment->parallel_id));
 
 	list_add_tail(&wallet->unstored_payments, &payment->list);
 	tal_add_destructor(payment, destroy_unstored_payment);
 }
 
 void wallet_payment_store(struct wallet *wallet,
-			  const struct sha256 *payment_hash)
+			  const struct sha256 *payment_hash,
+			  u64 parallel_id)
 {
 	sqlite3_stmt *stmt;
 	struct wallet_payment *payment;
 
-	payment = find_unstored_payment(wallet, payment_hash);
+	payment = find_unstored_payment(wallet, payment_hash, parallel_id);
 	if (!payment) {
 		/* Already stored on-disk */
 #if DEVELOPER
@@ -1645,8 +1651,9 @@ void wallet_payment_store(struct wallet *wallet,
 		int res;
 		stmt = db_prepare(wallet->db,
 				  "SELECT status FROM payments"
-				  " WHERE payment_hash=?;");
+				  " WHERE payment_hash=? AND parallel_id = ?;");
 		sqlite3_bind_sha256(stmt, 1, payment_hash);
+		sqlite3_bind_int64(stmt, 2, parallel_id);
 		res = sqlite3_step(stmt);
 		assert(res == SQLITE_ROW);
 		db_stmt_done(stmt);
@@ -1669,8 +1676,10 @@ void wallet_payment_store(struct wallet *wallet,
 		"  route_nodes,"
 		"  route_channels,"
 		"  msatoshi_sent,"
-		"  description"
-		") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+		"  description,"
+		"  msatoshi_total,"
+		"  parallel_id"
+		") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
 
 	sqlite3_bind_int(stmt, 1, payment->status);
 	sqlite3_bind_sha256(stmt, 2, &payment->payment_hash);
@@ -1691,6 +1700,10 @@ void wallet_payment_store(struct wallet *wallet,
 				  SQLITE_TRANSIENT);
 	else
 		sqlite3_bind_null(stmt, 10);
+	sqlite3_bind_int64(stmt, 11, payment->msatoshi_total);
+	log_debug(wallet->log, "payment->msatoshi_total = %"PRIu64, payment->msatoshi_total);
+	sqlite3_bind_int64(stmt, 12, payment->parallel_id);
+	log_debug(wallet->log, "payment->parallel_id = %"PRIu64, payment->parallel_id);
 
 	db_exec_prepared(wallet->db, stmt);
 
@@ -1698,12 +1711,13 @@ void wallet_payment_store(struct wallet *wallet,
 }
 
 void wallet_payment_delete(struct wallet *wallet,
-			   const struct sha256 *payment_hash)
+			   const struct sha256 *payment_hash,
+			   u64 parallel_id)
 {
 	sqlite3_stmt *stmt;
 	struct wallet_payment *payment;
 
-	payment = find_unstored_payment(wallet, payment_hash);
+	payment = find_unstored_payment(wallet, payment_hash, parallel_id);
 	if (payment) {
 		tal_free(payment);
 		return;
@@ -1711,9 +1725,10 @@ void wallet_payment_delete(struct wallet *wallet,
 
 	stmt = db_prepare(
 		wallet->db,
-		"DELETE FROM payments WHERE payment_hash = ?");
+		"DELETE FROM payments WHERE payment_hash = ? AND parallel_id = ?");
 
 	sqlite3_bind_sha256(stmt, 1, payment_hash);
+	sqlite3_bind_int64(stmt, 2, parallel_id);
 
 	db_exec_prepared(wallet->db, stmt);
 }
@@ -1751,6 +1766,8 @@ static struct wallet_payment *wallet_stmt2payment(const tal_t *ctx,
 	else
 		payment->description = NULL;
 
+	payment->msatoshi_total = sqlite3_column_int64(stmt, 12);
+	payment->parallel_id = sqlite3_column_int64(stmt, 13);
 	return payment;
 }
 
@@ -1758,24 +1775,26 @@ static struct wallet_payment *wallet_stmt2payment(const tal_t *ctx,
 #define PAYMENT_FIELDS                                                         \
 	"id, status, destination, msatoshi, payment_hash, timestamp, "         \
 	"payment_preimage, path_secrets, route_nodes, route_channels, "        \
-	"msatoshi_sent, description "
+	"msatoshi_sent, description, msatoshi_total, parallel_id "
 
 struct wallet_payment *
 wallet_payment_by_hash(const tal_t *ctx, struct wallet *wallet,
-		       const struct sha256 *payment_hash)
+		       const struct sha256 *payment_hash,
+		       u64 parallel_id)
 {
 	sqlite3_stmt *stmt;
 	struct wallet_payment *payment;
 
 	/* Present the illusion that it's in the db... */
-	payment = find_unstored_payment(wallet, payment_hash);
+	payment = find_unstored_payment(wallet, payment_hash, parallel_id);
 	if (payment)
 		return payment;
 
 	stmt = db_prepare(wallet->db, "SELECT " PAYMENT_FIELDS " FROM payments "
-				      "WHERE payment_hash = ?");
+				      "WHERE payment_hash = ? AND parallel_id = ?");
 
 	sqlite3_bind_sha256(stmt, 1, payment_hash);
+	sqlite3_bind_int64(stmt, 2, parallel_id);
 	if (sqlite3_step(stmt) == SQLITE_ROW) {
 		payment = wallet_stmt2payment(ctx, stmt);
 	}
@@ -1785,6 +1804,7 @@ wallet_payment_by_hash(const tal_t *ctx, struct wallet *wallet,
 
 void wallet_payment_set_status(struct wallet *wallet,
 			       const struct sha256 *payment_hash,
+			       u64 parallel_id,
 			       const enum wallet_payment_status newstatus,
 			       const struct preimage *preimage)
 {
@@ -1792,7 +1812,7 @@ void wallet_payment_set_status(struct wallet *wallet,
 	struct wallet_payment *payment;
 
 	/* We can only fail an unstored payment! */
-	payment = find_unstored_payment(wallet, payment_hash);
+	payment = find_unstored_payment(wallet, payment_hash, parallel_id);
 	if (payment) {
 		assert(newstatus == PAYMENT_FAILED);
 		tal_free(payment);
@@ -1801,19 +1821,21 @@ void wallet_payment_set_status(struct wallet *wallet,
 
 	stmt = db_prepare(wallet->db,
 			  "UPDATE payments SET status=? "
-			  "WHERE payment_hash=?");
+			  "WHERE payment_hash=? AND parallel_id=?");
 
 	sqlite3_bind_int(stmt, 1, wallet_payment_status_in_db(newstatus));
 	sqlite3_bind_sha256(stmt, 2, payment_hash);
+	sqlite3_bind_int64(stmt, 3, parallel_id);
 	db_exec_prepared(wallet->db, stmt);
 
 	if (preimage) {
 		stmt = db_prepare(wallet->db,
 				  "UPDATE payments SET payment_preimage=? "
-				  "WHERE payment_hash=?");
+				  "WHERE payment_hash=? AND parallel_id=?");
 
 		sqlite3_bind_preimage(stmt, 1, preimage);
 		sqlite3_bind_sha256(stmt, 2, payment_hash);
+		sqlite3_bind_int64(stmt, 3, parallel_id);
 		db_exec_prepared(wallet->db, stmt);
 	}
 	if (newstatus != PAYMENT_PENDING) {
@@ -1822,8 +1844,9 @@ void wallet_payment_set_status(struct wallet *wallet,
 				  "   SET path_secrets = NULL"
 				  "     , route_nodes = NULL"
 				  "     , route_channels = NULL"
-				  " WHERE payment_hash = ?;");
+				  " WHERE payment_hash = ? AND parallel_id = ?;");
 		sqlite3_bind_sha256(stmt, 1, payment_hash);
+		sqlite3_bind_int64(stmt, 2, parallel_id);
 		db_exec_prepared(wallet->db, stmt);
 	}
 }
@@ -1831,6 +1854,7 @@ void wallet_payment_set_status(struct wallet *wallet,
 void wallet_payment_get_failinfo(const tal_t *ctx,
 				 struct wallet *wallet,
 				 const struct sha256 *payment_hash,
+				 u64 parallel_id,
 				 /* outputs */
 				 u8 **failonionreply,
 				 bool *faildestperm,
@@ -1853,8 +1877,9 @@ void wallet_payment_get_failinfo(const tal_t *ctx,
 			  "     , failnode, failchannel"
 			  "     , failupdate, faildetail, faildirection"
 			  "  FROM payments"
-			  " WHERE payment_hash=?;");
+			  " WHERE payment_hash=? AND parallel_id=?;");
 	sqlite3_bind_sha256(stmt, 1, payment_hash);
+	sqlite3_bind_int64(stmt, 2, parallel_id);
 	res = sqlite3_step(stmt);
 	assert(res == SQLITE_ROW);
 	if (sqlite3_column_type(stmt, 0) == SQLITE_NULL)
@@ -1899,6 +1924,7 @@ void wallet_payment_get_failinfo(const tal_t *ctx,
 
 void wallet_payment_set_failinfo(struct wallet *wallet,
 				 const struct sha256 *payment_hash,
+				 u64 parallel_id,
 				 const u8 *failonionreply /*tal_arr*/,
 				 bool faildestperm,
 				 int failindex,
@@ -1922,7 +1948,7 @@ void wallet_payment_set_failinfo(struct wallet *wallet,
 			  "     , failupdate=?"
 			  "     , faildetail=?"
 			  "     , faildirection=?"
-			  " WHERE payment_hash=?;");
+			  " WHERE payment_hash=? AND parallel_id=?;");
 	if (failonionreply)
 		sqlite3_bind_blob(stmt, 1,
 				  failonionreply, tal_count(failonionreply),
@@ -1958,6 +1984,7 @@ void wallet_payment_set_failinfo(struct wallet *wallet,
 			  SQLITE_TRANSIENT);
 
 	sqlite3_bind_sha256(stmt, 10, payment_hash);
+	sqlite3_bind_int64(stmt, 11, parallel_id);
 
 	db_exec_prepared(wallet->db, stmt);
 }
