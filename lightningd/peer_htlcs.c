@@ -422,6 +422,14 @@ static void htlc_offer_timeout(struct channel *channel)
 	if (!channel->owner || channel->state != CHANNELD_NORMAL)
 		return;
 
+#if DEVELOPER
+	if (channel->peer->ld->dev_no_htlc_commit_timer) {
+		log_debug(channel->owner->log,
+			  "Adding HTLC too slow, but --dev-no-htlc-commit-timer");
+		return;
+	}
+#endif
+
 	log_unusual(channel->owner->log,
 		    "Adding HTLC too slow: killing channel");
 	tal_free(channel->owner);

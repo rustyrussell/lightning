@@ -116,6 +116,7 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	ld->dev_disconnect_fd = -1;
 	ld->dev_subdaemon_fail = false;
 	ld->dev_allow_localhost = false;
+	ld->dev_no_htlc_commit_timer = false;
 #endif
 
 	/*~ These are CCAN lists: an embedded double-linked list.  It's not

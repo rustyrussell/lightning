@@ -196,6 +196,9 @@ struct lightningd {
 	/* Allow and accept localhost node_announcement addresses */
 	bool dev_allow_localhost;
 
+	/* If we have --dev-no-htlc-commit-timer. */
+	bool dev_no_htlc_commit_timer;
+
 	/* Things we've marked as not leaking. */
 	const void **notleaks;
 #endif /* DEVELOPER */
