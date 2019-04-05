@@ -31,7 +31,7 @@ print_stat()
     if $CSV; then
 	sed -e 's/^ *//' -e 's/ *$//' | tr \\012 ,
     else
-	echo -n "$1":
+	echo "$1": | tr -d \\n
 	sed -e 's/^ *//' -e 's/ *$//'
     fi
 }
@@ -82,7 +82,7 @@ if [ -z "$DIR" ]; then
     trap 'rm -rf "$DIR"' 0
 
     DIR="$(mktemp -d)"
-    ./devtools/create-gossipstore 100000 -i $MCP_DIR/1M.gossip -o "$DIR"/gossip_store
+    ./devtools/create-gossipstore 100000 -i "$MCP_DIR"/1M.gossip -o "$DIR"/gossip_store
 fi
 
 # shellcheck disable=SC2086
@@ -109,6 +109,7 @@ fi
 
 # How long does rewriting the store take?
 if [ -z "${TARGETS##* store_rewrite_sec *}" ]; then
+    # shellcheck disable=SC2086
     /usr/bin/time --append -f %e $LCLI1 dev-compact-gossip-store 2>&1 > /dev/null | print_stat store_rewrite_sec
 fi
 
@@ -156,7 +157,7 @@ if [ -z "${TARGETS##* peer_read_all_sec *}" ]; then
     # FIXME: Measure this better.
     EXPECTED=$(find "$DIR"/gossip_store.bak -printf %s)
 
-    START_TIME=`date +%s`
+    START_TIME=$(date +%s)
     # We send a bad msg at the end, so lightningd hangs up
     xzcat ../million-channels-project/data/1M/gossip/xa*.xz | devtools/gossipwith --max-messages=1 --stdin "$ID"@"$DIR"/peer 0011 > /dev/null
 
@@ -164,7 +165,7 @@ if [ -z "${TARGETS##* peer_read_all_sec *}" ]; then
 	sleep 1
 	i=$((i + 1))
     done
-    END_TIME=`date +%s`
+    END_TIME=$(date +%s)
 
     echo $((END_TIME - START_TIME)) | print_stat peer_read_all_sec
     mv "$DIR"/gossip_store.bak "$DIR"/gossip_store
