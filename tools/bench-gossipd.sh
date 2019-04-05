@@ -68,7 +68,7 @@ if [ -z "$DIR" ]; then
     trap 'rm -rf "$DIR"' 0
 
     DIR="$(mktemp -d)"
-    xzcat $MCP_DIR/xa* | ./devtools/create-gossipstore 100000 > "$DIR"/gossip_store
+    ./devtools/create-gossipstore 100000 -i $MCP_DIR/1M.gossip -o "$DIR"/gossip_store
 fi
 
 # shellcheck disable=SC2086
