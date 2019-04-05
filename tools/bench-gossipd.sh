@@ -7,6 +7,7 @@ DIR=""
 TARGETS=""
 DEFAULT_TARGETS=" store_load_msec vsz_kb store_rewrite_sec listnodes_sec listchannels_sec routing_sec peer_write_all_sec peer_read_all_sec "
 MCP_DIR=../million-channels-project/data/1M/gossip/
+CSV=false
 
 wait_for_start()
 {
@@ -25,6 +26,16 @@ wait_for_start()
     echo "$ID"
 }
 
+print_stat()
+{
+    if $CSV; then
+	sed -e 's/^ *//' -e 's/ *$//' | tr \\012 ,
+    else
+	echo -n "$1":
+	sed -e 's/^ *//' -e 's/ *$//'
+    fi
+}
+
 for arg; do
     case "$arg" in
 	--dir=*)
@@ -33,8 +44,11 @@ for arg; do
 	--mcp-dir=*)
 	    MCP_DIR="${arg#*=}"
 	    ;;
+	--csv)
+	    CSV=true
+	    ;;
 	--help)
-	    echo "Usage: tools/bench-gossipd.sh [--dir=<directory>] [--mcp-dir=<directory>] [TARGETS]"
+	    echo "Usage: tools/bench-gossipd.sh [--dir=<directory>] [--mcp-dir=<directory>] [--csv] [TARGETS]"
 	    echo "Default targets:$DEFAULT_TARGETS"
 	    exit 0
 	    ;;
@@ -72,7 +86,7 @@ if [ -z "$DIR" ]; then
 fi
 
 # shellcheck disable=SC2086
-echo $TARGETS | tr ' ' ,
+if $CSV; then echo $TARGETS | tr ' ' ,; fi
 
 # First, measure load time.
 rm -f "$DIR"/log "$DIR"/peer
@@ -85,29 +99,29 @@ while ! grep -q 'gossipd.*: total store load time' "$DIR"/log 2>/dev/null; do
     sleep 1
 done
 if [ -z "${TARGETS##* store_load_msec *}" ]; then
-    grep 'gossipd.*: total store load time' "$DIR"/log | cut -d\  -f7 >> $DIR/stats
+    grep 'gossipd.*: total store load time' "$DIR"/log | cut -d\  -f7 | print_stat store_load_msec
 fi
 
 # How big is gossipd?
 if [ -z "${TARGETS##* vsz_kb *}" ]; then
-    ps -o vsz= -p "$(pidof lightning_gossipd)" >> $DIR/stats
+    ps -o vsz= -p "$(pidof lightning_gossipd)" | print_stat vsz_kb
 fi
 
 # How long does rewriting the store take?
 if [ -z "${TARGETS##* store_rewrite_sec *}" ]; then
-    /usr/bin/time -o "$DIR"/stats --append -f %e $LCLI1 dev-compact-gossip-store > /dev/null
+    /usr/bin/time --append -f %e $LCLI1 dev-compact-gossip-store 2>&1 > /dev/null | print_stat store_rewrite_sec
 fi
 
 # Now, how long does listnodes take?
 if [ -z "${TARGETS##* listnodes_sec *}" ]; then
     # shellcheck disable=SC2086
-    /usr/bin/time -o "$DIR"/stats --append -f %e $LCLI1 listnodes > "$DIR"/listnodes.json
+    /usr/bin/time --append -f %e $LCLI1 listnodes 2>&1 > "$DIR"/listnodes.json | print_stat listnodes_sec
 fi
 
 # Now, how long does listchannels take?
 if [ -z "${TARGETS##* listchannels_sec *}" ]; then
     # shellcheck disable=SC2086
-    /usr/bin/time -o "$DIR"/stats --append -f %e $LCLI1 listchannels > "$DIR"/listchannels.json
+    /usr/bin/time --append -f %e $LCLI1 listchannels 2>&1 > "$DIR"/listchannels.json | print_stat listchannels_sec
 fi
 
 # Now, try routing between first and last points.
@@ -117,7 +131,7 @@ if [ -z "${TARGETS##* routing_sec *}" ]; then
     # shellcheck disable=SC2005
     echo $(grep nodeid "$DIR"/listnodes.json | cut -d'"' -f4 | sort | head -n2) | while read -r from to; do
 	# shellcheck disable=SC2086
-	/usr/bin/time --quiet -o "$DIR"/stats --append -f %e $LCLI1 getroute 2>&1 $from 1 1 6 $to > /dev/null || true # FIXME: this shouldn't fail
+	/usr/bin/time --quiet --append -f %e $LCLI1 getroute $from 1 1 6 $to 2>&1 > /dev/null | print_stat routing_sec # FIXME: this shouldn't fail
     done
 fi
 
@@ -125,7 +139,7 @@ fi
 if [ -z "${TARGETS##* peer_write_all_sec *}" ]; then
     ENTRIES=$(sed -n 's/.*gossipd.*: total store load time: [0-9]* msec (\([0-9]*\) entries, [0-9]* bytes)/\1/p' < "$DIR"/log)
 
-    /usr/bin/time --quiet -o "$DIR"/stats --append -f %e devtools/gossipwith --initial-sync --max-messages=$((ENTRIES - 5)) "$ID"@"$DIR"/peer > /dev/null
+    /usr/bin/time --quiet --append -f %e devtools/gossipwith --initial-sync --max-messages=$((ENTRIES - 5)) "$ID"@"$DIR"/peer 2>&1 > /dev/null | print_stat peer_write_all_sec
 fi
 
 if [ -z "${TARGETS##* peer_read_all_sec *}" ]; then
@@ -152,12 +166,9 @@ if [ -z "${TARGETS##* peer_read_all_sec *}" ]; then
     done
     END_TIME=`date +%s`
 
-    echo $((END_TIME - START_TIME)) >> "$DIR"/stats
+    echo $((END_TIME - START_TIME)) | print_stat peer_read_all_sec
     mv "$DIR"/gossip_store.bak "$DIR"/gossip_store
 fi
-
-# CSV format
-tr '\n' ',' < "$DIR"/stats | sed 's/,$//'; echo
 
 # shellcheck disable=SC2086
 $LCLI1 stop > /dev/null
