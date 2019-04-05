@@ -170,7 +170,7 @@ void gossip_init(struct lightningd *ld, int connectd_fd)
 	    ld->dev_unknown_channel_satoshis
 #else
 	    NULL,
-	    AMOUNT_SAT(0)
+	    NULL
 #endif
 		);
 	subd_send_msg(ld->gossip, msg);
