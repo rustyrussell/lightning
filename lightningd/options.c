@@ -479,6 +479,10 @@ static void dev_register_opts(struct lightningd *ld)
 	opt_register_arg("--dev-gossip-time", opt_set_u32, opt_show_u32,
 			 &ld->dev_gossip_time,
 			 "UNIX time to override gossipd to use.");
+	opt_register_arg("--dev-unknown-channel-satoshis",
+			 opt_set_u64, NULL,
+			 &ld->dev_unknown_channel_satoshis.satoshis, /* Raw: dev code */
+			 "Amount to pretend is in channels which we can't find funding tx for.");
 }
 #endif
 

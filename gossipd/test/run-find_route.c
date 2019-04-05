@@ -213,7 +213,7 @@ int main(void)
 
 	memset(&tmp, 'a', sizeof(tmp));
 	pubkey_from_privkey(&tmp, &a);
-	rstate = new_routing_state(tmpctx, NULL, &a, 0, NULL);
+	rstate = new_routing_state(tmpctx, NULL, &a, 0, NULL, AMOUNT_SAT(0));
 
 	new_node(rstate, &a);
 
