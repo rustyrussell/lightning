@@ -6,6 +6,7 @@ set -e
 DIR=""
 TARGETS=""
 DEFAULT_TARGETS=" store_load_msec vsz_kb store_rewrite_sec listnodes_sec listchannels_sec routing_sec peer_write_all_sec peer_read_all_sec "
+MCP_DIR=../million-channels-project/data/1M/gossip/
 
 wait_for_start()
 {
@@ -29,8 +30,11 @@ for arg; do
 	--dir=*)
 	    DIR="${arg#*=}"
 	    ;;
+	--mcp-dir=*)
+	    MCP_DIR="${arg#*=}"
+	    ;;
 	--help)
-	    echo "Usage: tools/bench-gossipd.sh [--dir=<directory>] [TARGETS]"
+	    echo "Usage: tools/bench-gossipd.sh [--dir=<directory>] [--mcp-dir=<directory>] [TARGETS]"
 	    echo "Default targets:$DEFAULT_TARGETS"
 	    exit 0
 	    ;;
@@ -64,7 +68,7 @@ if [ -z "$DIR" ]; then
     trap 'rm -rf "$DIR"' 0
 
     DIR="$(mktemp -d)"
-    xzcat ../million-channels-project/data/1M/gossip/xa* | ./devtools/create-gossipstore 100000 > "$DIR"/gossip_store
+    xzcat $MCP_DIR/xa* | ./devtools/create-gossipstore 100000 > "$DIR"/gossip_store
 fi
 
 # shellcheck disable=SC2086
