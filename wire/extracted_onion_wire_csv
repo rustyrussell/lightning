@@ -1,4 +1,3 @@
-#include <wire/onion_defs.h>
 invalid_realm,PERM|1
 temporary_node_failure,NODE|2
 permanent_node_failure,PERM|NODE|2
