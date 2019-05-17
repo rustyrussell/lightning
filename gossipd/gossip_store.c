@@ -308,6 +308,12 @@ static size_t transfer_store_msg(int from_fd, size_t from_off, int to_fd,
 	}
 
 	msglen = be32_to_cpu(hdr[0]);
+	if (msglen & GOSSIP_STORE_LEN_DELETED_BIT) {
+		status_broken("Can't transfer deleted msg from gossip store @%zu",
+			      from_off);
+		return 0;
+	}
+
 	/* FIXME: Reuse buffer? */
 	msg = tal_arr(tmpctx, u8, sizeof(hdr) + msglen);
 	memcpy(msg, hdr, sizeof(hdr));
@@ -498,19 +504,46 @@ u64 gossip_store_add_private_update(struct gossip_store *gs, const u8 *update)
 	return gossip_store_add(gs, pupdate, NULL);
 }
 
-void gossip_store_add_channel_delete(struct gossip_store *gs,
-				     const struct short_channel_id *scid)
+void gossip_store_delete(struct gossip_store *gs,
+			 struct broadcastable *bcast,
+			 int type)
 {
-	u8 *msg = towire_gossip_store_channel_delete(NULL, scid);
+	beint32_t belen;
+	int flags;
+
+	if (!bcast->index)
+		return;
 
 	/* Should never get here during loading! */
 	assert(gs->writable);
 
-	if (!append_msg(gs->fd, msg, &gs->len))
+#if DEVELOPER
+	u8 *msg = gossip_store_read(tmpctx, gs->fd, bcast->index);
+	assert(fromwire_peektype(msg) == type);
+#endif
+	if (pread(gs->fd, &belen, sizeof(belen), bcast->index) != sizeof(belen))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
-			      "Failed writing channel_delete to gossip store: %s",
-			      strerror(errno));
-	tal_free(msg);
+			      "Failed reading len to delete @%u: %s",
+			      bcast->index, strerror(errno));
+
+	assert((be32_to_cpu(belen) & GOSSIP_STORE_LEN_DELETED_BIT) == 0);
+	belen |= cpu_to_be32(GOSSIP_STORE_LEN_DELETED_BIT);
+	/* From man pwrite(2):
+	 *
+	 * BUGS
+	 *  POSIX requires that opening a file with the O_APPEND flag  should
+	 *  have no  effect  on the location at which pwrite() writes data.
+	 *  However, on Linux, if a file is opened with O_APPEND, pwrite()
+	 *  appends data to  the end of the file, regardless of the value of
+	 *  offset.
+	 */
+	flags = fcntl(gs->fd, F_GETFL);
+	fcntl(gs->fd, F_SETFL, flags & ~O_APPEND);
+	if (pwrite(gs->fd, &belen, sizeof(belen), bcast->index) != sizeof(belen))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "Failed writing len to delete @%u: %s",
+			      bcast->index, strerror(errno));
+	fcntl(gs->fd, F_SETFL, flags);
 }
 
 const u8 *gossip_store_get(const tal_t *ctx,
@@ -554,7 +587,7 @@ void gossip_store_load(struct routing_state *rstate, struct gossip_store *gs)
 
 	gs->writable = false;
 	while (pread(gs->fd, hdr, sizeof(hdr), gs->len) == sizeof(hdr)) {
-		msglen = be32_to_cpu(hdr[0]);
+		msglen = be32_to_cpu(hdr[0]) & ~GOSSIP_STORE_LEN_DELETED_BIT;
 		checksum = be32_to_cpu(hdr[1]);
 		msg = tal_arr(tmpctx, u8, msglen);
 
@@ -568,6 +601,10 @@ void gossip_store_load(struct routing_state *rstate, struct gossip_store *gs)
 			goto truncate;
 		}
 
+		/* Skip deleted entries */
+		if (be32_to_cpu(hdr[0]) & GOSSIP_STORE_LEN_DELETED_BIT)
+			goto next;
+
 		switch (fromwire_peektype(msg)) {
 		case WIRE_GOSSIP_STORE_CHANNEL_AMOUNT:
 			if (!fromwire_gossip_store_channel_amount(msg,
@@ -575,12 +612,9 @@ void gossip_store_load(struct routing_state *rstate, struct gossip_store *gs)
 				bad = "Bad gossip_store_channel_amount";
 				goto truncate;
 			}
-			/* Should follow channel_announcement */
-			if (!chan_ann) {
-				bad = "gossip_store_channel_amount without"
-					" channel_announcement";
-				goto truncate;
-			}
+			/* Previous channel_announcement may have been deleted */
+			if (!chan_ann)
+				break;
 			if (!routing_add_channel_announcement(rstate,
 							      take(chan_ann),
 							      satoshis,
@@ -622,8 +656,10 @@ void gossip_store_load(struct routing_state *rstate, struct gossip_store *gs)
 			}
 			stats[2]++;
 			break;
-		case WIRE_GOSSIP_STORE_CHANNEL_DELETE:
-			if (!fromwire_gossip_store_channel_delete(msg, &scid)) {
+#ifdef COMPAT_V070
+		/* These are easy to handle, so we just do so */
+		case WIRE_GOSSIP_STORE_V4_CHANNEL_DELETE:
+			if (!fromwire_gossip_store_v4_channel_delete(msg, &scid)) {
 				bad = "Bad channel_delete";
 				goto truncate;
 			}
@@ -635,6 +671,7 @@ void gossip_store_load(struct routing_state *rstate, struct gossip_store *gs)
 			free_chan(rstate, c);
 			stats[3]++;
 			break;
+#endif
 		case WIRE_GOSSIPD_LOCAL_ADD_CHANNEL:
 			if (!handle_local_add_channel(rstate, msg, gs->len)) {
 				bad = "Bad local_add_channel";
@@ -645,10 +682,11 @@ void gossip_store_load(struct routing_state *rstate, struct gossip_store *gs)
 			bad = "Unknown message";
 			goto truncate;
 		}
-		gs->len += sizeof(hdr) + msglen;
 
 		if (fromwire_peektype(msg) != WIRE_GOSSIP_STORE_CHANNEL_AMOUNT)
 			gs->count++;
+	next:
+		gs->len += sizeof(hdr) + msglen;
 		clean_tmpctx();
 	}
 	goto out;

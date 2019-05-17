@@ -318,6 +318,9 @@ static void remove_chan_from_node(struct routing_state *rstate,
 
 	/* Last channel?  Simply delete node (and associated announce) */
 	if (num_chans == 0) {
+		gossip_store_delete(rstate->broadcasts->gs,
+				    &node->bcast,
+				    WIRE_NODE_ANNOUNCEMENT);
 		tal_free(node);
 		return;
 	}
@@ -327,6 +330,9 @@ static void remove_chan_from_node(struct routing_state *rstate,
 
 	/* Removed only public channel?  Remove node announcement. */
 	if (!node_has_broadcastable_channels(node)) {
+		gossip_store_delete(rstate->broadcasts->gs,
+				    &node->bcast,
+				    WIRE_NODE_ANNOUNCEMENT);
 		broadcast_del(rstate->broadcasts, &node->bcast);
 	} else if (node_announce_predates_channels(node)) {
 		const u8 *announce;
@@ -338,6 +344,9 @@ static void remove_chan_from_node(struct routing_state *rstate,
 		 * Move to end (we could, in theory, move to just past next
 		 * channel_announce, but we don't care that much about spurious
 		 * retransmissions in this corner case */
+		gossip_store_delete(rstate->broadcasts->gs,
+				    &node->bcast,
+				    WIRE_NODE_ANNOUNCEMENT);
 		broadcast_del(rstate->broadcasts, &node->bcast);
 		insert_broadcast(&rstate->broadcasts, announce, NULL,
 				 &node->bcast);
@@ -1818,7 +1827,13 @@ bool routing_add_channel_update(struct routing_state *rstate,
 			      message_flags, channel_flags,
 			      timestamp, htlc_minimum, htlc_maximum);
 
-	/* Safe even if was never added */
+	/* Safe even if was never added, but if it's a private channel it
+	 * would be a WIRE_GOSSIP_STORE_PRIVATE_UPDATE. */
+	gossip_store_delete(rstate->broadcasts->gs,
+			    &chan->half[direction].bcast,
+			    is_chan_public(chan)
+			    ? WIRE_CHANNEL_UPDATE
+			    : WIRE_GOSSIP_STORE_PRIVATE_UPDATE);
 	broadcast_del(rstate->broadcasts, &chan->half[direction].bcast);
 
 	/* BOLT #7:
@@ -1879,6 +1894,28 @@ static const struct node_id *get_channel_owner(struct routing_state *rstate,
 	if (uc)
 		return &uc->id[direction];
 	return NULL;
+}
+
+void remove_channel_from_store(struct routing_state *rstate,
+			       struct chan *chan)
+{
+	int update_type, announcment_type;
+
+	if (is_chan_public(chan)) {
+		update_type = WIRE_CHANNEL_UPDATE;
+		announcment_type = WIRE_CHANNEL_ANNOUNCEMENT;
+	} else {
+		update_type = WIRE_GOSSIP_STORE_PRIVATE_UPDATE;
+		announcment_type = WIRE_GOSSIPD_LOCAL_ADD_CHANNEL;
+	}
+
+	/* If these aren't in the store, these are noops. */
+	gossip_store_delete(rstate->broadcasts->gs,
+			    &chan->bcast, announcment_type);
+	gossip_store_delete(rstate->broadcasts->gs,
+			    &chan->half[0].bcast, update_type);
+	gossip_store_delete(rstate->broadcasts->gs,
+			    &chan->half[1].bcast, update_type);
 }
 
 u8 *handle_channel_update(struct routing_state *rstate, const u8 *update TAKES,
@@ -2419,8 +2456,10 @@ void route_prune(struct routing_state *rstate)
 	}
 
 	/* Now free all the chans and maybe even nodes. */
-	for (size_t i = 0; i < tal_count(pruned); i++)
+	for (size_t i = 0; i < tal_count(pruned); i++) {
+		remove_channel_from_store(rstate, pruned[i]);
 		free_chan(rstate, pruned[i]);
+	}
 }
 
 #if DEVELOPER
