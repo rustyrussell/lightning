@@ -123,7 +123,9 @@ int main(int argc, char *argv[])
 	} else
 		outfd = STDOUT_FILENO;
 
-	version = GOSSIP_STORE_VERSION;
+	/* This version was easier: otherwise we need to calc timestamps
+	 * for announces for v5 */
+	version = 4;
 	if (!write_all(outfd, &version, sizeof(version)))
 		err(1, "Writing version");
 
