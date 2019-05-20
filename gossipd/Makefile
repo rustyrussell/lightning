@@ -50,7 +50,6 @@ GOSSIPD_COMMON_OBJS :=				\
 	common/dev_disconnect.o			\
 	common/features.o			\
 	common/gen_status_wire.o		\
-	common/gossip_store.o			\
 	common/key_derive.o			\
 	common/memleak.o			\
 	common/msg_queue.o			\

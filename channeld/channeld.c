@@ -29,6 +29,7 @@
 #include <common/crypto_sync.h>
 #include <common/dev_disconnect.h>
 #include <common/features.h>
+#include <common/gossip_store.h>
 #include <common/htlc_tx.h>
 #include <common/key_derive.h>
 #include <common/memleak.h>
@@ -2987,6 +2988,14 @@ static void send_shutdown_complete(struct peer *peer)
 	close(MASTER_FD);
 }
 
+static void try_read_gossip_store(struct peer *peer)
+{
+	u8 *msg = gossip_store_next(tmpctx, peer->pps);
+
+	if (msg)
+		sync_crypto_write(peer->pps, take(msg));
+}
+
 int main(int argc, char *argv[])
 {
 	setup_locale();
@@ -3038,6 +3047,7 @@ int main(int argc, char *argv[])
 		struct timeval timeout, *tptr;
 		struct timer *expired;
 		const u8 *msg;
+		struct timerel trel;
 		struct timemono now = time_mono();
 
 		/* Free any temporary allocations */
@@ -3063,6 +3073,9 @@ int main(int argc, char *argv[])
 		if (timer_earliest(&peer->timers, &first)) {
 			timeout = timespec_to_timeval(
 				timemono_between(first, now).ts);
+			tptr = &timeout;
+		} else if (time_to_next_gossip(peer->pps, &trel)) {
+			timeout = timerel_to_timeval(trel);
 			tptr = &timeout;
 		} else
 			tptr = NULL;
@@ -3094,7 +3107,8 @@ int main(int argc, char *argv[])
 			if (!msg)
 				peer_failed_connection_lost();
 			handle_gossip_msg(peer->pps, take(msg));
-		}
+		} else /* Lowest priority: stream from store. */
+			try_read_gossip_store(peer);
 	}
 
 	/* We only exit when shutdown is complete. */

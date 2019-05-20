@@ -3,13 +3,25 @@
 #include "config.h"
 
 #include <ccan/tal/tal.h>
+#include <ccan/time/time.h>
 #include <common/crypto_state.h>
+
+struct gossip_state {
+	/* Time for next gossip burst. */
+	struct timemono next_gossip;
+};
 
 /* Things we hand between daemons to talk to peers. */
 struct per_peer_state {
 	/* Cryptographic state needed to exchange messages with the peer (as
 	 * featured in BOLT #8) */
 	struct crypto_state cs;
+	/* NULL if it's not initialized yet */
+	struct gossip_state *gs;
+#if DEVELOPER
+	/* Normally 60000, but adjustable for dev mode */
+	u32 dev_gossip_broadcast_msec;
+#endif /* DEVELOPER */
 	/* If not -1, closed on freeing */
 	int peer_fd, gossip_fd, gossip_store_fd;
 };
@@ -33,4 +45,11 @@ void per_peer_state_fdpass_send(int fd, const struct per_peer_state *pps);
 
 struct per_peer_state *fromwire_per_peer_state(const tal_t *ctx,
 					       const u8 **cursor, size_t *max);
+
+/* How long until we have to check gossip store, if any? */
+bool time_to_next_gossip(const struct per_peer_state *pps,
+			 struct timerel *t);
+
+/* Reset pps->next_gossip now we've drained gossip_store */
+void per_peer_state_reset_gossip_timer(struct per_peer_state *pps);
 #endif /* LIGHTNING_COMMON_PER_PEER_STATE_H */

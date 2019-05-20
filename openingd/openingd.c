@@ -21,6 +21,7 @@
 #include <common/features.h>
 #include <common/funding_tx.h>
 #include <common/gen_peer_status_wire.h>
+#include <common/gossip_store.h>
 #include <common/initial_channel.h>
 #include <common/key_derive.h>
 #include <common/memleak.h>
@@ -1430,6 +1431,14 @@ static u8 *handle_master_in(struct state *state)
 		      "Unknown msg %s", tal_hex(tmpctx, msg));
 }
 
+static void try_read_gossip_store(struct state *state)
+{
+	u8 *msg = gossip_store_next(tmpctx, state->pps);
+
+	if (msg)
+		sync_crypto_write(state->pps, take(msg));
+}
+
 int main(int argc, char *argv[])
 {
 	setup_locale();
@@ -1462,6 +1471,9 @@ int main(int argc, char *argv[])
 				   &state->localfeatures,
 				   &inner))
 		master_badmsg(WIRE_OPENING_INIT, msg);
+
+	/* Set up timestamps for this peer */
+	gossip_init_timestamp_filter(state->pps, state->localfeatures);
 
 	/* 3 == peer, 4 == gossipd, 5 = gossip_store, 6 = hsmd */
 	per_peer_state_set_fds(state->pps, 3, 4, 5);
@@ -1517,7 +1529,13 @@ int main(int argc, char *argv[])
 	 * opening_funder_reply or opening_fundee. */
 	msg = NULL;
 	while (!msg) {
-		poll(pollfd, ARRAY_SIZE(pollfd), -1);
+		int t;
+		struct timerel trel;
+		if (time_to_next_gossip(state->pps, &trel))
+			t = time_to_msec(trel);
+		else
+			t = -1;
+		poll(pollfd, ARRAY_SIZE(pollfd), t);
 		/* Subtle: handle_master_in can do its own poll loop, so
 		 * don't try to service more than one fd per loop. */
 		/* First priority: messages from lightningd. */
@@ -1529,6 +1547,8 @@ int main(int argc, char *argv[])
 		/* Last priority: chit-chat from gossipd. */
 		else if (pollfd[1].revents & POLLIN)
 			handle_gossip_in(state);
+		else
+			try_read_gossip_store(state);
 
 		/* Since we're the top-level event loop, we clean up */
 		clean_tmpctx();
