@@ -46,4 +46,10 @@ void gossip_store_switch_fd(struct per_peer_state *pps,
 void gossip_init_timestamp_filter(struct per_peer_state *pps,
 				  const u8 *localfeatures);
 
+/**
+ * Sets up the tiemstamp filter once they told us to set it.(
+ */
+void gossip_setup_timestamp_filter(struct per_peer_state *pps,
+				   u32 first_timestamp,
+				   u32 timestamp_range);
 #endif /* LIGHTNING_COMMON_GOSSIP_STORE_H */

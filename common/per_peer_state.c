@@ -54,6 +54,8 @@ void towire_per_peer_state(u8 **pptr, const struct per_peer_state *pps)
 	if (pps->gs) {
 		towire_u64(pptr, pps->gs->next_gossip.ts.tv_sec);
 		towire_u64(pptr, pps->gs->next_gossip.ts.tv_nsec);
+		towire_u32(pptr, pps->gs->timestamp_min);
+		towire_u32(pptr, pps->gs->timestamp_max);
 	}
 }
 
@@ -82,6 +84,8 @@ struct per_peer_state *fromwire_per_peer_state(const tal_t *ctx,
 		pps->gs = tal(pps, struct gossip_state);
 		pps->gs->next_gossip.ts.tv_sec = fromwire_u64(cursor, max);
 		pps->gs->next_gossip.ts.tv_nsec = fromwire_u64(cursor, max);
+		pps->gs->timestamp_min = fromwire_u32(cursor, max);
+		pps->gs->timestamp_max = fromwire_u32(cursor, max);
 	}
 	return pps;
 }

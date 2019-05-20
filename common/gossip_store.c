@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <ccan/crc/crc.h>
+#include <common/features.h>
 #include <common/gossip_store.h>
 #include <common/per_peer_state.h>
 #include <common/status.h>
@@ -12,9 +13,81 @@
 void gossip_init_timestamp_filter(struct per_peer_state *pps,
  				  const u8 *localfeatures)
 {
-	/* Start gossiping immediately */
+	/* BOLT #7:
+	 *
+	 * A node:
+	 *   - if the `gossip_queries` feature is negotiated:
+	 * 	- MUST NOT relay any gossip messages unless explicitly requested.
+	 */
+	if (local_feature_negotiated(localfeatures, LOCAL_GOSSIP_QUERIES))
+		return;
+
+	/* BOLT #7:
+	 *
+	 * - upon receiving an `init` message with the
+	 *   `initial_routing_sync` flag set to 1:
+	 *   - SHOULD send gossip messages for all known channels and
+	 *    nodes, as if they were just received.
+	 * - if the `initial_routing_sync` flag is set to 0, OR if the
+	 *   initial sync was completed:
+	 *   - SHOULD resume normal operation, as specified in the
+	 *     following [Rebroadcasting](#rebroadcasting) section.
+	 */
 	pps->gs = tal(pps, struct gossip_state);
+	pps->gs->timestamp_min = 0;
+	pps->gs->timestamp_max = UINT32_MAX;
+
+	/* If they don't want initial sync, start at end of store */
+	if (!feature_offered(localfeatures, LOCAL_INITIAL_ROUTING_SYNC))
+		lseek(pps->gossip_store_fd, 0, SEEK_END);
+
+	/* Kick it off immediately. */
 	pps->gs->next_gossip = time_mono();
+}
+
+void gossip_setup_timestamp_filter(struct per_peer_state *pps,
+				   u32 first_timestamp,
+				   u32 timestamp_range)
+{
+	/* If this is the first filter, we gossip sync immediately. */
+	if (!pps->gs) {
+		pps->gs = tal(pps, struct gossip_state);
+		pps->gs->next_gossip = time_mono();
+	}
+
+	pps->gs->timestamp_min = first_timestamp;
+	pps->gs->timestamp_max = first_timestamp + timestamp_range - 1;
+	/* Make sure we never leave it on an impossible value. */
+	if (pps->gs->timestamp_max < pps->gs->timestamp_min)
+		pps->gs->timestamp_max = UINT32_MAX;
+
+	/* BOLT #7:
+	 *
+	 * The receiver:
+	 *   - SHOULD send all gossip messages whose `timestamp` is greater or
+	 *     equal to `first_timestamp`, and less than `first_timestamp` plus
+	 *     `timestamp_range`.
+	 * 	- MAY wait for the next outgoing gossip flush to send these.
+	 *   - SHOULD restrict future gossip messages to those whose `timestamp`
+	 *     is greater or equal to `first_timestamp`, and less than
+	 *     `first_timestamp` plus `timestamp_range`.
+	 */
+
+	/* Restart just after header. */
+	lseek(pps->gossip_store_fd, 1, SEEK_SET);
+}
+
+static bool timestamp_filter(const struct per_peer_state *pps, u32 timestamp)
+{
+	/* BOLT #7:
+	 *
+	 *   - SHOULD send all gossip messages whose `timestamp` is greater or
+	 *    equal to `first_timestamp`, and less than `first_timestamp` plus
+	 *    `timestamp_range`.
+	 */
+	/* Note that we turn first_timestamp & timestamp_range into an inclusive range */
+	return timestamp >= pps->gs->timestamp_min
+		&& timestamp <= pps->gs->timestamp_max;
 }
 
 u8 *gossip_store_next(const tal_t *ctx, struct per_peer_state *pps)
@@ -27,7 +100,7 @@ u8 *gossip_store_next(const tal_t *ctx, struct per_peer_state *pps)
 
 	while (!msg) {
 		struct gossip_hdr hdr;
-		u32 msglen, checksum;
+		u32 msglen, checksum, timestamp;
 		int type;
 
 		if (read(pps->gossip_store_fd, &hdr, sizeof(hdr)) != sizeof(hdr)) {
@@ -46,6 +119,7 @@ u8 *gossip_store_next(const tal_t *ctx, struct per_peer_state *pps)
 
 		msglen = be32_to_cpu(hdr.len);
 		checksum = be32_to_cpu(hdr.crc);
+		timestamp = be32_to_cpu(hdr.timestamp);
 		msg = tal_arr(ctx, u8, msglen);
 		if (read(pps->gossip_store_fd, msg, msglen) != msglen)
 			status_failed(STATUS_FAIL_INTERNAL_ERROR,
@@ -68,6 +142,8 @@ u8 *gossip_store_next(const tal_t *ctx, struct per_peer_state *pps)
 		if (type != WIRE_CHANNEL_ANNOUNCEMENT
 		    && type != WIRE_CHANNEL_UPDATE
 		    && type != WIRE_NODE_ANNOUNCEMENT)
+			msg = tal_free(msg);
+		else if (!timestamp_filter(pps, timestamp))
 			msg = tal_free(msg);
 	}
 
