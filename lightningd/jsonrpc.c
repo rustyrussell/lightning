@@ -164,9 +164,9 @@ static struct command_result *json_help(struct command *cmd,
 
 static const struct json_command help_command = {
 	"help",
+	CMD_UTILITY,
 	json_help,
 	"List available commands, or give verbose help on one {command}.",
-
 	.verbose = "help [command]\n"
 	"Without [command]:\n"
 	"  Outputs an array of objects with 'command' and 'description'\n"
@@ -195,6 +195,7 @@ static struct command_result *json_stop(struct command *cmd,
 
 static const struct json_command stop_command = {
 	"stop",
+	CMD_UTILITY,
 	json_stop,
 	"Shut down the lightningd process"
 };
@@ -225,6 +226,7 @@ static struct command_result *json_rhash(struct command *cmd,
 
 static const struct json_command dev_rhash_command = {
 	"dev-rhash",
+	CMD_DEVELOPER,
 	json_rhash,
 	"Show SHA256 of {secret}"
 };
@@ -270,6 +272,7 @@ static struct command_result *json_slowcmd(struct command *cmd,
 
 static const struct json_command dev_slowcmd_command = {
 	"dev-slowcmd",
+	CMD_DEVELOPER,
 	json_slowcmd,
 	"Torture test for slow commands, optional {msec}"
 };
@@ -288,6 +291,7 @@ static struct command_result *json_crash(struct command *cmd UNUSED,
 
 static const struct json_command dev_crash_command = {
 	"dev-crash",
+	CMD_DEVELOPER,
 	json_crash,
 	"Crash lightningd by calling fatal()"
 };
@@ -318,6 +322,29 @@ static void json_add_help_command(struct command *cmd,
 	json_object_start(response, NULL);
 
 	json_add_string(response, "command", usage);
+	switch (json_command->category) {
+	case CMD_BITCOIN:
+		json_add_string(response, "category", "bitcoin");
+		break;
+	case CMD_CHANNELS:
+		json_add_string(response, "category", "channels");
+		break;
+	case CMD_DEVELOPER:
+		json_add_string(response, "category", "developer");
+		break;
+	case CMD_NETWORK:
+		json_add_string(response, "category", "network");
+		break;
+	case CMD_PAYMENT:
+		json_add_string(response, "category", "payment");
+		break;
+	case CMD_PLUGIN:
+		json_add_string(response, "category", "plugin");
+		break;
+	case CMD_UTILITY:
+		json_add_string(response, "category", "utility");
+		break;
+	}
 	json_add_string(response, "description", json_command->description);
 
 	if (!json_command->verbose) {
@@ -1161,6 +1188,7 @@ static struct command_result *json_check(struct command *cmd,
 
 static const struct json_command check_command = {
 	"check",
+	CMD_UTILITY,
 	json_check,
 	"Don't run {command_to_check}, just verify parameters.",
 	.verbose = "check command_to_check [parameters...]\n"
