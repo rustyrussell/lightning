@@ -5,6 +5,7 @@
 #include <ccan/autodata/autodata.h>
 #include <ccan/list/list.h>
 #include <common/json.h>
+#include <common/json_command.h>
 #include <lightningd/json_stream.h>
 #include <stdarg.h>
 
@@ -49,6 +50,7 @@ struct command_result;
 
 struct json_command {
 	const char *name;
+	enum command_category category;
 	struct command_result *(*dispatch)(struct command *,
 					   const char *buffer,
 					   const jsmntok_t *obj,

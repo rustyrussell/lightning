@@ -26,7 +26,6 @@
 #include <ccan/strmap/strmap.h>
 #include <ccan/tal/str/str.h>
 #include <common/bech32.h>
-#include <common/json_command.h>
 #include <common/json_escaped.h>
 #include <common/jsonrpc_errors.h>
 #include <common/memleak.h>
