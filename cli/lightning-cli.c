@@ -10,6 +10,7 @@
 #include <ccan/tal/str/str.h>
 #include <common/configdir.h>
 #include <common/json.h>
+#include <common/json_command.h>
 #include <common/json_escaped.h>
 #include <common/memleak.h>
 #include <common/utils.h>
@@ -95,20 +96,86 @@ static size_t human_readable(const char *buffer, const jsmntok_t *t, char term)
 }
 
 static void human_help(const char *buffer, const jsmntok_t *result, bool has_command) {
-	int i;
-	const jsmntok_t * help_array = result + 2;
-	/* the first command object */
-	const jsmntok_t * curr = help_array + 1;
-	/* iterate through all commands, printing the name and description */
-	for (i = 0; i < help_array->size; i++) {
-		curr += 2;
-		printf("%.*s\n", curr->end - curr->start, buffer + curr->start);
-		curr += 2;
-		printf("    %.*s\n\n", curr->end - curr->start, buffer + curr->start);
-		curr += 2;
-		/* advance to next command */
-		curr++;
+	unsigned int i, j;
+	/* `curr` is used as a temporary token and `command_category` in case of error */
+	const jsmntok_t *curr, *command_category;
+	/* Contains all commands objects, which have the following structure :
+	 * {
+	 *     "command": "The command name",
+	 *     "category": "The command category",
+	 *     "description": "The command's description",
+	 *     "verbose": "The command's detailed description"
+	 * }
+	 */
+	const jsmntok_t * help_array = json_get_member(buffer, result, "help");
+	/* We will sort commands by populating an array of json token pointers by category.
+	 * We create an array which contains them all to avoid redontant iteration through
+	 * each category array and to simplify memory management (tal_free(top_array) frees
+	 * all contained arrays
+	 */
+	const jsmntok_t ***commands = tal_arr(tmpctx, const jsmntok_t**, 7);
+	for (i = 0; i < tal_count(commands); ++i) {
+		commands[i] = tal_arr(tmpctx, const jsmntok_t*, 0);
 	}
+	/* A convenient mapping to compare categories in command objects (string) with our
+	 * categories enum, and to display category names when iterating through the arrays
+	 */
+	const char **category_names = tal_arr(tmpctx, const char*, 7);
+	category_names[CMD_BITCOIN] = "bitcoin";
+	category_names[CMD_CHANNELS] = "channels";
+	category_names[CMD_NETWORK] = "network";
+	category_names[CMD_PAYMENT] = "payment";
+	category_names[CMD_PLUGIN] = "plugin";
+	category_names[CMD_UTILITY] = "utility";
+	category_names[CMD_DEVELOPER] = "developer";
+
+	json_for_each_arr(i, curr, help_array) {
+		/* Add a pointer to the command token to the appropriate array */
+		if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
+					category_names[CMD_BITCOIN]))
+			tal_arr_expand(&commands[CMD_BITCOIN], curr);
+		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
+					category_names[CMD_CHANNELS]))
+			tal_arr_expand(&commands[CMD_CHANNELS], curr);
+		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
+					category_names[CMD_NETWORK]))
+			tal_arr_expand(&commands[CMD_NETWORK], curr);
+		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
+					category_names[CMD_PAYMENT]))
+			tal_arr_expand(&commands[CMD_PAYMENT], curr);
+		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
+					category_names[CMD_PLUGIN]))
+			tal_arr_expand(&commands[CMD_PLUGIN], curr);
+		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
+					category_names[CMD_UTILITY]))
+			tal_arr_expand(&commands[CMD_UTILITY], curr);
+		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
+					category_names[CMD_DEVELOPER]))
+			tal_arr_expand(&commands[CMD_DEVELOPER], curr);
+		else {
+			/* Should not happen, but doesnt require to abort */
+			command_category = json_get_member(buffer, curr, "category");
+			printf("Invalid category : \"%.*s\"\n", command_category->end - command_category->start,
+					buffer + command_category->start);
+		}
+	}
+
+	/* Iterate through all categories and printf commands */
+	for (i = 0; i < tal_count(commands); ++i) {
+        printf("=== %s ===\n\n", category_names[i]);
+		for (j = 0; j < tal_count(commands[i]); ++j) {
+			curr = commands[i][j];
+			/* Go to command name, 2 tokens forward */
+			curr += 2;
+			printf("%.*s\n", curr->end - curr->start, buffer + curr->start);
+			/* Go to command description, 4 tokens forward */
+			curr += 4;
+			printf("    %.*s\n\n", curr->end - curr->start, buffer + curr->start);
+		}
+        printf("\n\n");
+	}
+	tal_free(commands);
+	tal_free(category_names);
 
 	if (!has_command)
 		printf("---\nrun `lightning-cli help <command>` for more information on a specific command\n");
