@@ -3,6 +3,7 @@
  */
 #include "config.h"
 #include <assert.h>
+#include <ccan/asort/asort.h>
 #include <ccan/err/err.h>
 #include <ccan/opt/opt.h>
 #include <ccan/read_write_all/read_write_all.h>
@@ -95,87 +96,104 @@ static size_t human_readable(const char *buffer, const jsmntok_t *t, char term)
 	abort();
 }
 
-static void human_help(const char *buffer, const jsmntok_t *result, bool has_command) {
-	unsigned int i, j;
-	/* `curr` is used as a temporary token and `command_category` in case of error */
-	const jsmntok_t *curr, *command_category;
+static int compare_tok(const jsmntok_t *a, const jsmntok_t *b,
+		       const char *buffer)
+{
+	int a_len = a->end - a->start, b_len = b->end - b->start, min_len, cmp;
+
+	if (a_len > b_len)
+		min_len = b_len;
+	else
+		min_len = a_len;
+
+	cmp = memcmp(buffer + a->start, buffer + b->start, min_len);
+	if (cmp != 0)
+		return cmp;
+	/* If equal, shorter one wins. */
+	return a_len - b_len;
+}
+
+static int compare_help(const jsmntok_t *const *a,
+			const jsmntok_t *const *b,
+			char *buffer)
+{
+	const jsmntok_t *cat_a, *cat_b;
+	bool a_is_developer, b_is_developer;
+	int cmp;
+
+	cat_a = json_get_member(buffer, *a, "category");
+	cat_b = json_get_member(buffer, *b, "category");
+
+	/* Just in case it's an older lightningd! */
+	if (!cat_a)
+		goto same_category;
+
+	/* We always tweak "developer" category to last. */
+	a_is_developer = json_tok_streq(buffer, cat_a, "developer");
+	b_is_developer = json_tok_streq(buffer, cat_b, "developer");
+
+	if (a_is_developer && b_is_developer)
+		cmp = 0;
+	else if (a_is_developer)
+		cmp = 1;
+	else if (b_is_developer)
+		cmp = -1;
+	else
+		/* Otherwise we order category alphabetically. */
+		cmp = compare_tok(cat_a, cat_b, buffer);
+
+	if (cmp != 0)
+		return cmp;
+
+	/* After category, we order by name */
+same_category:
+	return compare_tok(json_get_member(buffer, *a, "command"),
+			   json_get_member(buffer, *b, "command"),
+			   buffer);
+}
+
+static void human_help(char *buffer, const jsmntok_t *result, bool has_command) {
+	unsigned int i;
+	/* `curr` is used as a temporary token */
+	const jsmntok_t *curr;
+	const char *prev_cat;
 	/* Contains all commands objects, which have the following structure :
 	 * {
-	 *     "command": "The command name",
+	 *     "command": "The command name and usage",
 	 *     "category": "The command category",
 	 *     "description": "The command's description",
 	 *     "verbose": "The command's detailed description"
 	 * }
 	 */
 	const jsmntok_t * help_array = json_get_member(buffer, result, "help");
-	/* We will sort commands by populating an array of json token pointers by category.
-	 * We create an array which contains them all to avoid redontant iteration through
-	 * each category array and to simplify memory management (tal_free(top_array) frees
-	 * all contained arrays
-	 */
-	const jsmntok_t ***commands = tal_arr(tmpctx, const jsmntok_t**, 7);
-	for (i = 0; i < tal_count(commands); ++i) {
-		commands[i] = tal_arr(tmpctx, const jsmntok_t*, 0);
-	}
-	/* A convenient mapping to compare categories in command objects (string) with our
-	 * categories enum, and to display category names when iterating through the arrays
-	 */
-	const char **category_names = tal_arr(tmpctx, const char*, 7);
-	category_names[CMD_BITCOIN] = "bitcoin";
-	category_names[CMD_CHANNELS] = "channels";
-	category_names[CMD_NETWORK] = "network";
-	category_names[CMD_PAYMENT] = "payment";
-	category_names[CMD_PLUGIN] = "plugin";
-	category_names[CMD_UTILITY] = "utility";
-	category_names[CMD_DEVELOPER] = "developer";
+	const jsmntok_t **help = tal_arr(NULL, const jsmntok_t *,
+					 help_array->size);
 
-	json_for_each_arr(i, curr, help_array) {
-		/* Add a pointer to the command token to the appropriate array */
-		if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
-					category_names[CMD_BITCOIN]))
-			tal_arr_expand(&commands[CMD_BITCOIN], curr);
-		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
-					category_names[CMD_CHANNELS]))
-			tal_arr_expand(&commands[CMD_CHANNELS], curr);
-		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
-					category_names[CMD_NETWORK]))
-			tal_arr_expand(&commands[CMD_NETWORK], curr);
-		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
-					category_names[CMD_PAYMENT]))
-			tal_arr_expand(&commands[CMD_PAYMENT], curr);
-		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
-					category_names[CMD_PLUGIN]))
-			tal_arr_expand(&commands[CMD_PLUGIN], curr);
-		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
-					category_names[CMD_UTILITY]))
-			tal_arr_expand(&commands[CMD_UTILITY], curr);
-		else if (json_tok_streq(buffer, json_get_member(buffer, curr, "category"),
-					category_names[CMD_DEVELOPER]))
-			tal_arr_expand(&commands[CMD_DEVELOPER], curr);
-		else {
-			/* Should not happen, but doesnt require to abort */
-			command_category = json_get_member(buffer, curr, "category");
-			printf("Invalid category : \"%.*s\"\n", command_category->end - command_category->start,
-					buffer + command_category->start);
-		}
-	}
+	/* Populate an array for easy sorting with asort */
+	json_for_each_arr(i, curr, help_array)
+		help[i] = curr;
 
-	/* Iterate through all categories and printf commands */
-	for (i = 0; i < tal_count(commands); ++i) {
-        printf("=== %s ===\n\n", category_names[i]);
-		for (j = 0; j < tal_count(commands[i]); ++j) {
-			curr = commands[i][j];
-			/* Go to command name, 2 tokens forward */
-			curr += 2;
-			printf("%.*s\n", curr->end - curr->start, buffer + curr->start);
-			/* Go to command description, 4 tokens forward */
-			curr += 4;
-			printf("    %.*s\n\n", curr->end - curr->start, buffer + curr->start);
+	asort(help, tal_count(help), compare_help, buffer);
+
+	prev_cat = "";
+	for (i = 0; i < tal_count(help); i++) {
+		const jsmntok_t *category, *command, *desc;
+
+		category = json_get_member(buffer, help[i], "category");
+		if (category && !json_tok_streq(buffer, category, prev_cat)) {
+			prev_cat = json_strdup(help, buffer, category);
+			if (!has_command)
+				printf("=== %s ===\n\n", prev_cat);
 		}
-        printf("\n\n");
+
+		command = json_get_member(buffer, help[i], "command");
+		desc = json_get_member(buffer, help[i], "description");
+		printf("%.*s\n",
+		       command->end - command->start, buffer + command->start);
+		printf("    %.*s\n\n",
+		       desc->end - desc->start, buffer + desc->start);
 	}
-	tal_free(commands);
-	tal_free(category_names);
+	tal_free(help);
 
 	if (!has_command)
 		printf("---\nrun `lightning-cli help <command>` for more information on a specific command\n");
