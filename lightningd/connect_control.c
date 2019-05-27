@@ -175,7 +175,7 @@ static struct command_result *json_connect(struct command *cmd,
 
 static const struct json_command connect_command = {
 	"connect",
-	CMD_NETWORK,
+	"network",
 	json_connect,
 	"Connect to {id} at {host} (which can end in ':port' if not default). "
 	"{id} can also be of the form id@host"

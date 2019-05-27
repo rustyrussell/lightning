@@ -672,26 +672,10 @@ static bool plugin_rpcmethod_add(struct plugin *plugin,
 
 	cmd = notleak(tal(plugin, struct json_command));
 	cmd->name = json_strdup(cmd, buffer, nametok);
-	/* If the command category has been specified plugin side (as a string), set it (as an int) */
-	if (categorytok) {
-		if (json_tok_streq(buffer, categorytok, "bitcoin"))
-			cmd->category = CMD_BITCOIN;
-		else if (json_tok_streq(buffer, categorytok, "channels"))
-			cmd->category = CMD_CHANNELS;
-		else if (json_tok_streq(buffer, categorytok, "developer"))
-			cmd->category = CMD_DEVELOPER;
-		else if (json_tok_streq(buffer, categorytok, "network"))
-			cmd->category = CMD_NETWORK;
-		else if (json_tok_streq(buffer, categorytok, "payment"))
-			cmd->category = CMD_PAYMENT;
-		else if (json_tok_streq(buffer, categorytok, "utility"))
-			cmd->category = CMD_UTILITY;
-		else
-			cmd->category = CMD_PLUGIN;
-	}
+	if (categorytok)
+		cmd->category = json_strdup(cmd, buffer, categorytok);
 	else
-		/* Otherwise set the "plugin" category by default */
-		cmd->category = CMD_PLUGIN;
+		cmd->category = "plugin";
 	cmd->description = json_strdup(cmd, buffer, desctok);
 	if (longdesctok)
 		cmd->verbose = json_strdup(cmd, buffer, longdesctok);

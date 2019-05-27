@@ -1002,7 +1002,7 @@ static struct command_result *json_listpeers(struct command *cmd,
 
 static const struct json_command listpeers_command = {
 	"listpeers",
-	CMD_NETWORK,
+	"network",
 	json_listpeers,
 	"Show current peers, if {level} is set, include logs for {id}"
 };
@@ -1133,7 +1133,7 @@ static struct command_result *json_close(struct command *cmd,
 
 static const struct json_command close_command = {
 	"close",
-	CMD_CHANNELS,
+	"channels",
 	json_close,
 	"Close the channel with {id} "
 	"(either peer ID, channel ID, or short channel ID). "
@@ -1241,7 +1241,7 @@ static struct command_result *json_disconnect(struct command *cmd,
 
 static const struct json_command disconnect_command = {
 	"disconnect",
-	CMD_NETWORK,
+	"network",
 	json_disconnect,
 	"Disconnect from {id} that has previously been connected to using connect; with {force} set, even if it has a current channel"
 };
@@ -1314,7 +1314,7 @@ static struct command_result *json_getinfo(struct command *cmd,
 
 static const struct json_command getinfo_command = {
     "getinfo",
-	CMD_UTILITY,
+	"utility",
     json_getinfo,
     "Show information about this node"
 };
@@ -1471,7 +1471,7 @@ static struct command_result *json_setchannelfee(struct command *cmd,
 
 static const struct json_command setchannelfee_command = {
 	"setchannelfee",
-	CMD_CHANNELS,
+	"channels",
 	json_setchannelfee,
 	"Sets specific routing fees for channel with {id} "
 	"(either peer ID, channel ID, short channel ID or 'all'). "
@@ -1526,7 +1526,7 @@ static struct command_result *json_sign_last_tx(struct command *cmd,
 
 static const struct json_command dev_sign_last_tx = {
 	"dev-sign-last-tx",
-	CMD_DEVELOPER,
+	"developer",
 	json_sign_last_tx,
 	"Sign and show the last commitment transaction with peer {id}"
 };
@@ -1564,7 +1564,7 @@ static struct command_result *json_dev_fail(struct command *cmd,
 
 static const struct json_command dev_fail_command = {
 	"dev-fail",
-	CMD_DEVELOPER,
+	"developer",
 	json_dev_fail,
 	"Fail with peer {id}"
 };
@@ -1622,7 +1622,7 @@ static struct command_result *json_dev_reenable_commit(struct command *cmd,
 
 static const struct json_command dev_reenable_commit = {
 	"dev-reenable-commit",
-	CMD_DEVELOPER,
+	"developer",
 	json_dev_reenable_commit,
 	"Re-enable the commit timer on peer {id}"
 };
@@ -1732,7 +1732,7 @@ static struct command_result *json_dev_forget_channel(struct command *cmd,
 
 static const struct json_command dev_forget_channel_command = {
 	"dev-forget-channel",
-	CMD_DEVELOPER,
+	"developer",
 	json_dev_forget_channel,
 	"Forget the channel with peer {id}, ignore UTXO check with {force}='true'.", false,
 	"Forget the channel with peer {id}. Checks if the channel is still active by checking its funding transaction. Check can be ignored by setting {force} to 'true'"

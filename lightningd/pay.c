@@ -894,7 +894,7 @@ static struct command_result *json_sendpay(struct command *cmd,
 
 static const struct json_command sendpay_command = {
 	"sendpay",
-	CMD_PAYMENT,
+	"payment",
 	json_sendpay,
 	"Send along {route} in return for preimage of {payment_hash}"
 };
@@ -933,7 +933,7 @@ static struct command_result *json_waitsendpay(struct command *cmd,
 
 static const struct json_command waitsendpay_command = {
 	"waitsendpay",
-	CMD_PAYMENT,
+	"payment",
 	json_waitsendpay,
 	"Wait for payment attempt on {payment_hash} to succeed or fail, "
 	"but only up to {timeout} seconds."
@@ -993,7 +993,7 @@ static struct command_result *json_listsendpays(struct command *cmd,
 
 static const struct json_command listpayments_command = {
 	"listpayments",
-	CMD_PAYMENT,
+	"payment",
 	json_listsendpays,
 	"Show outgoing payments",
 	true /* deprecated, use new name */
@@ -1002,7 +1002,7 @@ AUTODATA(json_command, &listpayments_command);
 
 static const struct json_command listsendpays_command = {
 	"listsendpays",
-	CMD_PAYMENT,
+	"payment",
 	json_listsendpays,
 	"Show sendpay, old and current, optionally limiting to {bolt11} or {payment_hash}."
 };

@@ -9,24 +9,6 @@
 struct command;
 struct command_result;
 
-/* The command category helps us to sort them. */
-enum command_category {
-	/* This is a Bitcoin network related command. */
-	CMD_BITCOIN,
-	/* This is a channels management related command. */
-	CMD_CHANNELS,
-	/* This is a (lightning) network related command. */
-	CMD_NETWORK,
-	/* This is a payment related command. */
-	CMD_PAYMENT,
-	/* This is a command added via an *external* plugin. */
-	CMD_PLUGIN,
-	/* This is an utility command. */
-	CMD_UTILITY,
-	/* This is a developer command. */
-	CMD_DEVELOPER
-};
-
 /* Caller supplied this: param assumes it can call it. */
 struct command_result *command_fail(struct command *cmd, int code,
 				    const char *fmt, ...)

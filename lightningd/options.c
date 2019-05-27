@@ -1112,7 +1112,7 @@ static struct command_result *json_listconfigs(struct command *cmd,
 
 static const struct json_command listconfigs_command = {
 	"listconfigs",
-	CMD_UTILITY,
+	"utility",
 	json_listconfigs,
 	"List all configuration options, or with [config], just that one.",
 	.verbose = "listconfigs [config]\n"

@@ -787,7 +787,7 @@ static struct command_result *json_invoice(struct command *cmd,
 
 static const struct json_command invoice_command = {
 	"invoice",
-	CMD_PAYMENT,
+	"payment",
 	json_invoice,
 	"Create an invoice for {msatoshi} with {label} "
 	"and {description} with optional {expiry} seconds "
@@ -843,7 +843,7 @@ static struct command_result *json_listinvoices(struct command *cmd,
 
 static const struct json_command listinvoices_command = {
 	"listinvoices",
-	CMD_PAYMENT,
+	"payment",
 	json_listinvoices,
 	"Show invoice {label} (or all, if no {label})"
 };
@@ -896,7 +896,7 @@ static struct command_result *json_delinvoice(struct command *cmd,
 
 static const struct json_command delinvoice_command = {
 	"delinvoice",
-	CMD_PAYMENT,
+	"payment",
 	json_delinvoice,
 	"Delete unpaid invoice {label} with {status}",
 };
@@ -921,7 +921,7 @@ static struct command_result *json_delexpiredinvoice(struct command *cmd,
 }
 static const struct json_command delexpiredinvoice_command = {
 	"delexpiredinvoice",
-	CMD_PAYMENT,
+	"payment",
 	json_delexpiredinvoice,
 	"Delete all expired invoices that expired as of given {maxexpirytime} (a UNIX epoch time), or all expired invoices if not specified"
 };
@@ -957,7 +957,7 @@ static struct command_result *json_waitanyinvoice(struct command *cmd,
 
 static const struct json_command waitanyinvoice_command = {
 	"waitanyinvoice",
-	CMD_PAYMENT,
+	"payment",
 	json_waitanyinvoice,
 	"Wait for the next invoice to be paid, after {lastpay_index} (if supplied)"
 };
@@ -1004,7 +1004,7 @@ static struct command_result *json_waitinvoice(struct command *cmd,
 
 static const struct json_command waitinvoice_command = {
 	"waitinvoice",
-	CMD_PAYMENT,
+	"payment",
 	json_waitinvoice,
 	"Wait for an incoming payment matching the invoice with {label}, or if the invoice expires"
 };
@@ -1156,7 +1156,7 @@ static struct command_result *json_decodepay(struct command *cmd,
 
 static const struct json_command decodepay_command = {
 	"decodepay",
-	CMD_PAYMENT,
+	"payment",
 	json_decodepay,
 	"Decode {bolt11}, using {description} if necessary"
 };
