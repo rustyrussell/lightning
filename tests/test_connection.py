@@ -897,6 +897,7 @@ def test_funding_external_wallet(node_factory, bitcoind):
 
     l1.daemon.wait_for_log(r'Funding tx {} depth 1 of 1'.format(txid))
     l1.daemon.wait_for_log(r'State changed from CHANNELD_AWAITING_LOCKIN to CHANNELD_NORMAL')
+    l2.daemon.wait_for_log(r'State changed from CHANNELD_AWAITING_LOCKIN to CHANNELD_NORMAL')
 
     for node in [l1, l2]:
         channel = node.rpc.listpeers()['peers'][0]['channels'][0]
