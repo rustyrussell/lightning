@@ -15,6 +15,8 @@
 #include <gossipd/gen_gossip_store.h>
 #include <gossipd/gen_gossip_wire.h>
 #include <stdio.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/uio.h>
 #include <unistd.h>
 #include <wire/gen_peer_wire.h>
@@ -22,6 +24,38 @@
 
 #define GOSSIP_STORE_FILENAME "gossip_store"
 #define GOSSIP_STORE_TEMP_FILENAME "gossip_store.tmp"
+
+#define VOODOO_CURSE_SUSPECTED
+
+#ifdef VOODOO_CURSE_SUSPECTED
+static int store_log_fd = -1;
+
+static void voodoo_log_write(int store_fd, u64 off,
+			     const void *data, size_t data_len,
+			     const char *caller, int type)
+{
+	char *str;
+	struct stat st;
+
+	fstat(store_fd, &st);
+
+	/* Atomic writes please! */
+	str = tal_fmt(tmpctx, "%"PRIu64"/%"PRIu64" len=%zu: %s %s: %s\n",
+		      off, (u64)st.st_size, data_len, caller,
+		      type < 0 ? ""
+		      : type < 512 ? wire_type_name(type)
+		      : type < 4000 ? gossip_peerd_wire_type_name(type)
+		      : gossip_store_type_name(type),
+		      tal_hexstr(tmpctx, data, data_len));
+	write_all(store_log_fd, str, strlen(str));
+}
+#else
+static void voodoo_log_write(int store_fd, u64 off,
+			     const void *data, size_t data_len,
+			     const char *caller, int type)
+{
+}
+#endif
 
 struct gossip_store {
 	/* This is false when we're loading */
@@ -71,6 +105,9 @@ static bool append_msg(int fd, const u8 *msg, u32 timestamp, u64 *len)
 	iov[0].iov_len = sizeof(hdr);
 	iov[1].iov_base = (void *)msg;
 	iov[1].iov_len = msglen;
+	voodoo_log_write(fd, *len, &hdr, sizeof(hdr), "append_msg #1", -1);
+	voodoo_log_write(fd, *len + sizeof(hdr), msg, msglen, "append_msg #2",
+			 fromwire_peektype(msg));
 	if (pwritev(fd, iov, ARRAY_SIZE(iov), *len) != sizeof(hdr) + msglen)
 		return false;
 	*len += sizeof(hdr) + msglen;
@@ -102,6 +139,8 @@ static void gossip_store_compact_offline(void)
 		goto close_and_delete;
 	}
 
+	voodoo_log_write(new_fd, 0, &version, sizeof(version),
+			 "offline_compact version", -1);
 	if (!write_all(new_fd, &version, sizeof(version))) {
 		status_broken("gossip_store_compact_offline: writing version to store: %s",
 			      strerror(errno));
@@ -128,6 +167,14 @@ static void gossip_store_compact_offline(void)
 			continue;
 		}
 
+		voodoo_log_write(new_fd, lseek(new_fd, 0, SEEK_CUR),
+				 &hdr, sizeof(hdr),
+				 "append #1: offline_compact", -1);
+		voodoo_log_write(new_fd,
+				 lseek(new_fd, 0, SEEK_CUR) + sizeof(hdr),
+				 msg, msglen,
+				 "append #2: offline_compact",
+				 fromwire_peektype(msg));
 		if (!write_all(new_fd, &hdr, sizeof(hdr))
 		    || !write_all(new_fd, msg, msglen)) {
 			status_broken("gossip_store_compact_offline: writing msg len %zu to new store: %s",
@@ -165,6 +212,12 @@ struct gossip_store *gossip_store_new(struct routing_state *rstate,
 	struct gossip_store *gs = tal(rstate, struct gossip_store);
 	gs->count = gs->deleted = 0;
 	gs->writable = true;
+
+#ifdef VOODOO_CURSE_SUSPECTED
+	store_log_fd = open(tal_fmt(tmpctx, "gossip-store-log.%zu",
+				    (size_t)time(NULL)),
+			    O_WRONLY|O_CREAT|O_EXCL, 0600);
+#endif
 	gossip_store_compact_offline();
 	gs->fd = open(GOSSIP_STORE_FILENAME, O_RDWR|O_CREAT, 0600);
 	if (gs->fd < 0)
@@ -194,6 +247,8 @@ struct gossip_store *gossip_store_new(struct routing_state *rstate,
 	}
 	/* Empty file, write version byte */
 	gs->version = GOSSIP_STORE_VERSION;
+	voodoo_log_write(gs->fd, 0, &gs->version, sizeof(gs->version),
+			 "gossip_store_new", -1);
 	if (write(gs->fd, &gs->version, sizeof(gs->version))
 	    != sizeof(gs->version))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
@@ -238,6 +293,9 @@ static size_t transfer_store_msg(int from_fd, size_t from_off,
 		return 0;
 	}
 
+	voodoo_log_write(to_fd, to_off, msg, msglen + sizeof(hdr),
+			 "transfer_store_msg",
+			 be16_to_cpu(*(be16 *)(msg + sizeof(hdr))));
 	if (pwrite(to_fd, msg, msglen + sizeof(hdr), to_off)
 	    != msglen + sizeof(hdr)) {
 		status_broken("Failed writing to gossip store: %s",
@@ -333,6 +391,8 @@ bool gossip_store_compact(struct gossip_store *gs)
 		goto disable;
 	}
 
+	voodoo_log_write(fd, 0, &gs->version, sizeof(gs->version),
+			 "gossip_store_compact", -1);
 	if (write(fd, &gs->version, sizeof(gs->version))
 	    != sizeof(gs->version)) {
 		status_broken("Writing version to store: %s", strerror(errno));
@@ -495,6 +555,7 @@ static u32 delete_by_index(struct gossip_store *gs, u32 index, int type)
 
 	assert((be32_to_cpu(belen) & GOSSIP_STORE_LEN_DELETED_BIT) == 0);
 	belen |= cpu_to_be32(GOSSIP_STORE_LEN_DELETED_BIT);
+	voodoo_log_write(gs->fd, index, &belen, sizeof(belen), "delete", type);
 	if (pwrite(gs->fd, &belen, sizeof(belen), index) != sizeof(belen))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 			      "Failed writing len to delete @%u: %s",
@@ -725,6 +786,8 @@ corrupt:
 	rename(GOSSIP_STORE_FILENAME, GOSSIP_STORE_FILENAME ".corrupt");
 	close(gs->fd);
 	gs->fd = open(GOSSIP_STORE_FILENAME, O_RDWR|O_TRUNC|O_CREAT, 0600);
+	voodoo_log_write(gs->fd, 0, &gs->version, sizeof(gs->version),
+			 "load fail", -1);
 	if (gs->fd < 0 || !write_all(gs->fd, &gs->version, sizeof(gs->version)))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 			      "Truncating new store file: %s", strerror(errno));
