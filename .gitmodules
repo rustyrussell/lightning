@@ -11,3 +11,6 @@
 	path = external/libwally-core
 	url = https://github.com/ElementsProject/libwally-core.git
 	ignore = dirty
+[submodule "external/minisketch"]
+	path = external/minisketch
+	url = https://github.com/sipa/minisketch.git

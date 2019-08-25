@@ -394,8 +394,9 @@ $(ALL_TEST_PROGRAMS): %: %.o
 # external/libwallycore.a directly, which causes a symbol clash (it
 # uses some ccan modules internally).  We want to rely on -lwallycore etc.
 # (as per EXTERNAL_LDLIBS) so we filter them out here.
+# FIXME: Note that minisketch is C++, so we use g++ to link here.
 $(ALL_PROGRAMS) $(ALL_TEST_PROGRAMS):
-	$(LINK.o) $(filter-out %.a,$^) $(LOADLIBES) $(EXTERNAL_LDLIBS) $(LDLIBS) -o $@
+	$(LINK.cc) $(filter-out %.a,$^) $(LOADLIBES) $(EXTERNAL_LDLIBS) $(LDLIBS) -o $@
 
 # Everything depends on the CCAN headers, and Makefile
 $(CCAN_OBJS) $(CDUMP_OBJS): $(CCAN_HEADERS) Makefile
