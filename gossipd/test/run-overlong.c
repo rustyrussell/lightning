@@ -1,3 +1,4 @@
+#include "../minisketch.c"
 #include "../routing.c"
 #include "../gossip_store.c"
 #include <stdio.h>

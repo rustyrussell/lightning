@@ -11,6 +11,7 @@
 #define status_fmt(level, node_id, fmt, ...)				\
 	do { (void)node_id; printf((fmt) ,##__VA_ARGS__); printf("\n"); } while(0)
 
+#include "../minisketch.c"
 #include "../routing.c"
 #include "../gossip_store.c"
 

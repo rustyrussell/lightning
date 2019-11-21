@@ -49,6 +49,7 @@
 #include <gossipd/gen_gossip_wire.h>
 #include <gossipd/gossip_generation.h>
 #include <gossipd/gossipd.h>
+#include <gossipd/minisketch.h>
 #include <gossipd/queries.h>
 #include <gossipd/routing.h>
 #include <gossipd/seeker.h>

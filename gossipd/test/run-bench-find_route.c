@@ -12,6 +12,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "../minisketch.c"
 #include "../routing.c"
 #include "../gossip_store.c"
 
