@@ -310,6 +310,9 @@ struct routing_state {
 #if EXPERIMENTAL_FEATURES
 	/* The summary of all gossip. */
 	struct minisketch *minisketch;
+	size_t sketch_entries,
+		sketch_cupdate_timestamps,
+		sketch_nannounce_timestamps;
 #endif
 
 #if DEVELOPER

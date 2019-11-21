@@ -309,6 +309,9 @@ struct routing_state *new_routing_state(const tal_t *ctx,
 	rstate->current_blockheight = 0; /* i.e. unknown */
 #if EXPERIMENTAL_FEATURES
 	rstate->minisketch = minisketch_create(64, 0, MINISKETCH_CAPACITY);
+	rstate->sketch_entries = 0;
+	rstate->sketch_cupdate_timestamps = 0;
+	rstate->sketch_nannounce_timestamps = 0;
 #endif
 	pending_cannouncement_map_init(&rstate->pending_cannouncements);
 
@@ -543,17 +546,20 @@ static bool sketchval_decode(u32 blockheight,
 	 * bits.
 	 */
 	n1 = bitops_hs32(blockheight) + 1;
-	scid_blk = pull_bits(&entry, &bitoff, n1);
-	scid_tx = pull_bits(&entry, &bitoff, n2);
-	scid_out = pull_bits(&entry, &bitoff, n3);
+	if (scid) {
+		scid_blk = pull_bits(&entry, &bitoff, n1);
+		scid_tx = pull_bits(&entry, &bitoff, n2);
+		scid_out = pull_bits(&entry, &bitoff, n3);
 
-	/* This is plainly invalid */
-	if (scid_blk == 0)
-		return false;
+		/* This is plainly invalid */
+		if (scid_blk == 0)
+			return false;
 
-	/* This should never fail */
-	if (!mk_short_channel_id(scid, scid_blk, scid_tx, scid_out))
-		return false;
+		/* This should never fail */
+		if (!mk_short_channel_id(scid, scid_blk, scid_tx, scid_out))
+			return false;
+	} else
+		pull_bits(&entry, &bitoff, n1 + n2 + n3);
 
 	/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
 	 *
@@ -576,6 +582,62 @@ static bool sketchval_decode(u32 blockheight,
 	return true;
 }
 
+static void sub_sketchval(struct routing_state *rstate, u64 sketchval)
+{
+	u32 cupdate_ts1, cupdate_ts1_bits,
+		cupdate_ts2, cupdate_ts2_bits,
+		nannounce_ts1, nannounce_ts1_bits,
+		nannounce_ts2, nannounce_ts2_bits;
+
+	if (!sketchval_decode(rstate->current_blockheight, sketchval,
+			      NULL,
+			      &cupdate_ts1, &cupdate_ts1_bits,
+			      &cupdate_ts2, &cupdate_ts2_bits,
+			      &nannounce_ts1, &nannounce_ts1_bits,
+			      &nannounce_ts2, &nannounce_ts2_bits))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "Invalid sub sketchval 0x%"PRIx64" block %u",
+			      sketchval, rstate->current_blockheight);
+	if (cupdate_ts1 != (1 << cupdate_ts1_bits)-1)
+		rstate->sketch_cupdate_timestamps--;
+	if (cupdate_ts2 != (1 << cupdate_ts2_bits)-1)
+		rstate->sketch_cupdate_timestamps--;
+	if (nannounce_ts1 != (1 << nannounce_ts1_bits)-1)
+		rstate->sketch_nannounce_timestamps--;
+	if (nannounce_ts2 != (1 << nannounce_ts2_bits)-1)
+		rstate->sketch_nannounce_timestamps--;
+	rstate->sketch_entries--;
+	minisketch_add_uint64(rstate->minisketch, sketchval);
+}
+
+static void add_sketchval(struct routing_state *rstate, u64 sketchval)
+{
+	u32 cupdate_ts1, cupdate_ts1_bits,
+		cupdate_ts2, cupdate_ts2_bits,
+		nannounce_ts1, nannounce_ts1_bits,
+		nannounce_ts2, nannounce_ts2_bits;
+
+	if (!sketchval_decode(rstate->current_blockheight, sketchval,
+			      NULL,
+			      &cupdate_ts1, &cupdate_ts1_bits,
+			      &cupdate_ts2, &cupdate_ts2_bits,
+			      &nannounce_ts1, &nannounce_ts1_bits,
+			      &nannounce_ts2, &nannounce_ts2_bits))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "Invalid add sketchval 0x%"PRIx64" block %u",
+			      sketchval, rstate->current_blockheight);
+	if (cupdate_ts1 != (1 << cupdate_ts1_bits)-1)
+		rstate->sketch_cupdate_timestamps++;
+	if (cupdate_ts2 != (1 << cupdate_ts2_bits)-1)
+		rstate->sketch_cupdate_timestamps++;
+	if (nannounce_ts1 != (1 << nannounce_ts1_bits)-1)
+		rstate->sketch_nannounce_timestamps++;
+	if (nannounce_ts2 != (1 << nannounce_ts2_bits)-1)
+		rstate->sketch_nannounce_timestamps++;
+	rstate->sketch_entries++;
+	minisketch_add_uint64(rstate->minisketch, sketchval);
+}
+
 /* Insert in sketch for the first time */
 static void add_to_sketch(struct routing_state *rstate, struct chan *chan)
 {
@@ -588,33 +650,19 @@ static void add_to_sketch(struct routing_state *rstate, struct chan *chan)
 
 	chan->sketch_val = sketchval_encode(rstate->current_blockheight, chan);
 	if (chan->sketch_val != 0)
-		minisketch_add_uint64(rstate->minisketch, chan->sketch_val);
+		add_sketchval(rstate, chan->sketch_val);
 }
 
 /* Update sketch if it's in already. */
 static void update_sketch(struct routing_state *rstate, struct chan *chan)
 {
-	struct short_channel_id scid_ret;
-	u32 cupdate_ts1, cupdate_ts1_bits,
-		cupdate_ts2, cupdate_ts2_bits,
-		nannounce_ts1, nannounce_ts1_bits,
-		nannounce_ts2, nannounce_ts2_bits;
-
 	assert(is_chan_public(chan));
 	if (chan->sketch_val == 0)
 		return;
-	minisketch_add_uint64(rstate->minisketch, chan->sketch_val);
+	sub_sketchval(rstate, chan->sketch_val);
 	chan->sketch_val = sketchval_encode(rstate->current_blockheight, chan);
 	assert(chan->sketch_val);
-	minisketch_add_uint64(rstate->minisketch, chan->sketch_val);
-	assert(sketchval_decode(rstate->current_blockheight,
-				chan->sketch_val,
-				&scid_ret,
-				&cupdate_ts1, &cupdate_ts1_bits,
-				&cupdate_ts2, &cupdate_ts2_bits,
-				&nannounce_ts1, &nannounce_ts1_bits,
-				&nannounce_ts2, &nannounce_ts2_bits));
-	assert(short_channel_id_eq(&chan->scid, &scid_ret));
+	add_sketchval(rstate, chan->sketch_val);
 }
 
 /* When we get a new node_announcement, all of its channels'
@@ -806,7 +854,7 @@ void free_chan(struct routing_state *rstate, struct chan *chan)
 	remove_chan_from_node(rstate, chan->nodes[1], chan);
 
 	if (chan->sketch_val)
-		minisketch_add_uint64(rstate->minisketch, chan->sketch_val);
+		sub_sketchval(rstate, chan->sketch_val);
 	uintmap_del(&rstate->chanmap, chan->scid.u64);
 
 #if DEVELOPER
