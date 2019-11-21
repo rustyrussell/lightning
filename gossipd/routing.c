@@ -567,11 +567,11 @@ static void maybe_add_local_chan(struct routing_state *rstate,
 	tal_add_destructor2(local_chan, destroy_local_chan, rstate);
 }
 
-struct chan *new_chan(struct routing_state *rstate,
-		      const struct short_channel_id *scid,
-		      const struct node_id *id1,
-		      const struct node_id *id2,
-		      struct amount_sat satoshis)
+static struct chan *new_chan(struct routing_state *rstate,
+			     const struct short_channel_id *scid,
+			     const struct node_id *id1,
+			     const struct node_id *id2,
+			     struct amount_sat satoshis)
 {
 	struct chan *chan = tal(rstate, struct chan);
 	int n1idx = node_id_idx(id1, id2);
