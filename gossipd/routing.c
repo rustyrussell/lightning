@@ -575,6 +575,75 @@ static bool sketchval_decode(u32 blockheight,
 
 	return true;
 }
+
+/* Insert in sketch for the first time */
+static void add_to_sketch(struct routing_state *rstate, struct chan *chan)
+{
+	assert(is_chan_public(chan));
+	assert(chan->sketch_val == 0);
+
+	/* This can happen on load from store: future short_channel_id */
+	if (short_channel_id_blocknum(&chan->scid) > rstate->current_blockheight)
+		return;
+
+	chan->sketch_val = sketchval_encode(rstate->current_blockheight, chan);
+	if (chan->sketch_val != 0)
+		minisketch_add_uint64(rstate->minisketch, chan->sketch_val);
+}
+
+/* Update sketch if it's in already. */
+static void update_sketch(struct routing_state *rstate, struct chan *chan)
+{
+	struct short_channel_id scid_ret;
+	u32 cupdate_ts1, cupdate_ts1_bits,
+		cupdate_ts2, cupdate_ts2_bits,
+		nannounce_ts1, nannounce_ts1_bits,
+		nannounce_ts2, nannounce_ts2_bits;
+
+	assert(is_chan_public(chan));
+	if (chan->sketch_val == 0)
+		return;
+	minisketch_add_uint64(rstate->minisketch, chan->sketch_val);
+	chan->sketch_val = sketchval_encode(rstate->current_blockheight, chan);
+	assert(chan->sketch_val);
+	minisketch_add_uint64(rstate->minisketch, chan->sketch_val);
+	assert(sketchval_decode(rstate->current_blockheight,
+				chan->sketch_val,
+				&scid_ret,
+				&cupdate_ts1, &cupdate_ts1_bits,
+				&cupdate_ts2, &cupdate_ts2_bits,
+				&nannounce_ts1, &nannounce_ts1_bits,
+				&nannounce_ts2, &nannounce_ts2_bits));
+	assert(short_channel_id_eq(&chan->scid, &scid_ret));
+}
+
+/* When we get a new node_announcement, all of its channels'
+ * sketch_vals change */
+static void update_node_sketches(struct routing_state *rstate,
+				 const struct node *node)
+{
+	struct chan_map_iter i;
+	struct chan *chan;
+
+	for (chan = first_chan(node, &i); chan; chan = next_chan(node, &i)) {
+		if (is_chan_public(chan))
+			update_sketch(rstate, chan);
+	}
+}
+#else
+static void add_to_sketch(struct routing_state *rstate, struct chan *chan)
+{
+}
+
+/* Update sketch if it's in already. */
+static void update_sketch(struct routing_state *rstate, struct chan *chan)
+{
+}
+
+static void update_node_sketches(struct routing_state *rstate,
+				 const struct node *node)
+{
+}
 #endif /* EXPERIMENTAL_FEATURES */
 
 static void destroy_node(struct node *node, struct routing_state *rstate)
@@ -736,6 +805,8 @@ void free_chan(struct routing_state *rstate, struct chan *chan)
 	remove_chan_from_node(rstate, chan->nodes[0], chan);
 	remove_chan_from_node(rstate, chan->nodes[1], chan);
 
+	if (chan->sketch_val)
+		minisketch_add_uint64(rstate->minisketch, chan->sketch_val);
 	uintmap_del(&rstate->chanmap, chan->scid.u64);
 
 #if DEVELOPER
@@ -829,7 +900,6 @@ static struct chan *new_chan(struct routing_state *rstate,
 	/* This is how we indicate it's not public yet. */
 	chan->bcast.timestamp = 0;
 	chan->sat = satoshis;
-	/* FIXME: keep this updated! */
 	chan->sketch_val = 0;
 
 	add_chan(n2, chan);
@@ -839,27 +909,6 @@ static struct chan *new_chan(struct routing_state *rstate,
 	init_half_chan(rstate, chan, n1idx);
 	init_half_chan(rstate, chan, !n1idx);
 
-#if EXPERIMENTAL_FEATURES
-	{
-		u64 skval;
-		struct short_channel_id scid_ret;
-		u32 cupdate_ts1, cupdate_ts1_bits,
-			cupdate_ts2, cupdate_ts2_bits,
-			nannounce_ts1, nannounce_ts1_bits,
-			nannounce_ts2, nannounce_ts2_bits;
-		skval = sketchval_encode(rstate->current_blockheight, chan);
-		if (skval != 0) {
-			assert(sketchval_decode(rstate->current_blockheight,
-						skval,
-						&scid_ret,
-						&cupdate_ts1, &cupdate_ts1_bits,
-						&cupdate_ts2, &cupdate_ts2_bits,
-						&nannounce_ts1, &nannounce_ts1_bits,
-						&nannounce_ts2, &nannounce_ts2_bits));
-			assert(short_channel_id_eq(scid, &scid_ret));
-		}
-	}
-#endif /* EXPERIMENTAL_FEATURES */
 	uintmap_add(&rstate->chanmap, scid->u64, chan);
 
 	/* Initialize shadow structure if it's local */
@@ -2460,6 +2509,13 @@ bool routing_add_channel_update(struct routing_state *rstate,
 		process_pending_node_announcement(rstate, &chan->nodes[1]->id);
 		tal_free(uc);
 	}
+
+	/* Now we can set/update the sketch_val */
+	if (chan->sketch_val != 0)
+		update_sketch(rstate, chan);
+	else
+		add_to_sketch(rstate, chan);
+
 	return true;
 }
 
@@ -2794,6 +2850,10 @@ bool routing_add_node_announcement(struct routing_state *rstate,
 					   NULL);
 		peer_supplied_good_gossip(peer, 1);
 	}
+
+	/* We need to update sketches of any channels. */
+	update_node_sketches(rstate, node);
+
 	return true;
 }
 
