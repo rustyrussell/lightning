@@ -217,6 +217,16 @@ static void destroy_routing_state(struct routing_state *rstate)
 #endif
 }
 
+static void init_minisketch(struct routing_state *rstate)
+{
+#if EXPERIMENTAL_FEATURES
+	rstate->minisketch = minisketch_create(64, 0, MINISKETCH_CAPACITY);
+	rstate->sketch_entries = 0;
+	rstate->sketch_cupdate_timestamps = 0;
+	rstate->sketch_nannounce_timestamps = 0;
+#endif
+}
+
 /* We don't check this when loading from the gossip_store: that would break
  * our canned tests, and usually old gossip is better than no gossip */
 static bool timestamp_reasonable(struct routing_state *rstate, u32 timestamp)
@@ -307,12 +317,7 @@ struct routing_state *new_routing_state(const tal_t *ctx,
 	rstate->local_channel_announced = false;
 	rstate->last_timestamp = 0;
 	rstate->current_blockheight = 0; /* i.e. unknown */
-#if EXPERIMENTAL_FEATURES
-	rstate->minisketch = minisketch_create(64, 0, MINISKETCH_CAPACITY);
-	rstate->sketch_entries = 0;
-	rstate->sketch_cupdate_timestamps = 0;
-	rstate->sketch_nannounce_timestamps = 0;
-#endif
+	init_minisketch(rstate);
 	pending_cannouncement_map_init(&rstate->pending_cannouncements);
 
 	uintmap_init(&rstate->chanmap);
@@ -678,6 +683,99 @@ static void update_node_sketches(struct routing_state *rstate,
 			update_sketch(rstate, chan);
 	}
 }
+
+static void check_minisketch(struct routing_state *rstate, u32 prev_blockheight)
+{
+	u32 entries = 0, cupdate = 0, nannounce = 0;
+	u64 idx;
+	ssize_t decode;
+	struct minisketch *m = minisketch_create(64, 0, MINISKETCH_CAPACITY);
+	u64 leftover[MINISKETCH_CAPACITY];
+
+	/* Now iterate through all channels and re-add them */
+	for (struct chan *chan = uintmap_first(&rstate->chanmap, &idx);
+	     chan;
+	     chan = uintmap_after(&rstate->chanmap, &idx)) {
+		if (!is_chan_public(chan))
+			continue;
+
+		u64 sketch_val = sketchval_encode(prev_blockheight, chan);
+		if (!sketch_val)
+			continue;
+
+		entries++;
+		if (is_halfchan_defined(&chan->half[0]))
+			cupdate++;
+		if (is_halfchan_defined(&chan->half[1]))
+			cupdate++;
+		if (chan->nodes[0]->bcast.index != 0)
+			nannounce++;
+		if (chan->nodes[1]->bcast.index != 0)
+			nannounce++;
+		minisketch_add_uint64(m, sketch_val);
+	}
+
+	if (minisketch_merge(m, rstate->minisketch) != MINISKETCH_CAPACITY)
+		abort();
+
+	decode = minisketch_decode(m, ARRAY_SIZE(leftover), leftover);
+	assert(decode >= 0);
+	for (size_t i = 0; i < decode; i++) {
+		struct short_channel_id scid;
+		u32 cupdate_ts1, cupdate_ts1_bits,
+			cupdate_ts2, cupdate_ts2_bits,
+			nannounce_ts1, nannounce_ts1_bits,
+			nannounce_ts2, nannounce_ts2_bits;
+
+		sketchval_decode(rstate->current_blockheight, leftover[i],
+				 &scid,
+				 &cupdate_ts1, &cupdate_ts1_bits,
+				 &cupdate_ts2, &cupdate_ts2_bits,
+				 &nannounce_ts1, &nannounce_ts1_bits,
+				 &nannounce_ts2, &nannounce_ts2_bits);
+
+		status_broken("minisketch %s: %s",
+			      type_to_string(tmpctx, struct short_channel_id,
+					     &scid),
+			      get_channel(rstate, &scid)
+			      ? "not in sketch" : "is in sketch");
+	}
+	assert(decode == 0);
+	assert(entries == rstate->sketch_entries);
+	assert(cupdate == rstate->sketch_cupdate_timestamps);
+	assert(nannounce == rstate->sketch_nannounce_timestamps);
+
+	minisketch_destroy(m);
+}
+
+/* This is slow, but nobody cares. */
+void minisketch_blockheight_changed(struct routing_state *rstate,
+				    u32 prev_blockheight)
+{
+	u64 idx;
+
+	check_minisketch(rstate, prev_blockheight);
+
+	/* We need to regen if number of bits for blockheight changes */
+	if (prev_blockheight
+	    && (bitops_hs32(prev_blockheight)
+		== bitops_hs32(rstate->current_blockheight)))
+		return;
+
+	/* Throw away old minisketch state */
+	minisketch_destroy(rstate->minisketch);
+	init_minisketch(rstate);
+
+	/* Now iterate through all channels and re-add them */
+	for (struct chan *chan = uintmap_first(&rstate->chanmap, &idx);
+	     chan;
+	     chan = uintmap_after(&rstate->chanmap, &idx)) {
+		if (is_chan_public(chan)) {
+			chan->sketch_val = 0;
+			add_to_sketch(rstate, chan);
+		}
+	}
+}
 #else
 static void add_to_sketch(struct routing_state *rstate, struct chan *chan)
 {
@@ -690,6 +788,11 @@ static void update_sketch(struct routing_state *rstate, struct chan *chan)
 
 static void update_node_sketches(struct routing_state *rstate,
 				 const struct node *node)
+{
+}
+
+void minisketch_blockheight_changed(struct routing_state *rstate,
+				    u32 prev_blockheight)
 {
 }
 #endif /* EXPERIMENTAL_FEATURES */
@@ -853,8 +956,10 @@ void free_chan(struct routing_state *rstate, struct chan *chan)
 	remove_chan_from_node(rstate, chan->nodes[0], chan);
 	remove_chan_from_node(rstate, chan->nodes[1], chan);
 
+#if EXPERIMENTAL_FEATURES
 	if (chan->sketch_val)
 		sub_sketchval(rstate, chan->sketch_val);
+#endif
 	uintmap_del(&rstate->chanmap, chan->scid.u64);
 
 #if DEVELOPER

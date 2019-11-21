@@ -543,4 +543,8 @@ void remove_all_gossip(struct routing_state *rstate);
 /* This scid is dead to us. */
 void add_to_txout_failures(struct routing_state *rstate,
 			   const struct short_channel_id *scid);
+
+/* Callback when rstate->current_blockheight changes */
+void minisketch_blockheight_changed(struct routing_state *rstate,
+				    u32 prev_blockheight);
 #endif /* LIGHTNING_GOSSIPD_ROUTING_H */

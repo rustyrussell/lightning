@@ -1268,6 +1268,8 @@ static struct io_plan *new_blockheight(struct io_conn *conn,
 				       struct daemon *daemon,
 				       const u8 *msg)
 {
+	u32 prev_blockheight = daemon->rstate->current_blockheight;
+
 	if (!fromwire_gossip_new_blockheight(msg, &daemon->rstate->current_blockheight))
 		master_badmsg(WIRE_GOSSIP_NEW_BLOCKHEIGHT, msg);
 
@@ -1288,6 +1290,7 @@ static struct io_plan *new_blockheight(struct io_conn *conn,
 		i--;
 	}
 
+	minisketch_blockheight_changed(daemon->rstate, prev_blockheight);
 	return daemon_conn_read_next(conn, daemon->master);
 }
 
