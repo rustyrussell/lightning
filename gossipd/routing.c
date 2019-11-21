@@ -3,6 +3,7 @@
 #include <bitcoin/block.h>
 #include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
+#include <ccan/bitops/bitops.h>
 #include <ccan/endian/endian.h>
 #include <ccan/mem/mem.h>
 #include <ccan/tal/str/str.h>
@@ -21,6 +22,10 @@
 #include <gossipd/gossipd.h>
 #include <inttypes.h>
 #include <wire/gen_peer_wire.h>
+
+#ifndef MINISKETCH_CAPACITY
+#define MINISKETCH_CAPACITY 1024
+#endif
 
 #ifndef SUPERVERBOSE
 #define SUPERVERBOSE(...)
@@ -206,6 +211,10 @@ static void destroy_routing_state(struct routing_state *rstate)
 	/* Free up our htables */
 	pending_cannouncement_map_clear(&rstate->pending_cannouncements);
 	local_chan_map_clear(&rstate->local_chan_map);
+
+#if EXPERIMENTAL_FEATURES
+	minisketch_destroy(rstate->minisketch);
+#endif
 }
 
 /* We don't check this when loading from the gossip_store: that would break
@@ -298,7 +307,9 @@ struct routing_state *new_routing_state(const tal_t *ctx,
 	rstate->local_channel_announced = false;
 	rstate->last_timestamp = 0;
 	rstate->current_blockheight = 0; /* i.e. unknown */
-
+#if EXPERIMENTAL_FEATURES
+	rstate->minisketch = minisketch_create(64, 0, MINISKETCH_CAPACITY);
+#endif
 	pending_cannouncement_map_init(&rstate->pending_cannouncements);
 
 	uintmap_init(&rstate->chanmap);
@@ -346,6 +357,225 @@ bool node_map_node_eq(const struct node *n, const struct node_id *pc)
 	return node_id_eq(&n->id, pc);
 }
 
+#if EXPERIMENTAL_FEATURES
+static void apply_bits(u64 *val, size_t *bitoff, u64 v, size_t bits)
+{
+	/* v must not be greater than bits long */
+	assert((v & ~((1ULL << bits)-1)) == 0);
+	*val |= (v << *bitoff);
+	*bitoff += bits;
+}
+
+/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+ *
+ * 1. if there is no `channel_update` or `node_announcement`, the encoding is N
+ *    all 1 bits.
+ * 2. otherwise, the encoding is `timestamp % ((2^N) - 1)`.
+ */
+static u64 ts_encode(bool defined, u32 timestamp, size_t bits)
+{
+	if (!defined)
+		return (1 << bits) - 1;
+	return timestamp % ((1 << bits) - 1);
+}
+
+static u64 update_timestamp_trunc(const struct half_chan *hc, size_t bits)
+{
+	return ts_encode(is_halfchan_defined(hc), hc->bcast.timestamp, bits);
+}
+
+static u64 node_timestamp_trunc(const struct node *node, size_t bits)
+{
+	return ts_encode(node->bcast.index != 0, node->bcast.timestamp, bits);
+}
+
+static u64 sketchval_encode(u32 current_blockheight,
+			    const struct chan *chan)
+{
+	u64 val = 0;
+	size_t bitoff = 0, n1, n2, n3;
+	bool long_form;
+
+	/* FIXME: Regenerate every time blockheight passed a power of 2! */
+	if (current_blockheight == 0)
+		return 0;
+
+	assert(short_channel_id_blocknum(&chan->scid)
+	       <= current_blockheight);
+
+	/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+	 * - If the transaction index is less than 32768 and the output index
+	 *   is less than 64:
+	 *   - MUST encode it using short-form.
+	 * - Otherwise, if the transaction index is less than 2097152 and the
+         *   output index is less than 4096, and `block_number` is less than
+         *   4194304:
+         *   - MUST encode it using long-form.
+	 * - Otherwise:
+	 *   - MUST add it to the `raw` field.
+	 */
+	if (short_channel_id_txnum(&chan->scid) < 32768
+	    && short_channel_id_outnum(&chan->scid) < 64) {
+		/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+		 * 3. For short-form encoding:
+		 *    1. The next lowest N2=15 bits encode the transaction index
+		 *       within the block.
+		 *    2. The next lowest N3=6 bits encode the output index.
+		 */
+		n2 = 15;
+		n3 = 6;
+		long_form = false;
+	} else if (short_channel_id_txnum(&chan->scid) < 2097152
+		   && short_channel_id_outnum(&chan->scid) < 4096
+		   && current_blockheight < 4194304) {
+		/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+		 * 4. For long-form encoding:
+		 *     1. The next lowest N2=21 bits encode the transaction
+		 *        index within the block.
+		 *     2. The next lowest N3=12 bits encode the output index.
+		 */
+		n2 = 21;
+		n3 = 12;
+		long_form = true;
+	} else
+		/* Can't fit, use raw encoding, not minisketch */
+		return 0;
+
+	/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+	 *
+	 * 1. The LSB is 0 for short-form, 1 for long-form.
+	 */
+	apply_bits(&val, &bitoff, long_form, 1);
+
+	/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+	 *
+	 * 2. The next lowest N1 bits encode the block height.  N1 is the minimum
+	 * number of bits to encode `block_height`, eg. 591617 gives N1 of 20
+	 * bits.
+	 */
+	n1 = bitops_hs32(current_blockheight) + 1;
+	apply_bits(&val, &bitoff, short_channel_id_blocknum(&chan->scid), n1);
+	apply_bits(&val, &bitoff, short_channel_id_txnum(&chan->scid), n2);
+	apply_bits(&val, &bitoff, short_channel_id_outnum(&chan->scid), n3);
+
+	size_t bits;
+	/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+	 *
+	 * 1. (63 - N1 - N2 - N3 + 3)/4 bits for `node_1`s last `channel_update`.
+	 * 2. (63 - N1 - N2 - N3 + 2)/4 bits for `node_2`s last `channel_update`.
+	 * 3. (63 - N1 - N2 - N3 + 1)/4 bits for `node_1`s last
+	 *    `node_announcement`.
+	 * 4. (63 - N1 - N2 - N3)/4 bits for `node_2`s last `node_announcement`.
+	 */
+	bits = (63 - n1 - n2 - n3 + 3)/4;
+	apply_bits(&val, &bitoff,
+		   update_timestamp_trunc(&chan->half[0], bits), bits);
+	bits = (63 - n1 - n2 - n3 + 2)/4;
+	apply_bits(&val, &bitoff,
+		   update_timestamp_trunc(&chan->half[1], bits), bits);
+	bits = (63 - n1 - n2 - n3 + 1)/4;
+	apply_bits(&val, &bitoff,
+		   node_timestamp_trunc(chan->nodes[0], bits), bits);
+	bits = (63 - n1 - n2 - n3)/4;
+	apply_bits(&val, &bitoff,
+		   node_timestamp_trunc(chan->nodes[1], bits), bits);
+	assert(bitoff == 64);
+
+	return val;
+}
+
+static u64 pull_bits(u64 *val, size_t *bitoff, size_t bits)
+{
+	u64 ret;
+
+	ret = *val;
+	ret &= ((u64)1 << bits) - 1;
+	*val >>= bits;
+	*bitoff += bits;
+	return ret;
+}
+
+/* Some scids or blockheight are obviously invalid */
+static bool sketchval_decode(u32 blockheight,
+			     u64 entry,
+			     struct short_channel_id *scid,
+			     u32 *cupdate_ts1, u32 *cupdate_ts1_bits,
+			     u32 *cupdate_ts2, u32 *cupdate_ts2_bits,
+			     u32 *nannounce_ts1, u32 *nannounce_ts1_bits,
+			     u32 *nannounce_ts2, u32 *nannounce_ts2_bits)
+{
+	size_t bitoff = 0, n1, n2, n3;
+	u32 scid_blk, scid_tx, scid_out;
+	bool long_form;
+
+	if (blockheight == 0)
+		return false;
+
+	/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+	 *
+	 * 1. The LSB is 0 for short-form, 1 for long-form.
+	 */
+	long_form = pull_bits(&entry, &bitoff, 1);
+	if (!long_form) {
+		/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+		 * 3. For short-form encoding:
+		 *    1. The next lowest N2=15 bits encode the transaction index
+		 *       within the block.
+		 *    2. The next lowest N3=6 bits encode the output index.
+		 */
+		n2 = 15;
+		n3 = 6;
+	} else {
+		/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+		 * 4. For long-form encoding:
+		 *     1. The next lowest N2=21 bits encode the transaction
+		 *        index within the block.
+		 *     2. The next lowest N3=12 bits encode the output index.
+		 */
+		n2 = 21;
+		n3 = 12;
+	}
+
+	/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+	 *
+	 * 2. The next lowest N1 bits encode the block height.  N1 is the minimum
+	 * number of bits to encode `block_height`, eg. 591617 gives N1 of 20
+	 * bits.
+	 */
+	n1 = bitops_hs32(blockheight) + 1;
+	scid_blk = pull_bits(&entry, &bitoff, n1);
+	scid_tx = pull_bits(&entry, &bitoff, n2);
+	scid_out = pull_bits(&entry, &bitoff, n3);
+
+	/* This is plainly invalid */
+	if (scid_blk == 0)
+		return false;
+
+	/* This should never fail */
+	if (!mk_short_channel_id(scid, scid_blk, scid_tx, scid_out))
+		return false;
+
+	/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #7:
+	 *
+	 * 1. (63 - N1 - N2 - N3 + 3)/4 bits for `node_1`s last `channel_update`.
+	 * 2. (63 - N1 - N2 - N3 + 2)/4 bits for `node_2`s last `channel_update`.
+	 * 3. (63 - N1 - N2 - N3 + 1)/4 bits for `node_1`s last
+	 *    `node_announcement`.
+	 * 4. (63 - N1 - N2 - N3)/4 bits for `node_2`s last `node_announcement`.
+	 */
+	*cupdate_ts1_bits = (63 - n1 - n2 - n3 + 3)/4;
+	*cupdate_ts1 = pull_bits(&entry, &bitoff, *cupdate_ts1_bits);
+	*cupdate_ts2_bits = (63 - n1 - n2 - n3 + 2)/4;
+	*cupdate_ts2 = pull_bits(&entry, &bitoff, *cupdate_ts2_bits);
+	*nannounce_ts1_bits = (63 - n1 - n2 - n3 + 1)/4;
+	*nannounce_ts1 = pull_bits(&entry, &bitoff, *nannounce_ts1_bits);
+	*nannounce_ts2_bits = (63 - n1 - n2 - n3)/4;
+	*nannounce_ts2 = pull_bits(&entry, &bitoff, *nannounce_ts2_bits);
+	assert(bitoff == 64);
+
+	return true;
+}
+#endif /* EXPERIMENTAL_FEATURES */
 
 static void destroy_node(struct node *node, struct routing_state *rstate)
 {
@@ -599,6 +829,8 @@ static struct chan *new_chan(struct routing_state *rstate,
 	/* This is how we indicate it's not public yet. */
 	chan->bcast.timestamp = 0;
 	chan->sat = satoshis;
+	/* FIXME: keep this updated! */
+	chan->sketch_val = 0;
 
 	add_chan(n2, chan);
 	add_chan(n1, chan);
@@ -607,6 +839,27 @@ static struct chan *new_chan(struct routing_state *rstate,
 	init_half_chan(rstate, chan, n1idx);
 	init_half_chan(rstate, chan, !n1idx);
 
+#if EXPERIMENTAL_FEATURES
+	{
+		u64 skval;
+		struct short_channel_id scid_ret;
+		u32 cupdate_ts1, cupdate_ts1_bits,
+			cupdate_ts2, cupdate_ts2_bits,
+			nannounce_ts1, nannounce_ts1_bits,
+			nannounce_ts2, nannounce_ts2_bits;
+		skval = sketchval_encode(rstate->current_blockheight, chan);
+		if (skval != 0) {
+			assert(sketchval_decode(rstate->current_blockheight,
+						skval,
+						&scid_ret,
+						&cupdate_ts1, &cupdate_ts1_bits,
+						&cupdate_ts2, &cupdate_ts2_bits,
+						&nannounce_ts1, &nannounce_ts1_bits,
+						&nannounce_ts2, &nannounce_ts2_bits));
+			assert(short_channel_id_eq(scid, &scid_ret));
+		}
+	}
+#endif /* EXPERIMENTAL_FEATURES */
 	uintmap_add(&rstate->chanmap, scid->u64, chan);
 
 	/* Initialize shadow structure if it's local */

@@ -11,6 +11,7 @@
 #include <common/node_id.h>
 #include <gossipd/broadcast.h>
 #include <gossipd/gossip_store.h>
+#include <minisketch.h>
 #include <wire/gen_onion_wire.h>
 #include <wire/wire.h>
 
@@ -60,6 +61,9 @@ struct chan {
 	struct broadcastable bcast;
 
 	struct amount_sat sat;
+
+	/* Value for minisketch. */
+	u64 sketch_val;
 };
 
 /* Shadow structure for local channels: owned by the chan above, but kept
@@ -302,6 +306,11 @@ struct routing_state {
 
 	/* Highest timestamp of gossip we accepted (before now) */
 	u32 last_timestamp;
+
+#if EXPERIMENTAL_FEATURES
+	/* The summary of all gossip. */
+	struct minisketch *minisketch;
+#endif
 
 #if DEVELOPER
 	/* Override local time for gossip messages */
