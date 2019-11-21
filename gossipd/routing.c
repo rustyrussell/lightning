@@ -297,6 +297,7 @@ struct routing_state *new_routing_state(const tal_t *ctx,
 	rstate->local_id = *local_id;
 	rstate->local_channel_announced = false;
 	rstate->last_timestamp = 0;
+	rstate->current_blockheight = 0; /* i.e. unknown */
 
 	pending_cannouncement_map_init(&rstate->pending_cannouncements);
 

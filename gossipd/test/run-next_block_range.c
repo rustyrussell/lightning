@@ -61,7 +61,7 @@ static void test_block_range(struct seeker *seeker,
 	u32 first_blocknum, number_of_blocks;
 	va_list ap;
 
-	seeker->daemon->current_blockheight = blockheight;
+	seeker->daemon->rstate->current_blockheight = blockheight;
 	seeker->scid_probe_start = first;
 	seeker->scid_probe_end = last;
 
@@ -92,6 +92,7 @@ int main(void)
 	setup_locale();
 
 	seeker->daemon = tal(seeker, struct daemon);
+	seeker->daemon->rstate = tal(seeker, struct routing_state);
 
 	/* Case where we start at beginning */
 	test_block_range(seeker, 100,

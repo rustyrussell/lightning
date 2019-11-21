@@ -297,6 +297,9 @@ struct routing_state {
         /* A map of local channels by short_channel_ids */
 	struct local_chan_map local_chan_map;
 
+	/* Current blockheight: 0 means we're not up-to-date. */
+	u32 current_blockheight;
+
 	/* Highest timestamp of gossip we accepted (before now) */
 	u32 last_timestamp;
 

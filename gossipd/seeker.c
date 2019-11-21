@@ -400,7 +400,7 @@ static bool next_block_range(struct seeker *seeker,
 			     u32 prev_num_blocks,
 			     u32 *first_blocknum, u32 *number_of_blocks)
 {
-	const u32 current_height = seeker->daemon->current_blockheight;
+	const u32 current_height = seeker->daemon->rstate->current_blockheight;
 
 	/* We always try to get twice as many as last time. */
 	*number_of_blocks = prev_num_blocks * 2;
@@ -718,19 +718,20 @@ static void peer_gossip_probe_scids(struct seeker *seeker)
 
 static void probe_random_scids(struct seeker *seeker, size_t num_blocks)
 {
+	struct routing_state *rstate = seeker->daemon->rstate;
 	u32 avail_blocks;
 
 	/* Ignore early blocks (unless we're before, which would be weird) */
-	if (seeker->daemon->current_blockheight
+	if (rstate->current_blockheight
 	    < chainparams->when_lightning_became_cool)
-		avail_blocks = seeker->daemon->current_blockheight;
+		avail_blocks = rstate->current_blockheight;
 	else
-		avail_blocks = seeker->daemon->current_blockheight
+		avail_blocks = rstate->current_blockheight
 			- chainparams->when_lightning_became_cool;
 
 	if (avail_blocks < num_blocks) {
 		seeker->scid_probe_start = 0;
-		seeker->scid_probe_end = seeker->daemon->current_blockheight;
+		seeker->scid_probe_end = rstate->current_blockheight;
 	} else {
 		seeker->scid_probe_start
 			= chainparams->when_lightning_became_cool
@@ -788,7 +789,7 @@ static void check_firstpeer(struct seeker *seeker)
 
 	/* Ask a random peer for all channels, in case we're missing */
 	seeker->scid_probe_start = chainparams->when_lightning_became_cool;
-	seeker->scid_probe_end = seeker->daemon->current_blockheight;
+	seeker->scid_probe_end = seeker->daemon->rstate->current_blockheight;
 	if (seeker->scid_probe_start > seeker->scid_probe_end)
 		seeker->scid_probe_start = 0;
 	peer_gossip_probe_scids(seeker);
@@ -882,7 +883,7 @@ static void seeker_check(struct seeker *seeker)
 #endif
 
 	/* We don't do anything until we're synced. */
-	if (seeker->daemon->current_blockheight == 0)
+	if (seeker->daemon->rstate->current_blockheight == 0)
 		goto out;
 
 	switch (seeker->state) {
@@ -925,7 +926,7 @@ void seeker_setup_peer_gossip(struct seeker *seeker, struct peer *peer)
 		return;
 #endif
 	/* Don't start gossiping until we're synced. */
-	if (seeker->daemon->current_blockheight == 0)
+	if (seeker->daemon->rstate->current_blockheight == 0)
 		return;
 
 	switch (seeker->state) {
