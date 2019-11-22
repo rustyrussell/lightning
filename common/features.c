@@ -10,6 +10,7 @@ static const u32 our_features[] = {
 	OPTIONAL_FEATURE(OPT_GOSSIP_QUERIES),
 #if EXPERIMENTAL_FEATURES
 	OPTIONAL_FEATURE(OPT_VAR_ONION),
+	OPTIONAL_FEATURE(OPT_GOSSIP_MINISKETCH),
 #endif
 	OPTIONAL_FEATURE(OPT_GOSSIP_QUERIES_EX),
 	OPTIONAL_FEATURE(OPT_STATIC_REMOTEKEY),
@@ -154,6 +155,14 @@ static const char *feature_name(const tal_t *ctx, size_t f)
 		"option_var_onion_optin",
 		"option_gossip_queries_ex",
 		"option_static_remotekey" };
+
+#if EXPERIMENTAL_FEATURES
+	if (COMPULSORY_FEATURE(f) == OPT_GOSSIP_MINISKETCH) {
+		return tal_fmt(ctx, "%s/%s",
+			       "option_gossip_minisketch",
+			       (f & 1) ? "odd" : "even");
+	}
+#endif
 
 	assert(f / 2 < ARRAY_SIZE(fnames));
 	return tal_fmt(ctx, "%s/%s",

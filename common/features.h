@@ -63,4 +63,10 @@ void set_feature_bit(u8 **ptr, u32 bit);
  */
 #define OPT_VAR_ONION				8
 
+/* BOLT-690b2a5fb895e45a3e12c6cf547f0568dca87162 #9:
+ *
+ * | 100/101  | `gossip_minisketch`          | Gossip synchronization via set reconciliation                             | [BOLT #7][bolt07-minisketch]   |
+ */
+#define OPT_GOSSIP_MINISKETCH			100
+
 #endif /* LIGHTNING_COMMON_FEATURES_H */
