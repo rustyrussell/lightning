@@ -846,7 +846,7 @@ static int pubkey_order(const struct node_id *k1,
 	return node_id_cmp(k1, k2);
 }
 
-static void uniquify_node_ids(struct node_id **ids)
+void uniquify_node_ids(struct node_id **ids)
 {
 	size_t dst, src;
 

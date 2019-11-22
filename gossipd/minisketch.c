@@ -4,8 +4,13 @@
 #include <ccan/bitops/bitops.h>
 #include <common/status.h>
 #include <common/type_to_string.h>
+#include <common/wire_error.h>
+#include <gossipd/gossipd.h>
+#include <gossipd/queries.h>
 #include <gossipd/routing.h>
+#include <gossipd/seeker.h>
 #include <gossipd/minisketch.h>
+#include <wire/gen_peer_wire.h>
 
 #if EXPERIMENTAL_FEATURES
 #ifndef MINISKETCH_CAPACITY
@@ -439,5 +444,119 @@ void minisketch_blockheight_changed(struct routing_state *rstate,
 			add_to_sketch(rstate, chan);
 		}
 	}
+}
+
+const u8 *handle_gossip_set(struct peer *peer, const u8 *gossip_set)
+{
+	struct routing_state *rstate = peer->daemon->rstate;
+	struct bitcoin_blkid chain_hash;
+	u32 number_of_channels, number_of_channel_updates, number_of_node_announcements, block_number;
+	u8 *sketch;
+	struct raw_scid_info *raw;
+	struct short_channel_id *excluded;
+	struct minisketch *m;
+	size_t capacity;
+	ssize_t num_left;
+	u64 leftover[MINISKETCH_CAPACITY];
+	struct node_id *nodes = tal_arr(tmpctx, struct node_id, 0);
+
+	if (!fromwire_gossip_set(tmpctx, gossip_set, &chain_hash,
+				 &number_of_channels,
+				 &number_of_channel_updates,
+				 &number_of_node_announcements,
+				 &block_number,
+				 &sketch,
+				 &raw, &excluded)) {
+		return towire_errorfmt(peer, NULL, "bad gossip_set msg %s",
+				       tal_hex(tmpctx, gossip_set));
+	}
+
+	capacity = tal_bytelen(sketch) / sizeof(u64);
+	if (tal_bytelen(sketch) % sizeof(u64) != 0 || capacity == 0)
+		return towire_errorfmt(peer, NULL, "bad sketch length %zu",
+				       tal_bytelen(sketch));
+
+	/* Incompatible block heights?  We ignore and wait. */
+	if (rstate->current_blockheight == 0
+	    || bitops_hs32(block_number) != bitops_hs32(rstate->current_blockheight)) {
+		status_peer_debug(&peer->id,
+				  "minisketch: ignoring block_number %u vs %u",
+				  block_number, rstate->current_blockheight);
+		return NULL;
+	}
+
+	m = minisketch_create(64, 0, capacity);
+	minisketch_deserialize(m, sketch);
+
+	/* We want to subtract excluded scids: this is equivalent to adding them
+	 * to their set. */
+	for (size_t i = 0; i < tal_count(excluded); i++) {
+		struct chan *c = get_channel(rstate, &excluded[i]);
+		if (c && c->sketch_val)
+			minisketch_add_uint64(m, c->sketch_val);
+	}
+
+	minisketch_merge(m, rstate->minisketch);
+	num_left = minisketch_decode(m, ARRAY_SIZE(leftover), leftover);
+	status_peer_debug(&peer->id,
+			  "minisketch: %zi left merging capacity %zu excl %zu",
+			  num_left, capacity, tal_count(excluded));
+
+	/* FIXME: Do something! */
+	if (num_left < 0)
+		goto out;
+
+	for (size_t i = 0; i < num_left; i++) {
+		struct short_channel_id scid;
+		u32 cu_ts[2], cu_ts_bits[2], na_ts[2], na_ts_bits[2];
+		struct chan *c;
+
+		sketchval_decode(rstate->current_blockheight, leftover[i],
+				 &scid,
+				 &cu_ts[0], &cu_ts_bits[0],
+				 &cu_ts[1], &cu_ts_bits[1],
+				 &na_ts[0], &na_ts_bits[0],
+				 &na_ts[1], &na_ts_bits[1]);
+
+		c = get_channel(rstate, &scid);
+		if (!c)
+			add_unknown_scid(peer->daemon->seeker, &scid, peer);
+		else {
+			/* FIXME: Should we query this anyway to disguise the
+			 * fact that we know of it? */
+			if (!is_chan_public(c))
+				continue;
+
+			/* This will be in set *twice*: once with our timestamps,
+			 * once with theirs. */
+			if (leftover[i] == c->sketch_val)
+				continue;
+
+			/* FIXME: Only send to them if it's changed since their
+			 * last sketch! */
+			for (i = 0; i < 2; i++) {
+				if (update_timestamp_trunc(&c->half[i],
+							   cu_ts_bits[i])
+				    != cu_ts[i])
+					queue_peer_from_store(peer,
+							      &c->half[i].bcast);
+				if (node_timestamp_trunc(c->nodes[i],
+							 na_ts_bits[i])
+				    != na_ts[i])
+					tal_arr_expand(&nodes, c->nodes[i]->id);
+			}
+		}
+	}
+
+	uniquify_node_ids(&nodes);
+	for (size_t i = 0; i < tal_count(nodes); i++) {
+		struct node *n = get_node(rstate, &nodes[i]);
+		if (n && n->bcast.index)
+			queue_peer_from_store(peer, &n->bcast);
+	}
+
+out:
+	minisketch_destroy(m);
+	return NULL;
 }
 #endif /* EXPERIMENTAL_FEATURES */

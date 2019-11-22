@@ -53,6 +53,9 @@ bool query_short_channel_ids(struct daemon *daemon,
 			     const u8 *query_flags,
 			     void (*cb)(struct peer *peer, bool complete));
 
+/* Helper to remove duplicates from node_id array */
+void uniquify_node_ids(struct node_id **ids);
+
 #if DEVELOPER
 struct io_plan *query_scids_req(struct io_conn *conn,
 				struct daemon *daemon,

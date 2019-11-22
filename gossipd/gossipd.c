@@ -469,7 +469,11 @@ static struct io_plan *peer_msg_in(struct io_conn *conn,
 	case WIRE_PONG:
 		err = handle_pong(peer, msg);
 		goto handled_relay;
-
+#if EXPERIMENTAL_FEATURES
+	case WIRE_GOSSIP_SET:
+		err = handle_gossip_set(peer, msg);
+		goto handled_relay;
+#endif
 	/* These are non-gossip messages (!is_msg_for_gossipd()) */
 	case WIRE_INIT:
 	case WIRE_ERROR:

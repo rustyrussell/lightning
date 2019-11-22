@@ -17,6 +17,7 @@ void update_node_sketches(struct routing_state *rstate,
 			  const struct node *node);
 void minisketch_blockheight_changed(struct routing_state *rstate,
 				    u32 prev_blockheight);
+const u8 *handle_gossip_set(struct peer *peer, const u8 *gossip_set);
 #else
 /* Noop versions */
 static inline void init_minisketch(struct routing_state *rstate)

@@ -1,0 +1,24 @@
+--- wire/extracted_peer_wire_csv	2019-11-20 11:04:22.447687449 +1030
++++ -	2019-11-21 21:05:42.181647811 +1030
+@@ -205,3 +186,21 @@
+ msgdata,gossip_timestamp_filter,chain_hash,chain_hash,
+ msgdata,gossip_timestamp_filter,first_timestamp,u32,
+ msgdata,gossip_timestamp_filter,timestamp_range,u32,
++msgtype,gossip_set,267,gossip_minisketch
++msgdata,gossip_set,chain_hash,chain_hash,
++msgdata,gossip_set,number_of_channels,u32,
++msgdata,gossip_set,number_of_channel_updates,u32,
++msgdata,gossip_set,number_of_node_announcements,u32,
++msgdata,gossip_set,block_number,u32,
++msgdata,gossip_set,sketch_len,u16,
++msgdata,gossip_set,sketch,byte,sketch_len
++msgdata,gossip_set,num_raw,u16,
++msgdata,gossip_set,raw,raw_scid_info,num_raw
++msgdata,gossip_set,num_excluded,u16,
++msgdata,gossip_set,excluded,short_channel_id,num_excluded
++subtype,raw_scid_info
++subtypedata,raw_scid_info,short_channel_id,short_channel_id,
++subtypedata,raw_scid_info,update_timestamp1,u32,
++subtypedata,raw_scid_info,update_timestamp2,u32,
++subtypedata,raw_scid_info,node_timestamp1,u32,
++subtypedata,raw_scid_info,node_timestamp2,u32,
