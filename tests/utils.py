@@ -10,3 +10,37 @@ def expected_features():
     """Return the expected features hexstring for this configuration"""
     # features 1, 3, 7, 9, 11, 13, 15 and 17 (0x02aaa2).
     return "02aaa2"
+
+
+def check_coin_moves(n, account_id, expected_moves):
+    moves = n.rpc.call('listcoinmoves_plugin')['coin_moves']
+    node_id = n.info['id']
+    acct_moves = [m for m in moves if m['account_id'] == account_id]
+    assert len(acct_moves) == len(expected_moves)
+    for mv, exp in list(zip(acct_moves, expected_moves)):
+        assert mv['version'] == 1
+        assert mv['node_id'] == node_id
+        assert mv['type'] == exp['type']
+        assert mv['credit'] == "{}msat".format(exp['credit'])
+        assert mv['debit'] == "{}msat".format(exp['debit'])
+        assert mv['tag'] == exp['tag']
+        assert mv['timestamp'] > 0
+        assert mv['unit_of_account'] == 'btc'
+        # chain moves should have blockheights
+        if mv['type'] == 'chain_mvt':
+            assert mv['blockheight'] is not None
+
+
+def account_balance(n, account_id):
+    moves = n.rpc.call('listcoinmoves_plugin')['coin_moves']
+    chan_moves = [m for m in moves if m['account_id'] == account_id]
+    assert len(chan_moves) > 0
+    m_sum = 0
+    for m in chan_moves:
+        m_sum += int(m['credit'][:-4])
+        m_sum -= int(m['debit'][:-4])
+    return m_sum
+
+
+def first_channel_id(n1, n2):
+    return only_one(only_one(n1.rpc.listpeers(n2.info['id'])['peers'])['channels'])['channel_id']
