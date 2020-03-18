@@ -78,7 +78,8 @@ static bool htlc_in_update_state(struct channel *channel,
 
 	wallet_htlc_update(channel->peer->ld->wallet,
 			   hin->dbid, newstate, hin->preimage,
-			   hin->badonion, hin->failonion, NULL);
+			   hin->badonion, hin->failonion, NULL,
+			   hin->we_filled);
 
 	hin->hstate = newstate;
 	return true;
@@ -94,7 +95,7 @@ static bool htlc_out_update_state(struct channel *channel,
 
 	wallet_htlc_update(channel->peer->ld->wallet, hout->dbid, newstate,
 			   hout->preimage, 0, hout->failonion,
-			   hout->failmsg);
+			   hout->failmsg, false);
 
 	hout->hstate = newstate;
 	return true;
@@ -187,7 +188,7 @@ static void failmsg_update_reply(struct subd *gossipd,
 			   cbdata->hin->dbid, cbdata->hin->hstate,
 			   cbdata->hin->preimage,
 			   cbdata->hin->badonion,
-			   cbdata->hin->failonion, NULL);
+			   cbdata->hin->failonion, NULL, false);
 
 	failed_htlc = mk_failed_htlc(tmpctx,
 				     cbdata->hin, cbdata->hin->failonion);
@@ -1017,6 +1018,7 @@ htlc_accepted_hook_callback(struct htlc_accepted_hook_payload *request,
 		local_fail_in_htlc(hin, take(failmsg));
 		break;
 	case htlc_accepted_resolve:
+		hin->we_filled = true;
 		fulfill_htlc(hin, &payment_preimage);
 		break;
 	}
@@ -1212,7 +1214,7 @@ static void fulfill_our_htlc_out(struct channel *channel, struct htlc_out *hout,
 
 	wallet_htlc_update(ld->wallet, hout->dbid, hout->hstate,
 			   hout->preimage, 0, hout->failonion,
-			   hout->failmsg);
+			   hout->failmsg, false);
 	/* Update channel stats */
 	wallet_channel_stats_incr_out_fulfilled(ld->wallet,
 						channel->dbid,
@@ -1381,7 +1383,7 @@ void onchain_failed_our_htlc(const struct channel *channel,
 	htlc_out_check(hout, __func__);
 	wallet_htlc_update(ld->wallet, hout->dbid, hout->hstate,
 			   hout->preimage, 0, hout->failonion,
-			   hout->failmsg);
+			   hout->failmsg, false);
 
 	if (hout->am_origin) {
 		assert(why != NULL);
