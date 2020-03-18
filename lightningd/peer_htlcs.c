@@ -7,6 +7,7 @@
 #include <ccan/tal/str/str.h>
 #include <channeld/gen_channel_wire.h>
 #include <common/blinding.h>
+#include <common/coin_mvt.h>
 #include <common/ecdh.h>
 #include <common/json_command.h>
 #include <common/jsonrpc_errors.h>
@@ -20,6 +21,7 @@
 #include <gossipd/gen_gossip_wire.h>
 #include <hsmd/gen_hsm_wire.h>
 #include <lightningd/chaintopology.h>
+#include <lightningd/coin_mvts.h>
 #include <lightningd/htlc_end.h>
 #include <lightningd/htlc_set.h>
 #include <lightningd/json.h>
@@ -1418,6 +1420,8 @@ static void remove_htlc_in(struct channel *channel, struct htlc_in *hin)
 	/* If we fulfilled their HTLC, credit us. */
 	if (hin->preimage) {
 		struct amount_msat oldamt = channel->our_msat;
+		const struct channel_coin_mvt *mvt;
+
 		if (!amount_msat_add(&channel->our_msat, channel->our_msat,
 				     hin->msat)) {
 			channel_internal_error(channel,
@@ -1436,6 +1440,15 @@ static void remove_htlc_in(struct channel *channel, struct htlc_in *hin)
 		if (amount_msat_greater(channel->our_msat,
 					channel->msat_to_us_max))
 			channel->msat_to_us_max = channel->our_msat;
+
+		/* Coins have definitively moved, log a movement */
+		mvt = new_channel_coin_mvt(hin, &channel->funding_txid,
+					   channel->funding_outnum,
+					   hin->payment_hash, 0, hin->msat,
+					   hin->we_filled ? INVOICE : ROUTED,
+					   /* FIXME: variable unit ? */
+					   true, BTC);
+		notify_channel_mvt(channel->peer->ld, mvt);
 	}
 
 	tal_free(hin);
@@ -1455,6 +1468,7 @@ static void remove_htlc_out(struct channel *channel, struct htlc_out *hout)
 	if (!hout->preimage) {
 		fail_out_htlc(hout, NULL, NULL);
 	} else {
+		const struct channel_coin_mvt *mvt;
 		struct amount_msat oldamt = channel->our_msat;
 		/* We paid for this HTLC, so deduct balance. */
 		if (!amount_msat_sub(&channel->our_msat, channel->our_msat,
@@ -1475,6 +1489,18 @@ static void remove_htlc_out(struct channel *channel, struct htlc_out *hout)
 					 &channel->our_msat));
 		if (amount_msat_less(channel->our_msat, channel->msat_to_us_min))
 			channel->msat_to_us_min = channel->our_msat;
+
+		/* Coins have definitively moved, log a movement */
+		mvt = new_channel_coin_mvt(hout, &channel->funding_txid,
+					   channel->funding_outnum,
+					   hout->payment_hash, hout->partid,
+					   hout->msat,
+					   /* routed payments flow through... */
+					   hout->am_origin ? INVOICE : ROUTED,
+					   /* FIXME: variable unit ? */
+					   false, BTC);
+
+		notify_channel_mvt(channel->peer->ld, mvt);
 	}
 
 	tal_free(hout);
@@ -2494,4 +2520,5 @@ static const struct json_command listforwards_command = {
 	"List all forwarded payments and their information", false,
 	"List all forwarded payments and their information"
 };
+
 AUTODATA(json_command, &listforwards_command);
