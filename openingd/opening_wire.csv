@@ -54,7 +54,7 @@ msgdata,opening_got_offer_reply,our_shutdown_scriptpubkey,?u8,shutdown_len
 msgtype,opening_funder_reply,6101
 msgdata,opening_funder_reply,their_config,channel_config,
 msgdata,opening_funder_reply,first_commit,bitcoin_tx,
-msgdata,opening_funder_reply,remote_commit_to_them_idx,s16,
+msgdata,opening_funder_reply,first_commit_to_them_idx,?u32,
 msgdata,opening_funder_reply,first_commit_sig,bitcoin_signature,
 msgdata,opening_funder_reply,pps,per_peer_state,
 msgdata,opening_funder_reply,revocation_basepoint,pubkey,
@@ -105,7 +105,7 @@ msgdata,opening_funder_failed,reason,wirestring,
 msgtype,opening_fundee,6003
 msgdata,opening_fundee,their_config,channel_config,
 msgdata,opening_fundee,first_commit,bitcoin_tx,
-msgdata,opening_fundee,remote_commit_to_them_idx,s16,
+msgdata,opening_fundee,first_commit_to_them_idx,?u32,
 msgdata,opening_fundee,first_commit_sig,bitcoin_signature,
 msgdata,opening_fundee,pps,per_peer_state,
 msgdata,opening_fundee,revocation_basepoint,pubkey,

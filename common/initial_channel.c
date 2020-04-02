@@ -70,8 +70,8 @@ struct bitcoin_tx *initial_channel_tx(const tal_t *ctx,
 				      const u8 **wscript,
 				      const struct channel *channel,
 				      const struct pubkey *per_commitment_point,
-				      s16 output_index[NUM_SIDES],
 				      enum side side,
+				      struct wally_tx_output *direct_outputs[NUM_SIDES],
 				      char** err_reason)
 {
 	struct keyset keyset;
@@ -106,7 +106,7 @@ struct bitcoin_tx *initial_channel_tx(const tal_t *ctx,
 				 channel->view[side].owed[!side],
 				 channel->config[!side].channel_reserve,
 				 0 ^ channel->commitment_number_obscurer,
-				 output_index,
+				 direct_outputs,
 				 side,
 				 err_reason);
 }

@@ -362,7 +362,7 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 	u16 funding_txout;
 	struct bitcoin_signature remote_commit_sig;
 	struct bitcoin_tx *remote_commit;
-	s16 remote_output_idx;
+	u32 *remote_output_idx;
 	u32 feerate;
 	struct channel *channel;
 	struct lightningd *ld = openingd->ld;
@@ -459,7 +459,7 @@ static void opening_fundee_finished(struct subd *openingd,
 	struct channel *channel;
 	u8 *remote_upfront_shutdown_script, *local_upfront_shutdown_script;
 	struct per_peer_state *pps;
-	s16 remote_output_idx;
+	u32 *remote_output_idx;
 
 	log_debug(uc->log, "Got opening_fundee_finish_response");
 
