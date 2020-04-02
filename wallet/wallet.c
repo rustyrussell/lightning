@@ -1009,7 +1009,9 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 			   db_column_int(stmt, 42),
 			   db_column_int(stmt, 43),
 			   db_column_arr(tmpctx, stmt, 44, u8),
-			   db_column_int(stmt, 45));
+			   db_column_int(stmt, 45),
+			   /* FIXME! load pbase */
+			   NULL);
 	return chan;
 }
 
@@ -1317,6 +1319,7 @@ void wallet_channel_save(struct wallet *w, struct channel *chan)
 
 	wallet_channel_config_save(w, &chan->our_config);
 
+	/* FIXME! Save pbase! */
 	stmt = db_prepare_v2(w->db, SQL("UPDATE channels SET"
 					"  shachain_remote_id=?,"
 					"  short_channel_id=?,"

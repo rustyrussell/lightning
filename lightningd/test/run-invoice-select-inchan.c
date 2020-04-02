@@ -47,9 +47,6 @@ bool channel_tell_depth(struct lightningd *ld UNNEEDED,
 				 const struct bitcoin_txid *txid UNNEEDED,
 				 u32 depth UNNEEDED)
 { fprintf(stderr, "channel_tell_depth called!\n"); abort(); }
-/* Generated stub for command_check_only */
-bool command_check_only(const struct command *cmd UNNEEDED)
-{ fprintf(stderr, "command_check_only called!\n"); abort(); }
 /* Generated stub for command_fail */
 struct command_result *command_fail(struct command *cmd UNNEEDED, errcode_t code UNNEEDED,
 				    const char *fmt UNNEEDED, ...)

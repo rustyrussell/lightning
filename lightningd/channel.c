@@ -187,7 +187,9 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 			    u32 feerate_base,
 			    u32 feerate_ppm,
 			    const u8 *remote_upfront_shutdown_script,
-			    bool option_static_remotekey)
+			    bool option_static_remotekey,
+			    /* NULL or stolen */
+			    struct penalty_base *pbase)
 {
 	struct channel *channel = tal(peer->ld, struct channel);
 
@@ -265,6 +267,7 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 		= tal_steal(channel, remote_upfront_shutdown_script);
 	channel->option_static_remotekey = option_static_remotekey;
 	channel->forgets = tal_arr(channel, struct command *, 0);
+	channel->pbase = tal_steal(channel, pbase);
 
 	list_add_tail(&peer->channels, &channel->list);
 	tal_add_destructor(channel, destroy_channel);

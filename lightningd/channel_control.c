@@ -512,6 +512,7 @@ void peer_start_channeld(struct channel *channel,
 				      /* Set at channel open, even if not
 				       * negotiated now! */
 				      channel->option_static_remotekey,
+				      channel->pbase,
 				      IFDEV(ld->dev_fast_gossip, false),
 				      IFDEV(dev_fail_process_onionpacket, false));
 

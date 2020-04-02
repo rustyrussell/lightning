@@ -123,6 +123,9 @@ struct channel {
 
 	/* Any commands trying to forget us. */
 	struct command **forgets;
+
+	/* Penalty base for penalty txs. */
+	struct penalty_base *pbase;
 };
 
 struct channel *new_channel(struct peer *peer, u64 dbid,
@@ -173,7 +176,9 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 			    u32 feerate_ppm,
 			    /* NULL or stolen */
 			    const u8 *remote_upfront_shutdown_script,
-			    bool option_static_remotekey);
+			    bool option_static_remotekey,
+			    /* NULL or stolen */
+			    struct penalty_base *pbase);
 
 void delete_channel(struct channel *channel);
 

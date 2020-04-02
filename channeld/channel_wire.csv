@@ -3,6 +3,7 @@
 #include <common/derive_basepoints.h>
 #include <common/features.h>
 #include <common/fee_states.h>
+#include <common/penalty_base.h>
 #include <common/per_peer_state.h>
 
 # Begin!  (passes gossipd-client fd)
@@ -71,6 +72,7 @@ msgdata,channel_init,upfront_shutdown_script,u8,upfront_shutdown_script_len
 msgdata,channel_init,remote_ann_node_sig,?secp256k1_ecdsa_signature,
 msgdata,channel_init,remote_ann_bitcoin_sig,?secp256k1_ecdsa_signature,
 msgdata,channel_init,option_static_remotekey,bool,
+msgdata,channel_init,last_penalty_base,?penalty_base,
 msgdata,channel_init,dev_fast_gossip,bool,
 msgdata,channel_init,dev_fail_process_onionpacket,bool,
 
@@ -154,6 +156,8 @@ msgdata,channel_got_revoke,next_per_commit_point,pubkey,
 msgdata,channel_got_revoke,fee_states,fee_states,
 msgdata,channel_got_revoke,num_changed,u16,
 msgdata,channel_got_revoke,changed,changed_htlc,num_changed
+msgdata,channel_got_revoke,penalty_base,?penalty_base,
+
 # Wait for reply, to make sure it's on disk before we continue
 # (eg. if we sent another commitment_signed, that would implicitly ack).
 msgtype,channel_got_revoke_reply,1122

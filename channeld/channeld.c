@@ -163,6 +163,9 @@ struct peer {
 
 	/* Empty commitments.  Spec violation, but a minor one. */
 	u64 last_empty_commitment;
+
+	/* Penalty base, if there is any output to them in last commit */
+	struct penalty_base *pbase, *next_pbase;
 };
 
 static u8 *create_channel_announcement(const tal_t *ctx, struct peer *peer);
@@ -904,6 +907,7 @@ static void send_commit(struct peer *peer)
 	struct bitcoin_tx **txs;
 	const u8 **wscripts;
 	const struct htlc **htlc_map;
+	struct wally_tx_output *to_local;
 
 #if DEVELOPER
 	/* Hack to suppress all commit sends if dev_disconnect says to */
@@ -994,7 +998,7 @@ static void send_commit(struct peer *peer)
 		return;
 	}
 
-	txs = channel_txs(tmpctx, &htlc_map, NULL,
+	txs = channel_txs(tmpctx, &htlc_map, &to_local,
 			  &wscripts, peer->channel, &peer->remote_per_commit,
 			  peer->next_index[REMOTE], REMOTE);
 
@@ -1014,6 +1018,13 @@ static void send_commit(struct peer *peer)
 
 	status_debug("Sending commit_sig with %zu htlc sigs",
 		     tal_count(htlc_sigs));
+
+	assert(!peer->next_pbase);
+	if (to_local) {
+		peer->next_pbase
+			= penalty_base_new(peer, peer->next_index[REMOTE]-1,
+					   txs[0], to_local);
+	}
 
 	peer->next_index[REMOTE]++;
 
@@ -1322,7 +1333,8 @@ static u8 *got_revoke_msg(const tal_t *ctx, u64 revoke_num,
 			  const struct secret *per_commitment_secret,
 			  const struct pubkey *next_per_commit_point,
 			  const struct htlc **changed_htlcs,
-			  const struct fee_states *fee_states)
+			  const struct fee_states *fee_states,
+			  const struct penalty_base *pbase)
 {
 	u8 *msg;
 	struct changed_htlc *changed = tal_arr(tmpctx, struct changed_htlc, 0);
@@ -1341,7 +1353,7 @@ static u8 *got_revoke_msg(const tal_t *ctx, u64 revoke_num,
 	}
 
 	msg = towire_channel_got_revoke(ctx, revoke_num, per_commitment_secret,
-					next_per_commit_point, fee_states, changed);
+					next_per_commit_point, fee_states, changed, pbase);
 	return msg;
 }
 
@@ -1401,9 +1413,16 @@ static void handle_peer_revoke_and_ack(struct peer *peer, const u8 *msg)
 	msg = got_revoke_msg(NULL, peer->revocations_received++,
 			     &old_commit_secret, &next_per_commit,
 			     changed_htlcs,
-			     peer->channel->fee_states);
+			     peer->channel->fee_states,
+			     peer->pbase);
 	master_wait_sync_reply(tmpctx, peer, take(msg),
 			       WIRE_CHANNEL_GOT_REVOKE_REPLY);
+
+	/* If we've just revoked commitment 0, move pbase for commitment 1 to
+	 * next position, and get ready for next commitment we send. */
+	tal_free(peer->pbase);
+	peer->pbase = peer->next_pbase;
+	peer->next_pbase = NULL;
 
 	peer->old_remote_per_commit = peer->remote_per_commit;
 	peer->remote_per_commit = next_per_commit;
@@ -1770,6 +1789,7 @@ static void resend_commitment(struct peer *peer, const struct changed_htlc *last
 	struct bitcoin_tx **txs;
 	const u8 **wscripts;
 	const struct htlc **htlc_map;
+	struct wally_tx_output *to_local;
 
 	status_debug("Retransmitting commitment, feerate LOCAL=%u REMOTE=%u",
 		     channel_feerate(peer->channel, LOCAL),
@@ -1821,7 +1841,7 @@ static void resend_commitment(struct peer *peer, const struct changed_htlc *last
 	}
 
 	/* Re-send the commitment_signed itself. */
-	txs = channel_txs(tmpctx, &htlc_map, NULL,
+	txs = channel_txs(tmpctx, &htlc_map, &to_local,
 			  &wscripts, peer->channel, &peer->remote_per_commit,
 			  peer->next_index[REMOTE]-1, REMOTE);
 
@@ -1830,6 +1850,13 @@ static void resend_commitment(struct peer *peer, const struct changed_htlc *last
 	msg = towire_commitment_signed(NULL, &peer->channel_id,
 				       &commit_sig.s, htlc_sigs);
 	sync_crypto_write(peer->pps, take(msg));
+
+	assert(!peer->next_pbase);
+	if (to_local) {
+		peer->next_pbase
+			= penalty_base_new(peer, peer->next_index[REMOTE]-1,
+					   txs[0], to_local);
+	}
 
 	/* If we have already received the revocation for the previous, the
 	 * other side shouldn't be asking for a retransmit! */
@@ -2826,6 +2853,7 @@ static void init_channel(struct peer *peer)
 				   &remote_ann_node_sig,
 				   &remote_ann_bitcoin_sig,
 				   &option_static_remotekey,
+				   &peer->pbase,
 				   &dev_fast_gossip,
 				   &dev_fail_process_onionpacket)) {
 		master_badmsg(WIRE_CHANNEL_INIT, msg);
@@ -2918,6 +2946,9 @@ static void init_channel(struct peer *peer)
 
 	/* from now we need keep watch over WIRE_CHANNEL_FUNDING_DEPTH */
 	peer->depth_togo = minimum_depth;
+
+	/* We'll set this when we next send a commitment_signed. */
+	peer->next_pbase = NULL;
 
 	/* OK, now we can process peer messages. */
 	if (reconnected)

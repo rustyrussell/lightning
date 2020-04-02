@@ -69,6 +69,9 @@ struct uncommitted_channel {
 
 	/* Our channel config. */
 	struct channel_config our_config;
+
+	/* Penalty base for first penalty tx (or NULL). */
+	struct penalty_base *pbase;
 };
 
 
@@ -265,7 +268,8 @@ wallet_commit_channel(struct lightningd *ld,
 			      ld->config.fee_base,
 			      ld->config.fee_per_satoshi,
 			      remote_upfront_shutdown_script,
-			      option_static_remotekey);
+			      option_static_remotekey,
+			      uc->pbase);
 
 	/* Now we finally put it in the database. */
 	wallet_channel_insert(ld->wallet, channel);
@@ -367,12 +371,11 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 	struct lightningd *ld = openingd->ld;
 	u8 *remote_upfront_shutdown_script;
 	struct per_peer_state *pps;
-	struct penalty_base *pbase;
 
 	/* This is a new channel_info.their_config so set its ID to 0 */
 	channel_info.their_config.id = 0;
 
-	if (!fromwire_opening_funder_reply(resp, resp,
+	if (!fromwire_opening_funder_reply(fc->uc, resp,
 					   &channel_info.their_config,
 					   &remote_commit,
 					   &remote_commit_sig,
@@ -389,7 +392,7 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 					   &feerate,
 					   &fc->uc->our_config.channel_reserve,
 					   &remote_upfront_shutdown_script,
-					   &pbase)) {
+					   &fc->uc->pbase)) {
 		log_broken(fc->uc->log,
 			   "bad OPENING_FUNDER_REPLY %s",
 			   tal_hex(resp, resp));
@@ -459,14 +462,13 @@ static void opening_fundee_finished(struct subd *openingd,
 	struct channel *channel;
 	u8 *remote_upfront_shutdown_script, *local_upfront_shutdown_script;
 	struct per_peer_state *pps;
-	struct penalty_base *pbase;
 
 	log_debug(uc->log, "Got opening_fundee_finish_response");
 
 	/* This is a new channel_info.their_config, set its ID to 0 */
 	channel_info.their_config.id = 0;
 
-	if (!fromwire_opening_fundee(tmpctx, reply,
+	if (!fromwire_opening_fundee(uc, reply,
 				     &channel_info.their_config,
 				     &remote_commit,
 				     &remote_commit_sig,
@@ -487,7 +489,7 @@ static void opening_fundee_finished(struct subd *openingd,
 				     &uc->our_config.channel_reserve,
 				     &local_upfront_shutdown_script,
 				     &remote_upfront_shutdown_script,
-				     &pbase)) {
+				     &uc->pbase)) {
 		log_broken(uc->log, "bad OPENING_FUNDEE_REPLY %s",
 			   tal_hex(reply, reply));
 		uncommitted_channel_disconnect(uc, LOG_BROKEN,
