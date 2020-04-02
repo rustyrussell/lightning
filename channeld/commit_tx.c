@@ -103,7 +103,8 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 	struct bitcoin_tx *tx;
 	size_t i, n, untrimmed;
 	u32 *cltvs;
-
+	struct htlc *dummy_to_local = (struct htlc *)0x01,
+		*dummy_to_remote = (struct htlc *)0x02;
 	if (!amount_msat_add(&total_pay, self_pay, other_pay))
 		abort();
 	assert(!amount_msat_greater_sat(total_pay, funding));
@@ -216,7 +217,8 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 		struct amount_sat amount = amount_msat_to_sat_round_down(self_pay);
 
 		bitcoin_tx_add_output(tx, p2wsh, amount);
-		(*htlcmap)[n] = NULL;
+		/* Add a dummy entry to the htlcmap so we can recognize it later */
+		(*htlcmap)[n] = dummy_to_local;
 		/* We don't assign cltvs[n]: if we use it, order doesn't matter.
 		 * However, valgrind will warn us something wierd is happening */
 		SUPERVERBOSE("# to-local amount %s wscript %s\n",
@@ -249,7 +251,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 		 */
 		int pos = bitcoin_tx_add_output(tx, p2wpkh, amount);
 		assert(pos == n);
-		(*htlcmap)[n] = NULL;
+		(*htlcmap)[n] = dummy_to_remote;
 		/* We don't assign cltvs[n]: if we use it, order doesn't matter.
 		 * However, valgrind will warn us something wierd is happening */
 		SUPERVERBOSE("# to-remote amount %s P2WPKH(%s)\n",
@@ -305,6 +307,18 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 	 */
 	u32 sequence = (0x80000000 | ((obscured_commitment_number>>24) & 0xFFFFFF));
 	bitcoin_tx_add_input(tx, funding_txid, funding_txout, sequence, funding, NULL);
+
+	/* Identify the direct outputs (to_us, to_them). */
+	output_index[LOCAL] = output_index[REMOTE] = -1;
+	for (size_t i = 0; i < tx->wtx->num_outputs; i++) {
+		if ((*htlcmap)[i] == dummy_to_local) {
+			(*htlcmap)[i] = NULL;
+			output_index[LOCAL] = i;
+		} else if ((*htlcmap)[i] == dummy_to_remote) {
+			(*htlcmap)[i] = NULL;
+			output_index[REMOTE] = i;
+		}
+	}
 
 	bitcoin_tx_finalize(tx);
 	assert(bitcoin_tx_check(tx));
