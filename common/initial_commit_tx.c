@@ -71,6 +71,7 @@ struct bitcoin_tx *initial_commit_tx(const tal_t *ctx,
 				     struct amount_msat other_pay,
 				     struct amount_sat self_reserve,
 				     u64 obscured_commitment_number,
+				     s16 output_index[NUM_SIDES],
 				     enum side side,
 				     char** err_reason)
 {

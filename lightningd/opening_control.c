@@ -362,6 +362,7 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 	u16 funding_txout;
 	struct bitcoin_signature remote_commit_sig;
 	struct bitcoin_tx *remote_commit;
+	s16 remote_output_idx;
 	u32 feerate;
 	struct channel *channel;
 	struct lightningd *ld = openingd->ld;
@@ -374,6 +375,7 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 	if (!fromwire_opening_funder_reply(resp, resp,
 					   &channel_info.their_config,
 					   &remote_commit,
+					   &remote_output_idx,
 					   &remote_commit_sig,
 					   &pps,
 					   &channel_info.theirbase.revocation,
@@ -457,6 +459,7 @@ static void opening_fundee_finished(struct subd *openingd,
 	struct channel *channel;
 	u8 *remote_upfront_shutdown_script, *local_upfront_shutdown_script;
 	struct per_peer_state *pps;
+	s16 remote_output_idx;
 
 	log_debug(uc->log, "Got opening_fundee_finish_response");
 
@@ -464,26 +467,27 @@ static void opening_fundee_finished(struct subd *openingd,
 	channel_info.their_config.id = 0;
 
 	if (!fromwire_opening_fundee(tmpctx, reply,
-					   &channel_info.their_config,
-					   &remote_commit,
-					   &remote_commit_sig,
-					   &pps,
-					   &channel_info.theirbase.revocation,
-					   &channel_info.theirbase.payment,
-					   &channel_info.theirbase.htlc,
-					   &channel_info.theirbase.delayed_payment,
-					   &channel_info.remote_per_commit,
-					   &channel_info.remote_fundingkey,
-					   &funding_txid,
-					   &funding_outnum,
-					   &funding,
-					   &push,
-					   &channel_flags,
-					   &feerate,
-					   &funding_signed,
-				           &uc->our_config.channel_reserve,
-					   &local_upfront_shutdown_script,
-				           &remote_upfront_shutdown_script)) {
+				     &channel_info.their_config,
+				     &remote_commit,
+				     &remote_output_idx,
+				     &remote_commit_sig,
+				     &pps,
+				     &channel_info.theirbase.revocation,
+				     &channel_info.theirbase.payment,
+				     &channel_info.theirbase.htlc,
+				     &channel_info.theirbase.delayed_payment,
+				     &channel_info.remote_per_commit,
+				     &channel_info.remote_fundingkey,
+				     &funding_txid,
+				     &funding_outnum,
+				     &funding,
+				     &push,
+				     &channel_flags,
+				     &feerate,
+				     &funding_signed,
+				     &uc->our_config.channel_reserve,
+				     &local_upfront_shutdown_script,
+				     &remote_upfront_shutdown_script)) {
 		log_broken(uc->log, "bad OPENING_FUNDEE_REPLY %s",
 			   tal_hex(reply, reply));
 		uncommitted_channel_disconnect(uc, LOG_BROKEN,
