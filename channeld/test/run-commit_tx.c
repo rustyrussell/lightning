@@ -467,7 +467,6 @@ int main(void)
 	u64 commitment_number, cn_obscurer;
 	struct amount_msat to_local, to_remote;
 	const struct htlc **htlcs, **htlc_map, **htlc_map2, **inv_htlcs;
-	int output_index[NUM_SIDES];
 
 	secp256k1_ctx = secp256k1_context_create(SECP256K1_CONTEXT_VERIFY
 						 | SECP256K1_CONTEXT_SIGN);
@@ -733,8 +732,8 @@ int main(void)
 		       dust_limit,
 		       to_local,
 		       to_remote,
-		       NULL, &htlc_map, commitment_number ^ cn_obscurer,
-		       output_index, LOCAL);
+		       NULL, &htlc_map, NULL, commitment_number ^ cn_obscurer,
+		       LOCAL);
 	print_superverbose = false;
 	tx2 = commit_tx(tmpctx,
 			&funding_txid, funding_output_index,
@@ -745,8 +744,8 @@ int main(void)
 			dust_limit,
 			to_local,
 			to_remote,
-			NULL, &htlc_map2, commitment_number ^ cn_obscurer,
-			output_index, REMOTE);
+			NULL, &htlc_map2, NULL, commitment_number ^ cn_obscurer,
+			REMOTE);
 	tx_must_be_eq(tx, tx2);
 	report(tx, wscript, &x_remote_funding_privkey, &remote_funding_pubkey,
 	       &local_funding_privkey, &local_funding_pubkey,
@@ -789,8 +788,8 @@ int main(void)
 		       dust_limit,
 		       to_local,
 		       to_remote,
-		       htlcs, &htlc_map, commitment_number ^ cn_obscurer,
-		       output_index, LOCAL);
+		       htlcs, &htlc_map, NULL, commitment_number ^ cn_obscurer,
+		       LOCAL);
 	print_superverbose = false;
 	tx2 = commit_tx(tmpctx,
 			&funding_txid, funding_output_index,
@@ -801,9 +800,9 @@ int main(void)
 			dust_limit,
 			to_local,
 			to_remote,
-			inv_htlcs, &htlc_map2,
+			inv_htlcs, &htlc_map2, NULL,
 			commitment_number ^ cn_obscurer,
-			output_index, REMOTE);
+			REMOTE);
 	tx_must_be_eq(tx, tx2);
 	report(tx, wscript, &x_remote_funding_privkey, &remote_funding_pubkey,
 	       &local_funding_privkey, &local_funding_pubkey,
@@ -833,9 +832,9 @@ int main(void)
 				  dust_limit,
 				  to_local,
 				  to_remote,
-				  htlcs, &htlc_map,
+				  htlcs, &htlc_map, NULL,
 				  commitment_number ^ cn_obscurer,
-				  output_index, LOCAL);
+				  LOCAL);
 		/* This is what it would look like for peer generating it! */
 		tx2 = commit_tx(tmpctx,
 				&funding_txid, funding_output_index,
@@ -846,9 +845,9 @@ int main(void)
 				dust_limit,
 				to_local,
 				to_remote,
-				inv_htlcs, &htlc_map2,
+				inv_htlcs, &htlc_map2, NULL,
 				commitment_number ^ cn_obscurer,
-				output_index, REMOTE);
+				REMOTE);
 		tx_must_be_eq(newtx, tx2);
 #ifdef DEBUG
 		if (feerate_per_kw % 100000 == 0)
@@ -878,9 +877,9 @@ int main(void)
 			       dust_limit,
 			       to_local,
 			       to_remote,
-			       htlcs, &htlc_map,
+			       htlcs, &htlc_map, NULL,
 			       commitment_number ^ cn_obscurer,
-			       output_index, LOCAL);
+			       LOCAL);
 		report(tx, wscript,
 		       &x_remote_funding_privkey, &remote_funding_pubkey,
 		       &local_funding_privkey, &local_funding_pubkey,
@@ -915,9 +914,9 @@ int main(void)
 				  dust_limit,
 				  to_local,
 				  to_remote,
-				  htlcs, &htlc_map,
+				  htlcs, &htlc_map, NULL,
 				  commitment_number ^ cn_obscurer,
-				  output_index, LOCAL);
+				  LOCAL);
 		report(newtx, wscript,
 		       &x_remote_funding_privkey, &remote_funding_pubkey,
 		       &local_funding_privkey, &local_funding_pubkey,
@@ -974,9 +973,9 @@ int main(void)
 			       dust_limit,
 			       to_local,
 			       to_remote,
-			       htlcs, &htlc_map,
+			       htlcs, &htlc_map, NULL,
 			       commitment_number ^ cn_obscurer,
-			       output_index, LOCAL);
+			       LOCAL);
 		report(tx, wscript,
 		       &x_remote_funding_privkey, &remote_funding_pubkey,
 		       &local_funding_privkey, &local_funding_pubkey,

@@ -904,7 +904,6 @@ static void send_commit(struct peer *peer)
 	struct bitcoin_tx **txs;
 	const u8 **wscripts;
 	const struct htlc **htlc_map;
-	int output_index[NUM_SIDES];
 
 #if DEVELOPER
 	/* Hack to suppress all commit sends if dev_disconnect says to */
@@ -995,9 +994,9 @@ static void send_commit(struct peer *peer)
 		return;
 	}
 
-	txs = channel_txs(tmpctx, &htlc_map,
+	txs = channel_txs(tmpctx, &htlc_map, NULL,
 			  &wscripts, peer->channel, &peer->remote_per_commit,
-			  peer->next_index[REMOTE], output_index, REMOTE);
+			  peer->next_index[REMOTE], REMOTE);
 
 	htlc_sigs = calc_commitsigs(tmpctx, peer, txs, wscripts, htlc_map, peer->next_index[REMOTE],
 				    &commit_sig);
@@ -1198,7 +1197,6 @@ static void handle_peer_commit_sig(struct peer *peer, const u8 *msg)
 	const struct htlc **htlc_map, **changed_htlcs;
 	const u8 **wscripts;
 	size_t i;
-	int output_index[NUM_SIDES];
 
 	changed_htlcs = tal_arr(msg, const struct htlc *, 0);
 	if (!channel_rcvd_commit(peer->channel, &changed_htlcs)) {
@@ -1236,9 +1234,9 @@ static void handle_peer_commit_sig(struct peer *peer, const u8 *msg)
 	commit_sig.sighash_type = SIGHASH_ALL;
 
 	txs =
-	    channel_txs(tmpctx, &htlc_map,
+	    channel_txs(tmpctx, &htlc_map, NULL,
 			&wscripts, peer->channel, &peer->next_local_per_commit,
-			peer->next_index[LOCAL], output_index, LOCAL);
+			peer->next_index[LOCAL], LOCAL);
 
 	if (!derive_simple_key(&peer->channel->basepoints[REMOTE].htlc,
 			       &peer->next_local_per_commit, &remote_htlckey))
@@ -1772,7 +1770,6 @@ static void resend_commitment(struct peer *peer, const struct changed_htlc *last
 	struct bitcoin_tx **txs;
 	const u8 **wscripts;
 	const struct htlc **htlc_map;
-	int output_index[NUM_SIDES];
 
 	status_debug("Retransmitting commitment, feerate LOCAL=%u REMOTE=%u",
 		     channel_feerate(peer->channel, LOCAL),
@@ -1824,9 +1821,9 @@ static void resend_commitment(struct peer *peer, const struct changed_htlc *last
 	}
 
 	/* Re-send the commitment_signed itself. */
-	txs = channel_txs(tmpctx, &htlc_map,
+	txs = channel_txs(tmpctx, &htlc_map, NULL,
 			  &wscripts, peer->channel, &peer->remote_per_commit,
-			  peer->next_index[REMOTE]-1, output_index, REMOTE);
+			  peer->next_index[REMOTE]-1, REMOTE);
 
 	htlc_sigs = calc_commitsigs(tmpctx, peer, txs, wscripts, htlc_map, peer->next_index[REMOTE]-1,
 				    &commit_sig);

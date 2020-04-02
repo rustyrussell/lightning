@@ -357,7 +357,6 @@ int main(void)
 	const struct htlc **htlc_map, **htlcs;
 	const u8 *funding_wscript, **wscripts;
 	size_t i;
-	int output_index[NUM_SIDES];
 
 	wally_init(0);
 	secp256k1_ctx = wally_get_secp_context();
@@ -519,11 +518,11 @@ int main(void)
 			   local_config->dust_limit,
 			   to_local,
 			   to_remote,
-			   NULL, &htlc_map, 0x2bb038521914 ^ 42, output_index, LOCAL);
+			   NULL, &htlc_map, NULL, 0x2bb038521914 ^ 42, LOCAL);
 
 	txs = channel_txs(tmpctx,
-			  &htlc_map, &wscripts,
-			  lchannel, &local_per_commitment_point, 42, output_index, LOCAL);
+			  &htlc_map, NULL, &wscripts,
+			  lchannel, &local_per_commitment_point, 42, LOCAL);
 	assert(tal_count(txs) == 1);
 	assert(tal_count(htlc_map) == 2);
 	assert(tal_count(wscripts) == 1);
@@ -531,8 +530,8 @@ int main(void)
 	tx_must_be_eq(txs[0], raw_tx);
 
 	txs2 = channel_txs(tmpctx,
-			   &htlc_map, &wscripts,
-			   rchannel, &local_per_commitment_point, 42, output_index, REMOTE);
+			   &htlc_map, NULL, &wscripts,
+			   rchannel, &local_per_commitment_point, 42, REMOTE);
 	txs_must_be_eq(txs, txs2);
 
 	/* BOLT #3:
@@ -558,11 +557,11 @@ int main(void)
 	assert(lchannel->view[REMOTE].owed[REMOTE].millisatoshis
 	       == rchannel->view[LOCAL].owed[LOCAL].millisatoshis);
 
-	txs = channel_txs(tmpctx, &htlc_map, &wscripts,
-			  lchannel, &local_per_commitment_point, 42, output_index, LOCAL);
+	txs = channel_txs(tmpctx, &htlc_map, NULL, &wscripts,
+			  lchannel, &local_per_commitment_point, 42, LOCAL);
 	assert(tal_count(txs) == 1);
-	txs2 = channel_txs(tmpctx, &htlc_map, &wscripts,
-			   rchannel, &local_per_commitment_point, 42, output_index, REMOTE);
+	txs2 = channel_txs(tmpctx, &htlc_map, NULL, &wscripts,
+			   rchannel, &local_per_commitment_point, 42, REMOTE);
 	txs_must_be_eq(txs, txs2);
 
 	update_feerate(lchannel, feerate_per_kw[LOCAL]);
@@ -576,11 +575,11 @@ int main(void)
 	assert(lchannel->view[REMOTE].owed[REMOTE].millisatoshis
 	       == rchannel->view[LOCAL].owed[LOCAL].millisatoshis);
 
-	txs = channel_txs(tmpctx, &htlc_map, &wscripts,
-			  lchannel, &local_per_commitment_point, 42, output_index, LOCAL);
+	txs = channel_txs(tmpctx, &htlc_map, NULL, &wscripts,
+			  lchannel, &local_per_commitment_point, 42, LOCAL);
 	assert(tal_count(txs) == 6);
-	txs2 = channel_txs(tmpctx, &htlc_map, &wscripts,
-			   rchannel, &local_per_commitment_point, 42, output_index, REMOTE);
+	txs2 = channel_txs(tmpctx, &htlc_map, NULL, &wscripts,
+			   rchannel, &local_per_commitment_point, 42, REMOTE);
 	txs_must_be_eq(txs, txs2);
 
 	/* FIXME: Compare signatures! */
@@ -642,17 +641,17 @@ int main(void)
 		    tmpctx, &funding_txid, funding_output_index,
 		    funding_amount, LOCAL, remote_config->to_self_delay,
 		    &keyset, feerate_per_kw[LOCAL], local_config->dust_limit,
-		    to_local, to_remote, htlcs, &htlc_map, 0x2bb038521914 ^ 42,
-		    output_index, LOCAL);
+		    to_local, to_remote, htlcs, &htlc_map, NULL,
+		    0x2bb038521914 ^ 42, LOCAL);
 
-		txs = channel_txs(tmpctx, &htlc_map, &wscripts,
+		txs = channel_txs(tmpctx, &htlc_map, NULL, &wscripts,
 				  lchannel, &local_per_commitment_point, 42,
-				  output_index, LOCAL);
+				  LOCAL);
 		tx_must_be_eq(txs[0], raw_tx);
 
-		txs2 = channel_txs(tmpctx, &htlc_map, &wscripts,
+		txs2 = channel_txs(tmpctx, &htlc_map, NULL, &wscripts,
 				   rchannel, &local_per_commitment_point,
-				   42, output_index, REMOTE);
+				   42, REMOTE);
 		txs_must_be_eq(txs, txs2);
 	}
 

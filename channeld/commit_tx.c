@@ -94,8 +94,8 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 			     struct amount_msat other_pay,
 			     const struct htlc **htlcs,
 			     const struct htlc ***htlcmap,
+			     struct wally_tx_output *direct_outputs[NUM_SIDES],
 			     u64 obscured_commitment_number,
-			     int output_index[NUM_SIDES],
 			     enum side side)
 {
 	struct amount_sat base_fee;
