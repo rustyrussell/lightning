@@ -71,7 +71,7 @@ struct bitcoin_tx *initial_channel_tx(const tal_t *ctx,
 				      const struct channel *channel,
 				      const struct pubkey *per_commitment_point,
 				      enum side side,
-				      struct wally_tx_output *direct_outputs[NUM_SIDES],
+				      struct wally_tx_output **to_local,
 				      char** err_reason)
 {
 	struct keyset keyset;
@@ -106,8 +106,8 @@ struct bitcoin_tx *initial_channel_tx(const tal_t *ctx,
 				 channel->view[side].owed[!side],
 				 channel->config[!side].channel_reserve,
 				 0 ^ channel->commitment_number_obscurer,
-				 direct_outputs,
 				 side,
+				 to_local,
 				 err_reason);
 }
 

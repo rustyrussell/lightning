@@ -71,8 +71,8 @@ struct bitcoin_tx *initial_commit_tx(const tal_t *ctx,
 				     struct amount_msat other_pay,
 				     struct amount_sat self_reserve,
 				     u64 obscured_commitment_number,
-				     struct wally_tx_output *direct_outputs[NUM_SIDES],
 				     enum side side,
+				     struct wally_tx_output **to_local,
 				     char** err_reason)
 {
 	struct amount_sat base_fee;
@@ -81,7 +81,7 @@ struct bitcoin_tx *initial_commit_tx(const tal_t *ctx,
 	struct amount_msat total_pay;
 	struct amount_sat amount;
 	u32 sequence;
-	void *dummy_local = (void *)LOCAL, *dummy_remote = (void *)REMOTE;
+	void *dummy_local = (void *)0x1;
 	const void *output_order[NUM_SIDES];
 
 	if (!amount_msat_add(&total_pay, self_pay, other_pay))
@@ -206,7 +206,7 @@ struct bitcoin_tx *initial_commit_tx(const tal_t *ctx,
 		    tx, scriptpubkey_p2wpkh(tx, &keyset->other_payment_key),
 		    amount);
 		assert(pos == n);
-		output_order[n] = dummy_remote;
+		output_order[n] = NULL;
 		n++;
 	}
 
@@ -246,13 +246,11 @@ struct bitcoin_tx *initial_commit_tx(const tal_t *ctx,
 	sequence = (0x80000000 | ((obscured_commitment_number>>24) & 0xFFFFFF));
 	bitcoin_tx_add_input(tx, funding_txid, funding_txout, sequence, funding, NULL);
 
-	if (direct_outputs) {
-		direct_outputs[LOCAL] = direct_outputs[REMOTE] = NULL;
+	if (to_local) {
+		*to_local = NULL;
 		for (size_t i = 0; i < tx->wtx->num_outputs; i++) {
 			if (output_order[i] == dummy_local)
-				direct_outputs[LOCAL] = tx->wtx->outputs + i;
-			else if (output_order[i] == dummy_remote)
-				direct_outputs[REMOTE] = tx->wtx->outputs + i;
+				*to_local = tx->wtx->outputs + i;
 		}
 	}
 

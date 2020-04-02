@@ -84,8 +84,8 @@ static inline struct amount_sat commit_tx_base_fee(u32 feerate_per_kw,
  * @other_pay: amount to pay directly to the other side
  * @self_reserve: reserve the other side insisted we have
  * @obscured_commitment_number: number to encode in commitment transaction
- * @direct_outputs: If non-NULL, fill with pointers to the direct (non-HTLC) outputs (or NULL if none).
  * @side: side to generate commitment transaction for.
+ * @to_local: If non-NULL, point to the to-local output (or NULL if none)
  * @err_reason: When NULL is returned, this will point to a human readable reason.
  *
  * We need to be able to generate the remote side's tx to create signatures,
@@ -105,8 +105,8 @@ struct bitcoin_tx *initial_commit_tx(const tal_t *ctx,
 				     struct amount_msat other_pay,
 				     struct amount_sat self_reserve,
 				     u64 obscured_commitment_number,
-				     struct wally_tx_output *direct_outputs[NUM_SIDES],
 				     enum side side,
+				     struct wally_tx_output **to_local,
 				     char** err_reason);
 
 /* try_subtract_fee - take away this fee from the funder (and return true), or all if insufficient (and return false). */

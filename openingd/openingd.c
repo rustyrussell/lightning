@@ -652,7 +652,7 @@ static bool funder_finalize_channel_setup(struct state *state,
 					  struct amount_msat local_msat,
 					  struct bitcoin_signature *sig,
 					  struct bitcoin_tx **tx,
-					  struct wally_tx_output *direct_outputs[NUM_SIDES])
+					  struct wally_tx_output **to_local)
 {
 	u8 *msg;
 	struct channel_id id_in;
@@ -703,7 +703,7 @@ static bool funder_finalize_channel_setup(struct state *state,
 	/* This gives us their first commitment transaction. */
 	*tx = initial_channel_tx(state, &wscript, state->channel,
 				&state->first_per_commitment_point[REMOTE],
-				REMOTE, direct_outputs, &err_reason);
+				REMOTE, to_local, &err_reason);
 	if (!*tx) {
 		/* This should not happen: we should never create channels we
 		 * can't afford the fees for after reserve. */
@@ -813,7 +813,7 @@ static bool funder_finalize_channel_setup(struct state *state,
 	 * signature they sent against that. */
 	*tx = initial_channel_tx(state, &wscript, state->channel,
 				 &state->first_per_commitment_point[LOCAL],
-				 LOCAL, direct_outputs, &err_reason);
+				 LOCAL, NULL, &err_reason);
 	if (!*tx) {
 		negotiation_failed(state, true,
 				   "Could not meet our fees and reserve: %s", err_reason);
@@ -846,7 +846,7 @@ static u8 *funder_channel_complete(struct state *state)
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
 	struct amount_msat local_msat;
-	struct wally_tx_output *direct_outputs[NUM_SIDES];
+	struct wally_tx_output *to_local;
 	u32 *their_out_idx;
 
 	/* Update the billboard about what we're doing*/
@@ -865,12 +865,12 @@ static u8 *funder_channel_complete(struct state *state)
 					     &state->funding));
 
 	if (!funder_finalize_channel_setup(state, local_msat, &sig, &tx,
-					   direct_outputs))
+					   &to_local))
 		return NULL;
 
-	if (direct_outputs[LOCAL]) {
+	if (to_local) {
 		their_out_idx = tal(tmpctx, u32);
-		*their_out_idx = tx->wtx->outputs - direct_outputs[LOCAL];
+		*their_out_idx = tx->wtx->outputs - to_local;
 	} else
 		their_out_idx = NULL;
 
@@ -907,7 +907,7 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 	const u8 *wscript;
 	u8 channel_flags;
 	char* err_reason;
-	struct wally_tx_output *direct_outputs[NUM_SIDES];
+	struct wally_tx_output *to_local;
 	u32 *their_out_idx;
 
 	/* BOLT #2:
@@ -1246,7 +1246,7 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 	 */
 	remote_commit = initial_channel_tx(state, &wscript, state->channel,
 					   &state->first_per_commitment_point[REMOTE],
-					   REMOTE, direct_outputs, &err_reason);
+					   REMOTE, &to_local, &err_reason);
 	if (!remote_commit) {
 		negotiation_failed(state, false,
 				   "Could not meet their fees and reserve: %s", err_reason);
@@ -1273,9 +1273,9 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 	assert(sig.sighash_type == SIGHASH_ALL);
 	msg = towire_funding_signed(state, &state->channel_id, &sig.s);
 
-	if (direct_outputs[LOCAL]) {
+	if (to_local) {
 		their_out_idx = tal(tmpctx, u32);
-		*their_out_idx = remote_commit->wtx->outputs - direct_outputs[LOCAL];
+		*their_out_idx = remote_commit->wtx->outputs - to_local;
 	} else
 		their_out_idx = NULL;
 

@@ -94,7 +94,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 			     struct amount_msat other_pay,
 			     const struct htlc **htlcs,
 			     const struct htlc ***htlcmap,
-			     struct wally_tx_output *direct_outputs[NUM_SIDES],
+			     struct wally_tx_output **to_local,
 			     u64 obscured_commitment_number,
 			     enum side side)
 {
@@ -103,8 +103,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 	struct bitcoin_tx *tx;
 	size_t i, n, untrimmed;
 	u32 *cltvs;
-	struct htlc *dummy_to_local = (struct htlc *)0x01,
-		*dummy_to_remote = (struct htlc *)0x02;
+	struct htlc *dummy_to_local = to_local ? (struct htlc *)0x01 : NULL;
 	if (!amount_msat_add(&total_pay, self_pay, other_pay))
 		abort();
 	assert(!amount_msat_greater_sat(total_pay, funding));
@@ -218,7 +217,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 
 		bitcoin_tx_add_output(tx, p2wsh, amount);
 		/* Add a dummy entry to the htlcmap so we can recognize it later */
-		(*htlcmap)[n] = direct_outputs ? dummy_to_local : NULL;
+		(*htlcmap)[n] = dummy_to_local;
 		/* We don't assign cltvs[n]: if we use it, order doesn't matter.
 		 * However, valgrind will warn us something wierd is happening */
 		SUPERVERBOSE("# to-local amount %s wscript %s\n",
@@ -251,7 +250,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 		 */
 		int pos = bitcoin_tx_add_output(tx, p2wpkh, amount);
 		assert(pos == n);
-		(*htlcmap)[n] = direct_outputs ? dummy_to_remote : NULL;
+		(*htlcmap)[n] = NULL;
 		/* We don't assign cltvs[n]: if we use it, order doesn't matter.
 		 * However, valgrind will warn us something wierd is happening */
 		SUPERVERBOSE("# to-remote amount %s P2WPKH(%s)\n",
@@ -309,16 +308,12 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 	bitcoin_tx_add_input(tx, funding_txid, funding_txout, sequence, funding, NULL);
 
 	/* Identify the direct outputs (to_us, to_them). */
-	if (direct_outputs) {
-		direct_outputs[LOCAL] = direct_outputs[REMOTE] = NULL;
-
+	if (to_local) {
+		*to_local = NULL;
 		for (size_t i = 0; i < tx->wtx->num_outputs; i++) {
 			if ((*htlcmap)[i] == dummy_to_local) {
 				(*htlcmap)[i] = NULL;
-				direct_outputs[LOCAL] = tx->wtx->outputs + i;
-			} else if ((*htlcmap)[i] == dummy_to_remote) {
-				(*htlcmap)[i] = NULL;
-				direct_outputs[REMOTE] = tx->wtx->outputs + i;
+				*to_local = tx->wtx->outputs + i;
 			}
 		}
 	}

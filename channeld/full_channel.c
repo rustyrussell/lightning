@@ -280,7 +280,7 @@ static void add_htlcs(struct bitcoin_tx ***txs,
 /* FIXME: We could cache these. */
 struct bitcoin_tx **channel_txs(const tal_t *ctx,
 				const struct htlc ***htlcmap,
-				struct wally_tx_output *direct_outputs[NUM_SIDES],
+				struct wally_tx_output **to_local,
 				const u8 ***wscripts,
 				const struct channel *channel,
 				const struct pubkey *per_commitment_point,
@@ -308,7 +308,7 @@ struct bitcoin_tx **channel_txs(const tal_t *ctx,
 	    channel->config[!side].to_self_delay, &keyset,
 	    channel_feerate(channel, side),
 	    channel->config[side].dust_limit, channel->view[side].owed[side],
-	    channel->view[side].owed[!side], committed, htlcmap, direct_outputs,
+	    channel->view[side].owed[!side], committed, htlcmap, to_local,
 	    commitment_number ^ channel->commitment_number_obscurer,
 	    side);
 
