@@ -51,6 +51,7 @@ struct channel *new_full_channel(const tal_t *ctx,
  * @wscripts: Pointer to array of wscript for each tx returned (alloced off @ctx)
  * @per_commitment_point: Per-commitment point to determine keys
  * @commitment_number: The index of this commitment.
+ * @output_index: Output index for the direct (non-HTLC) outputs.
  * @side: which side to get the commitment transaction for
  *
  * Returns the unsigned commitment transaction for the committed state
@@ -63,6 +64,7 @@ struct bitcoin_tx **channel_txs(const tal_t *ctx,
 				const struct channel *channel,
 				const struct pubkey *per_commitment_point,
 				u64 commitment_number,
+				int output_index[NUM_SIDES],
 				enum side side);
 
 /**

@@ -284,6 +284,7 @@ struct bitcoin_tx **channel_txs(const tal_t *ctx,
 				const struct channel *channel,
 				const struct pubkey *per_commitment_point,
 				u64 commitment_number,
+				int output_index[NUM_SIDES],
 				enum side side)
 {
 	struct bitcoin_tx **txs;
@@ -308,7 +309,8 @@ struct bitcoin_tx **channel_txs(const tal_t *ctx,
 	    channel_feerate(channel, side),
 	    channel->config[side].dust_limit, channel->view[side].owed[side],
 	    channel->view[side].owed[!side], committed, htlcmap,
-	    commitment_number ^ channel->commitment_number_obscurer, side);
+	    commitment_number ^ channel->commitment_number_obscurer, output_index,
+	    side);
 
 	*wscripts = tal_arr(ctx, const u8 *, 1);
 	(*wscripts)[0] = bitcoin_redeem_2of2(*wscripts,

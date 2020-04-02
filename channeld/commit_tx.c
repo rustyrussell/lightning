@@ -95,6 +95,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 			     const struct htlc **htlcs,
 			     const struct htlc ***htlcmap,
 			     u64 obscured_commitment_number,
+			     int output_index[NUM_SIDES],
 			     enum side side)
 {
 	struct amount_sat base_fee;
