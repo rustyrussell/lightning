@@ -362,12 +362,12 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 	u16 funding_txout;
 	struct bitcoin_signature remote_commit_sig;
 	struct bitcoin_tx *remote_commit;
-	u32 *remote_output_idx;
 	u32 feerate;
 	struct channel *channel;
 	struct lightningd *ld = openingd->ld;
 	u8 *remote_upfront_shutdown_script;
 	struct per_peer_state *pps;
+	struct penalty_base *pbase;
 
 	/* This is a new channel_info.their_config so set its ID to 0 */
 	channel_info.their_config.id = 0;
@@ -375,7 +375,6 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 	if (!fromwire_opening_funder_reply(resp, resp,
 					   &channel_info.their_config,
 					   &remote_commit,
-					   &remote_output_idx,
 					   &remote_commit_sig,
 					   &pps,
 					   &channel_info.theirbase.revocation,
@@ -389,7 +388,8 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 					   &funding_txout,
 					   &feerate,
 					   &fc->uc->our_config.channel_reserve,
-					   &remote_upfront_shutdown_script)) {
+					   &remote_upfront_shutdown_script,
+					   &pbase)) {
 		log_broken(fc->uc->log,
 			   "bad OPENING_FUNDER_REPLY %s",
 			   tal_hex(resp, resp));
@@ -459,7 +459,7 @@ static void opening_fundee_finished(struct subd *openingd,
 	struct channel *channel;
 	u8 *remote_upfront_shutdown_script, *local_upfront_shutdown_script;
 	struct per_peer_state *pps;
-	u32 *remote_output_idx;
+	struct penalty_base *pbase;
 
 	log_debug(uc->log, "Got opening_fundee_finish_response");
 
@@ -469,7 +469,6 @@ static void opening_fundee_finished(struct subd *openingd,
 	if (!fromwire_opening_fundee(tmpctx, reply,
 				     &channel_info.their_config,
 				     &remote_commit,
-				     &remote_output_idx,
 				     &remote_commit_sig,
 				     &pps,
 				     &channel_info.theirbase.revocation,
@@ -487,7 +486,8 @@ static void opening_fundee_finished(struct subd *openingd,
 				     &funding_signed,
 				     &uc->our_config.channel_reserve,
 				     &local_upfront_shutdown_script,
-				     &remote_upfront_shutdown_script)) {
+				     &remote_upfront_shutdown_script,
+				     &pbase)) {
 		log_broken(uc->log, "bad OPENING_FUNDEE_REPLY %s",
 			   tal_hex(reply, reply));
 		uncommitted_channel_disconnect(uc, LOG_BROKEN,

@@ -652,12 +652,13 @@ static bool funder_finalize_channel_setup(struct state *state,
 					  struct amount_msat local_msat,
 					  struct bitcoin_signature *sig,
 					  struct bitcoin_tx **tx,
-					  struct wally_tx_output **to_local)
+					  struct penalty_base **pbase)
 {
 	u8 *msg;
 	struct channel_id id_in;
 	const u8 *wscript;
 	char *err_reason;
+	struct wally_tx_output *remote_to_self;
 
 	/*~ Now we can initialize the `struct channel`.  This represents
 	 * the current channel state and is how we can generate the current
@@ -703,7 +704,7 @@ static bool funder_finalize_channel_setup(struct state *state,
 	/* This gives us their first commitment transaction. */
 	*tx = initial_channel_tx(state, &wscript, state->channel,
 				&state->first_per_commitment_point[REMOTE],
-				REMOTE, to_local, &err_reason);
+				REMOTE, &remote_to_self, &err_reason);
 	if (!*tx) {
 		/* This should not happen: we should never create channels we
 		 * can't afford the fees for after reserve. */
@@ -711,6 +712,12 @@ static bool funder_finalize_channel_setup(struct state *state,
 				   "Could not meet their fees and reserve: %s", err_reason);
 		goto fail;
 	}
+
+	/* If they have a remote, store the information about it */
+	if (remote_to_self)
+		*pbase = penalty_base_new(state, 0, *tx, remote_to_self);
+	else
+		*pbase = NULL;
 
 	/* We ask the HSM to sign their commitment transaction for us: it knows
 	 * our funding key, it just needs the remote funding key to create the
@@ -846,8 +853,7 @@ static u8 *funder_channel_complete(struct state *state)
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
 	struct amount_msat local_msat;
-	struct wally_tx_output *to_local;
-	u32 *their_out_idx;
+	struct penalty_base *pbase;
 
 	/* Update the billboard about what we're doing*/
 	peer_billboard(false,
@@ -865,19 +871,12 @@ static u8 *funder_channel_complete(struct state *state)
 					     &state->funding));
 
 	if (!funder_finalize_channel_setup(state, local_msat, &sig, &tx,
-					   &to_local))
+					   &pbase))
 		return NULL;
-
-	if (to_local) {
-		their_out_idx = tal(tmpctx, u32);
-		*their_out_idx = tx->wtx->outputs - to_local;
-	} else
-		their_out_idx = NULL;
 
 	return towire_opening_funder_reply(state,
 					   &state->remoteconf,
 					   tx,
-					   their_out_idx,
 					   &sig,
 					   state->pps,
 					   &state->their_points.revocation,
@@ -891,7 +890,8 @@ static u8 *funder_channel_complete(struct state *state)
 					   state->funding_txout,
 					   state->feerate_per_kw,
 					   state->localconf.channel_reserve,
-					   state->upfront_shutdown_script[REMOTE]);
+					   state->upfront_shutdown_script[REMOTE],
+					   pbase);
 }
 
 /*~ The peer sent us an `open_channel`, that means we're the fundee. */
@@ -907,8 +907,8 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 	const u8 *wscript;
 	u8 channel_flags;
 	char* err_reason;
-	struct wally_tx_output *to_local;
-	u32 *their_out_idx;
+	struct wally_tx_output *remote_to_self;
+	struct penalty_base *pbase;
 
 	/* BOLT #2:
 	 *
@@ -1246,12 +1246,19 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 	 */
 	remote_commit = initial_channel_tx(state, &wscript, state->channel,
 					   &state->first_per_commitment_point[REMOTE],
-					   REMOTE, &to_local, &err_reason);
+					   REMOTE, &remote_to_self, &err_reason);
 	if (!remote_commit) {
 		negotiation_failed(state, false,
 				   "Could not meet their fees and reserve: %s", err_reason);
 		return NULL;
 	}
+
+	/* This should be true for current case where they always fund! */
+	if (remote_to_self)
+		pbase = penalty_base_new(state, 0, remote_commit,
+					  remote_to_self);
+	else
+		pbase = NULL;
 
 	/* Make HSM sign it */
 	msg = towire_hsm_sign_remote_commitment_tx(NULL,
@@ -1273,16 +1280,9 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 	assert(sig.sighash_type == SIGHASH_ALL);
 	msg = towire_funding_signed(state, &state->channel_id, &sig.s);
 
-	if (to_local) {
-		their_out_idx = tal(tmpctx, u32);
-		*their_out_idx = remote_commit->wtx->outputs - to_local;
-	} else
-		their_out_idx = NULL;
-
 	return towire_opening_fundee(state,
 				     &state->remoteconf,
 				     local_commit,
-				     their_out_idx,
 				     &theirsig,
 				     state->pps,
 				     &theirs.revocation,
@@ -1300,7 +1300,8 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 				     msg,
 				     state->localconf.channel_reserve,
 				     state->upfront_shutdown_script[LOCAL],
-				     state->upfront_shutdown_script[REMOTE]);
+				     state->upfront_shutdown_script[REMOTE],
+				     pbase);
 }
 
 /*~ Standard "peer sent a message, handle it" demuxer.  Though it really only
