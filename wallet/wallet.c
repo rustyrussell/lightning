@@ -11,6 +11,7 @@
 #include <common/onionreply.h>
 #include <common/wireaddr.h>
 #include <inttypes.h>
+#include <lightningd/coin_mvts.h>
 #include <lightningd/lightningd.h>
 #include <lightningd/notification.h>
 #include <lightningd/peer_control.h>
@@ -1592,6 +1593,7 @@ int wallet_extract_owned_outputs(struct wallet *w, const struct bitcoin_tx *tx,
 		bool is_p2sh;
 		const u8 *script;
 		struct amount_asset asset = bitcoin_tx_output_get_amount(tx, output);
+		struct chain_coin_mvt *mvt;
 
 		if (!amount_asset_is_main(&asset))
 			continue;
@@ -1635,6 +1637,13 @@ int wallet_extract_owned_outputs(struct wallet *w, const struct bitcoin_tx *tx,
 			tal_free(utxo);
 			continue;
 		}
+
+		/* add this to our wallet amount */
+		mvt = new_chain_coin_mvt_sat(utxo, "wallet", &utxo->txid,
+					     &utxo->txid, utxo->outnum,
+					     NULL, DEPOSIT, utxo->amount,
+					     true, BTC);
+		notify_chain_mvt(w->ld, mvt);
 
 		/* This is an unconfirmed change output, we should track it */
 		if (!is_p2sh && !blockheight)
