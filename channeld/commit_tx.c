@@ -218,7 +218,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 
 		bitcoin_tx_add_output(tx, p2wsh, amount);
 		/* Add a dummy entry to the htlcmap so we can recognize it later */
-		(*htlcmap)[n] = dummy_to_local;
+		(*htlcmap)[n] = direct_outputs ? dummy_to_local : NULL;
 		/* We don't assign cltvs[n]: if we use it, order doesn't matter.
 		 * However, valgrind will warn us something wierd is happening */
 		SUPERVERBOSE("# to-local amount %s wscript %s\n",
@@ -251,7 +251,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 		 */
 		int pos = bitcoin_tx_add_output(tx, p2wpkh, amount);
 		assert(pos == n);
-		(*htlcmap)[n] = dummy_to_remote;
+		(*htlcmap)[n] = direct_outputs ? dummy_to_remote : NULL;
 		/* We don't assign cltvs[n]: if we use it, order doesn't matter.
 		 * However, valgrind will warn us something wierd is happening */
 		SUPERVERBOSE("# to-remote amount %s P2WPKH(%s)\n",
@@ -309,14 +309,17 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 	bitcoin_tx_add_input(tx, funding_txid, funding_txout, sequence, funding, NULL);
 
 	/* Identify the direct outputs (to_us, to_them). */
-	output_index[LOCAL] = output_index[REMOTE] = -1;
-	for (size_t i = 0; i < tx->wtx->num_outputs; i++) {
-		if ((*htlcmap)[i] == dummy_to_local) {
-			(*htlcmap)[i] = NULL;
-			output_index[LOCAL] = i;
-		} else if ((*htlcmap)[i] == dummy_to_remote) {
-			(*htlcmap)[i] = NULL;
-			output_index[REMOTE] = i;
+	if (direct_outputs) {
+		direct_outputs[LOCAL] = direct_outputs[REMOTE] = NULL;
+
+		for (size_t i = 0; i < tx->wtx->num_outputs; i++) {
+			if ((*htlcmap)[i] == dummy_to_local) {
+				(*htlcmap)[i] = NULL;
+				direct_outputs[LOCAL] = tx->wtx->outputs + i;
+			} else if ((*htlcmap)[i] == dummy_to_remote) {
+				(*htlcmap)[i] = NULL;
+				direct_outputs[REMOTE] = tx->wtx->outputs + i;
+			}
 		}
 	}
 
