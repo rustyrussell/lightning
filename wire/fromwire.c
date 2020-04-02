@@ -368,7 +368,24 @@ void derive_channel_id(struct channel_id *channel_id,
 struct bitcoin_tx *fromwire_bitcoin_tx(const tal_t *ctx,
 				       const u8 **cursor, size_t *max)
 {
-	return pull_bitcoin_tx(ctx, cursor, max);
+	struct bitcoin_tx *tx;
+	u16 input_amts_len;
+	size_t i;
+
+	tx = pull_bitcoin_tx(ctx, cursor, max);
+	input_amts_len = fromwire_u16(cursor, max);
+	assert(input_amts_len == tal_count(tx->input_amounts));
+	for (i = 0; i < input_amts_len; i++) {
+		struct amount_sat sat;
+		sat = fromwire_amount_sat(cursor, max);
+		if (amount_sat_eq(AMOUNT_SAT(0), sat))
+			tx->input_amounts[i] = NULL;
+		else
+			tx->input_amounts[i] =
+				tal_dup(tx, struct amount_sat, &sat);
+	}
+
+	return tx;
 }
 
 void fromwire_siphash_seed(const u8 **cursor, size_t *max,
