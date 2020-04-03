@@ -161,10 +161,12 @@ struct chain_coin_mvt *new_chain_coin_mvt_sat(const tal_t *ctx,
 struct coin_mvt *finalize_chain_mvt(const tal_t *ctx,
 				    const struct chain_coin_mvt *chain_mvt,
 				    u32 timestamp,
-				    struct node_id *node_id);
+				    struct node_id *node_id,
+				    s64 mvt_count);
 struct coin_mvt *finalize_channel_mvt(const tal_t *ctx,
 				      const struct channel_coin_mvt *chan_mvt,
-				      u32 timestamp, struct node_id *node_id);
+				      u32 timestamp, struct node_id *node_id,
+				      s64 mvt_count);
 
 const char *mvt_type_str(enum mvt_type type);
 const char *mvt_tag_str(enum mvt_tag tag);
