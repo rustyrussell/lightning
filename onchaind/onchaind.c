@@ -139,6 +139,7 @@ static void send_coin_mvt(struct chain_coin_mvt *mvt TAKES)
 }
 
 static void record_their_successful_cheat(const struct bitcoin_txid *txid,
+					  u32 blockheight,
 					  struct tracked_output *out)
 {
 	struct chain_coin_mvt *mvt;
@@ -147,7 +148,7 @@ static void record_their_successful_cheat(const struct bitcoin_txid *txid,
 	mvt = new_chain_coin_mvt_sat(NULL, NULL,
 				     txid, &out->txid,
 				     out->outnum, NULL,
-				     PENALTY,
+				     blockheight, PENALTY,
 				     out->sat, false,
 				     BTC);
 
@@ -156,6 +157,7 @@ static void record_their_successful_cheat(const struct bitcoin_txid *txid,
 
 static void record_htlc_fulfilled(const struct bitcoin_txid *txid,
 				  struct tracked_output *out,
+				  u32 blockheight,
 				  bool we_fulfilled)
 {
 	struct chain_coin_mvt *mvt;
@@ -169,6 +171,7 @@ static void record_htlc_fulfilled(const struct bitcoin_txid *txid,
 				     txid, &out->txid,
 				     out->outnum,
 				     out->payment_hash,
+				     blockheight,
 				     ONCHAIN_HTLC,
 				     out->sat, we_fulfilled,
 				     BTC);
@@ -177,11 +180,13 @@ static void record_htlc_fulfilled(const struct bitcoin_txid *txid,
 }
 
 static void update_ledger_chain_fees_msat(const struct bitcoin_txid *txid,
+					  u32 blockheight,
 					  struct amount_msat fees)
 {
 	struct chain_coin_mvt *mvt;
 	mvt = new_chain_coin_mvt(NULL, NULL,
 				 txid, NULL, 0, NULL,
+				 blockheight,
 				 CHAIN_FEES, fees,
 				 false, BTC);
 
@@ -189,11 +194,13 @@ static void update_ledger_chain_fees_msat(const struct bitcoin_txid *txid,
 }
 
 static void update_ledger_chain_fees(const struct bitcoin_txid *txid,
+				     u32 blockheight,
 				     struct amount_sat fees)
 {
 	struct chain_coin_mvt *mvt;
 	mvt = new_chain_coin_mvt_sat(NULL, NULL,
 				     txid, NULL, 0, NULL,
+				     blockheight,
 				     CHAIN_FEES, fees,
 				     false, BTC);
 
@@ -209,13 +216,14 @@ static void update_ledger_chain_fees(const struct bitcoin_txid *txid,
  * you *cannot* pass a chaintopology-originated tx to this method,
  * as they don't have the input_amounts populated */
 static struct amount_sat record_chain_fees_tx(const struct bitcoin_txid *txid,
-					      const struct bitcoin_tx *tx)
+					      const struct bitcoin_tx *tx,
+					      u32 blockheight)
 {
 	struct amount_sat fees;
 	fees = bitcoin_tx_compute_fee(tx);
 	status_debug("recording chain fees for tx %s",
 		     type_to_string(tmpctx, struct bitcoin_txid, txid));
-	update_ledger_chain_fees(txid, fees);
+	update_ledger_chain_fees(txid, blockheight, fees);
 	return fees;
 }
 
@@ -231,6 +239,7 @@ static void add_amt(struct amount_sat *sum, struct amount_sat amt)
 }
 
 static void record_mutual_closure(const struct bitcoin_txid *txid,
+				  u32 blockheight,
 				  struct amount_sat our_out,
 				  int output_num)
 {
@@ -257,7 +266,7 @@ static void record_mutual_closure(const struct bitcoin_txid *txid,
 					     &our_msat));
 
 	if (!amount_msat_eq(AMOUNT_MSAT(0), chain_fees))
-		update_ledger_chain_fees_msat(txid, chain_fees);
+		update_ledger_chain_fees_msat(txid, blockheight, chain_fees);
 
 	/* If we have no output, we exit early */
 	if (amount_msat_eq(AMOUNT_MSAT(0), output_msat))
@@ -267,6 +276,7 @@ static void record_mutual_closure(const struct bitcoin_txid *txid,
 	/* Otherwise, we record the channel withdrawal */
 	mvt = new_chain_coin_mvt(NULL, NULL, txid,
 				 txid, output_num, NULL,
+				 blockheight,
 				 WITHDRAWAL, output_msat,
 				 false, BTC);
 
@@ -274,6 +284,7 @@ static void record_mutual_closure(const struct bitcoin_txid *txid,
 }
 
 static void record_chain_fees_unilateral(const struct bitcoin_txid *txid,
+					 u32 blockheight,
 					 struct amount_sat funding,
 					 struct amount_sat their_outs,
 					 struct amount_sat our_outs)
@@ -299,10 +310,11 @@ static void record_chain_fees_unilateral(const struct bitcoin_txid *txid,
 
 	status_debug("logging 'chain fees' for unilateral (trimmed) %s",
 		     type_to_string(tmpctx, struct amount_msat, &trimmed));
-	update_ledger_chain_fees_msat(txid, trimmed);
+	update_ledger_chain_fees_msat(txid, blockheight, trimmed);
 }
 
 static void record_coin_loss(const struct bitcoin_txid *txid,
+			     u32 blockheight,
 			     struct tracked_output *out)
 {
 	struct chain_coin_mvt *mvt;
@@ -311,6 +323,7 @@ static void record_coin_loss(const struct bitcoin_txid *txid,
 	mvt = new_chain_coin_mvt_sat(NULL, NULL,
 				     txid, &out->txid,
 				     out->outnum, NULL,
+				     blockheight,
 				     PENALTY, out->sat, false,
 				     BTC);
 
@@ -325,6 +338,7 @@ static void record_coin_loss(const struct bitcoin_txid *txid,
 
 static void record_channel_withdrawal_minus_fees(const struct bitcoin_txid *tx_txid,
 				      		 struct tracked_output *out,
+						 u32 blockheight,
 						 struct amount_sat fees)
 {
 	struct chain_coin_mvt *mvt;
@@ -340,7 +354,8 @@ static void record_channel_withdrawal_minus_fees(const struct bitcoin_txid *tx_t
 
 	mvt = new_chain_coin_mvt_sat(NULL, NULL,
 				     tx_txid, &out->txid,
-				     out->outnum, NULL, WITHDRAWAL,
+				     out->outnum, NULL,
+				     blockheight, WITHDRAWAL,
 				     emitted_amt, false,
 				     BTC);
 
@@ -355,9 +370,10 @@ static void record_channel_withdrawal_minus_fees(const struct bitcoin_txid *tx_t
 
 
 static void record_channel_withdrawal(const struct bitcoin_txid *tx_txid,
+				      u32 blockheight,
 				      struct tracked_output *out)
 {
-	record_channel_withdrawal_minus_fees(tx_txid, out, AMOUNT_SAT(0));
+	record_channel_withdrawal_minus_fees(tx_txid, out, blockheight, AMOUNT_SAT(0));
 }
 
 static bool is_our_htlc_tx(struct tracked_output *out)
@@ -375,6 +391,7 @@ static bool is_channel_deposit(struct tracked_output *out)
 }
 
 static void record_coin_movements(struct tracked_output *out,
+				  u32 blockheight,
 				  const struct bitcoin_tx *tx,
 				  const struct bitcoin_txid *txid)
 {
@@ -382,19 +399,19 @@ static void record_coin_movements(struct tracked_output *out,
 	/* there is a case where we've fulfilled an htlc onchain,
 	 * in which case we log a deposit to the channel */
 	if (is_channel_deposit(out))
-		record_htlc_fulfilled(txid, out, true);
+		record_htlc_fulfilled(txid, out, blockheight, true);
 
 
 	/* record fees paid for the tx here */
 	/* FIXME: for now, every resolution generates its own tx,
 	 * this will need to be updated if we switch to batching */
-	fees = record_chain_fees_tx(txid, tx);
+	fees = record_chain_fees_tx(txid, tx, blockheight);
 
 	/* we don't record a channel withdrawal until we get to
 	 * the 'exit' utxo, which for local commitment htlc txs
 	 * is the child htlc_tx's output */
 	if (!is_our_htlc_tx(out))
-		record_channel_withdrawal_minus_fees(txid, out, fees);
+		record_channel_withdrawal_minus_fees(txid, out, blockheight, fees);
 }
 
 /* We vary feerate until signature they offered matches. */
@@ -825,8 +842,8 @@ static void proposal_meets_depth(struct tracked_output *out, bool is_replay)
 	wire_sync_write(
 	    REQ_FD,
 	    take(towire_onchain_broadcast_tx(
-		NULL, out->proposal->tx,
-		onchain_txtype_to_wallet_txtype(out->proposal->tx_type))));
+		 NULL, out->proposal->tx,
+		 onchain_txtype_to_wallet_txtype(out->proposal->tx_type))));
 
 	/* Don't wait for this if we're ignoring the tiny payment. */
 	if (out->proposal->tx_type == IGNORING_TINY_PAYMENT) {
@@ -839,8 +856,8 @@ static void proposal_meets_depth(struct tracked_output *out, bool is_replay)
 			/* log the coin movements here, since we're not
 			 * going to wait til we hear about it */
 			bitcoin_txid(out->proposal->tx, &txid);
-			fees = record_chain_fees_tx(&txid, out->proposal->tx);
-			record_channel_withdrawal_minus_fees(&txid, out, fees);
+			fees = record_chain_fees_tx(&txid, out->proposal->tx, 0);
+			record_channel_withdrawal_minus_fees(&txid, out, 0, fees);
 		}
 	}
 
@@ -1375,7 +1392,7 @@ static void steal_htlc_tx(const struct chainparams *chainparams,
 		     type_to_string(tmpctx, struct amount_sat, &fees));
 
 	if (!is_replay)
-		update_ledger_chain_fees(htlc_txid, fees);
+		update_ledger_chain_fees(htlc_txid, htlc_tx_blockheight, fees);
 
 	/* annnd done! */
 	propose_resolution(htlc_out, tx, 0, tx_type, is_replay);
@@ -1429,7 +1446,8 @@ static void output_spent(const struct chainparams *chainparams,
 						tx_blockheight, is_replay);
 
 			if (!is_replay)
-				record_coin_movements(out, out->proposal->tx, &txid);
+				record_coin_movements(out, tx_blockheight,
+						      out->proposal->tx, &txid);
 			return;
 		}
 
@@ -1438,7 +1456,7 @@ static void output_spent(const struct chainparams *chainparams,
 		case DELAYED_OUTPUT_TO_US:
 			unknown_spend(out, tx);
 			if (!is_replay)
-				record_coin_loss(&txid, out);
+				record_coin_loss(&txid, tx_blockheight, out);
 			break;
 
 		case THEIR_HTLC:
@@ -1489,7 +1507,9 @@ static void output_spent(const struct chainparams *chainparams,
 				ignore_output(out);
 
 				if (!is_replay)
-					record_htlc_fulfilled(&txid, out, false);
+					record_htlc_fulfilled(&txid, out,
+							      tx_blockheight,
+							      false);
 				onchain_annotate_txout(
 				    &spendertxid, out->outnum,
 				    TX_CHANNEL_HTLC_SUCCESS | TX_THEIRS);
@@ -1506,7 +1526,8 @@ static void output_spent(const struct chainparams *chainparams,
 			/* They successfully spent a delayed revoked output */
 			resolved_by_other(out, &txid, THEIR_DELAYED_CHEAT);
 			if (!is_replay)
-				record_their_successful_cheat(&txid, out);
+				record_their_successful_cheat(&txid,
+							      tx_blockheight, out);
 			break;
 		/* Um, we don't track these! */
 		case OUTPUT_TO_THEM:
@@ -1733,7 +1754,7 @@ static void handle_preimage(const struct chainparams *chainparams,
 			if (!is_replay && tx_type == IGNORING_TINY_PAYMENT) {
 				struct bitcoin_txid txid;
 				bitcoin_txid(tx, &txid);
-				record_htlc_fulfilled(&txid, outs[i], true);
+				record_htlc_fulfilled(&txid, outs[i], 0, true);
 			}
 
 		}
@@ -1845,6 +1866,7 @@ static void handle_mutual_close(const struct chainparams *chainparams,
 				const struct bitcoin_txid *txid,
 				struct tracked_output **outs,
 				const struct bitcoin_tx *tx,
+				u32 tx_blockheight,
 				int our_outnum)
 {
 	struct amount_sat our_out;
@@ -1873,7 +1895,8 @@ static void handle_mutual_close(const struct chainparams *chainparams,
 		} else
 			our_out = AMOUNT_SAT(0);
 
-		record_mutual_closure(txid, our_out, our_outnum);
+		record_mutual_closure(txid, tx_blockheight,
+				      our_out, our_outnum);
 	}
 
 	wait_for_resolved(chainparams, outs);
@@ -2394,7 +2417,8 @@ static void handle_our_unilateral(const struct bitcoin_tx *tx,
 	note_missing_htlcs(htlc_scripts, htlcs,
 			   tell_if_missing, tell_immediately);
 	if (!open_is_replay)
-		record_chain_fees_unilateral(txid, outs[0]->sat,
+		record_chain_fees_unilateral(txid, tx_blockheight,
+					     outs[0]->sat,
 					     their_outs, our_outs);
 
 	wait_for_resolved(tx->chainparams, outs);
@@ -2482,6 +2506,7 @@ static void tell_wallet_to_remote(const struct bitcoin_tx *tx,
  * will correctly mark the funds as a 'channel withdrawal'
  */
 static void update_ledger_cheat(const struct bitcoin_txid *txid,
+				u32 blockheight,
 				struct tracked_output *out)
 {
 	/* how much of a difference should we update the
@@ -2504,7 +2529,9 @@ static void update_ledger_cheat(const struct bitcoin_txid *txid,
 	/* FIXME: elements is not always btc? */
 	mvt = new_chain_coin_mvt(NULL, NULL,
 				 txid, &out->txid,
-				 out->outnum, NULL, JOURNAL, amt,
+				 out->outnum, NULL,
+				 blockheight,
+				 JOURNAL, amt,
 				 true, BTC);
 	send_coin_mvt(take(mvt));
 }
@@ -2540,7 +2567,7 @@ static void handle_their_cheat(const struct bitcoin_tx *tx,
 	onchain_annotate_txin(
 	    txid, 0, TX_CHANNEL_UNILATERAL | TX_CHANNEL_CHEAT | TX_THEIRS);
 	if (!open_is_replay)
-		update_ledger_cheat(txid, outs[0]);
+		update_ledger_cheat(txid, tx_blockheight, outs[0]);
 
 	/* BOLT #5:
 	 *
@@ -2688,7 +2715,7 @@ static void handle_their_cheat(const struct bitcoin_tx *tx,
 			ignore_output(out);
 
 			if (!open_is_replay)
-				record_channel_withdrawal(txid, out);
+				record_channel_withdrawal(txid, tx_blockheight, out);
 
 			tell_wallet_to_remote(tx, i, txid,
 					      tx_blockheight,
@@ -2779,7 +2806,7 @@ static void handle_their_cheat(const struct bitcoin_tx *tx,
 		     type_to_string(tmpctx, struct amount_sat, &fee_cost));
 
 	if (!open_is_replay)
-		update_ledger_chain_fees(txid, fee_cost);
+		update_ledger_chain_fees(txid, tx_blockheight, fee_cost);
 
 	wait_for_resolved(tx->chainparams, outs);
 }
@@ -2940,7 +2967,7 @@ static void handle_their_unilateral(const struct bitcoin_tx *tx,
 			ignore_output(out);
 
 			if (!open_is_replay)
-				record_channel_withdrawal(txid, out);
+				record_channel_withdrawal(txid, tx_blockheight, out);
 
 			tell_wallet_to_remote(tx, i, txid,
 					      tx_blockheight,
@@ -3027,13 +3054,15 @@ static void handle_their_unilateral(const struct bitcoin_tx *tx,
 			   tell_if_missing, tell_immediately);
 
 	if (!open_is_replay)
-		record_chain_fees_unilateral(txid, outs[0]->sat,
+		record_chain_fees_unilateral(txid, tx_blockheight,
+					     outs[0]->sat,
 					     their_outs, our_outs);
 
 	wait_for_resolved(tx->chainparams, outs);
 }
 
 static void update_ledger_unknown(const struct bitcoin_txid *txid,
+				  u32 blockheight,
 				  struct amount_sat amt_salvaged)
 {
 	/* ideally, we'd be able to capture the loss to fees (if we funded
@@ -3068,6 +3097,7 @@ static void update_ledger_unknown(const struct bitcoin_txid *txid,
 	/* FIXME: elements txs not in BTC ?? */
 	mvt = new_chain_coin_mvt(NULL, NULL,
 				 txid, NULL, 0, NULL,
+				 blockheight,
 				 JOURNAL, diff,
 				 is_credit, BTC);
 	send_coin_mvt(take(mvt));
@@ -3153,7 +3183,7 @@ static void handle_unknown_commitment(const struct bitcoin_tx *tx,
 			ignore_output(out);
 
 			if (!open_is_replay)
-				record_channel_withdrawal(txid, out);
+				record_channel_withdrawal(txid, tx_blockheight, out);
 
 			add_amt(&amt_salvaged, amt);
 
@@ -3182,7 +3212,7 @@ search_done:
 	/* update our accounting notions for this channel.
 	 * should result in a channel balance of zero */
 	if (!open_is_replay)
-		update_ledger_unknown(txid, amt_salvaged);
+		update_ledger_unknown(txid, tx_blockheight, amt_salvaged);
 
 	/* Tell master to give up on HTLCs immediately. */
 	for (size_t i = 0; i < tal_count(htlcs); i++) {
@@ -3313,7 +3343,8 @@ int main(int argc, char *argv[])
 	 * [BOLT #2: Channel Close](02-peer-protocol.md#channel-close)).
 	 */
 	if (is_mutual_close(tx, scriptpubkey[LOCAL], scriptpubkey[REMOTE], &mutual_outnum))
-		handle_mutual_close(tx->chainparams, &txid, outs, tx, mutual_outnum);
+		handle_mutual_close(tx->chainparams, &txid, outs, tx,
+				    tx_blockheight, mutual_outnum);
 	else {
 		/* BOLT #5:
 		 *
