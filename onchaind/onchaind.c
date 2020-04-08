@@ -3149,7 +3149,7 @@ static void handle_unknown_commitment(const struct bitcoin_tx *tx,
 {
 	int to_us_output = -1;
 	u8 *local_script;
-	struct amount_sat amt_salvaged;
+	struct amount_sat amt_salvaged = AMOUNT_SAT(0);
 
 	onchain_annotate_txin(txid, 0, TX_CHANNEL_UNILATERAL | TX_THEIRS);
 
@@ -3159,7 +3159,6 @@ static void handle_unknown_commitment(const struct bitcoin_tx *tx,
 	 * we're out of luck. */
 	if (!possible_remote_per_commitment_point
 	    && !option_static_remotekey) {
-		amt_salvaged = AMOUNT_SAT(0);
 		goto search_done;
 	}
 
