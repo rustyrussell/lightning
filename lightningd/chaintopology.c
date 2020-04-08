@@ -694,16 +694,15 @@ static void record_output_spend(struct lightningd *ld,
 	tal_free(ctx);
 }
 
-static void record_tx_outs_and_fees(struct lightningd *ld, struct bitcoin_txid *txid,
-				    u32 blockheight, struct amount_sat inputs_total)
+static void record_tx_outs_and_fees(struct lightningd *ld, const struct bitcoin_tx *tx,
+				    struct bitcoin_txid *txid, u32 blockheight,
+				    struct amount_sat inputs_total)
 {
-	struct bitcoin_tx *tx;
 	struct amount_sat fee;
 	struct chain_coin_mvt *mvt;
 	size_t i;
 	u8 *ctx = tal(NULL, u8);
 
-	tx = wallet_transaction_get(ctx, ld->wallet, txid);
 	if (!tx)
 		log_broken(ld->log, "We have no record of transaction %s",
 			   type_to_string(ctx, struct bitcoin_txid, txid));
@@ -806,7 +805,7 @@ static void topo_update_spends(struct chain_topology *topo, struct block *b)
 		 * FIXME: update once interactive tx construction
 		 * is a reality */
 		if (our_tx)
-			record_tx_outs_and_fees(topo->ld, &txid,
+			record_tx_outs_and_fees(topo->ld, tx, &txid,
 						b->height, inputs_total);
 	}
 }
