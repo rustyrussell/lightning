@@ -1276,6 +1276,7 @@ def test_coin_movement_notices(node_factory, bitcoind):
     l2.daemon.wait_for_log(' to CLOSINGD_SIGEXCHANGE')
     assert account_balance(l2, chanid_3) == 950000501
     bitcoind.generate_block(6)
+    sync_blockheight(bitcoind, [l2])
     l2.daemon.wait_for_log('FUNDING_TRANSACTION/FUNDING_OUTPUT->MUTUAL_CLOSE depth 6')
 
     # Ending channel balance should be zero
