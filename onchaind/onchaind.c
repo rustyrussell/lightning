@@ -81,9 +81,6 @@ static struct amount_msat our_msat;
 /* Does option_static_remotekey apply to this commitment tx? */
 bool option_static_remotekey;
 
-/* We don't want to log any downstream coin moves if this is a known replay */
-bool open_is_replay;
-
 /* If we broadcast a tx, or need a delay to resolve the output. */
 struct proposed_resolution {
 	/* This can be NULL if our proposal is to simply ignore it after depth */
@@ -1867,7 +1864,8 @@ static void handle_mutual_close(const struct chainparams *chainparams,
 				struct tracked_output **outs,
 				const struct bitcoin_tx *tx,
 				u32 tx_blockheight,
-				int our_outnum)
+				int our_outnum,
+				bool is_replay)
 {
 	struct amount_sat our_out;
 	init_reply("Tracking mutual close transaction");
@@ -1885,7 +1883,7 @@ static void handle_mutual_close(const struct chainparams *chainparams,
 	 */
 	resolved_by_other(outs[0], txid, MUTUAL_CLOSE);
 
-	if (!open_is_replay) {
+	if (!is_replay) {
 		/* It's possible there's no to_us output */
 		if (our_outnum > -1) {
 			struct amount_asset asset;
@@ -2178,7 +2176,8 @@ static void handle_our_unilateral(const struct bitcoin_tx *tx,
 				  const bool *tell_if_missing,
 				  const bool *tell_immediately,
 				  const secp256k1_ecdsa_signature *remote_htlc_sigs,
-				  struct tracked_output **outs)
+				  struct tracked_output **outs,
+				  bool is_replay)
 {
 	u8 **htlc_scripts;
 	u8 *local_wscript, *script[NUM_SIDES];
@@ -2325,7 +2324,7 @@ static void handle_our_unilateral(const struct bitcoin_tx *tx,
 			 * output is *resolved* by the spending transaction
 			 */
 			propose_resolution(out, to_us, to_self_delay[LOCAL],
-					   tx_type, open_is_replay);
+					   tx_type, is_replay);
 
 			script[LOCAL] = NULL;
 			add_amt(&our_outs, amt);
@@ -2381,7 +2380,7 @@ static void handle_our_unilateral(const struct bitcoin_tx *tx,
 								out, matches,
 								htlcs,
 								htlc_scripts,
-								open_is_replay);
+								is_replay);
 			add_amt(&our_outs, amt);
 		} else {
 			out = new_tracked_output(tx->chainparams,
@@ -2401,7 +2400,7 @@ static void handle_our_unilateral(const struct bitcoin_tx *tx,
 			/* Tells us which htlc to use */
 			which_htlc = resolve_their_htlc(out, matches, htlcs,
 							htlc_scripts,
-							open_is_replay);
+							is_replay);
 			add_amt(&their_outs, amt);
 		}
 		out->htlc = htlcs[which_htlc];
@@ -2416,7 +2415,7 @@ static void handle_our_unilateral(const struct bitcoin_tx *tx,
 
 	note_missing_htlcs(htlc_scripts, htlcs,
 			   tell_if_missing, tell_immediately);
-	if (!open_is_replay)
+	if (!is_replay)
 		record_chain_fees_unilateral(txid, tx_blockheight,
 					     outs[0]->sat,
 					     their_outs, our_outs);
@@ -2551,7 +2550,8 @@ static void handle_their_cheat(const struct bitcoin_tx *tx,
 			       const struct htlc_stub *htlcs,
 			       const bool *tell_if_missing,
 			       const bool *tell_immediately,
-			       struct tracked_output **outs)
+			       struct tracked_output **outs,
+			       bool is_replay)
 {
 	u8 **htlc_scripts;
 	u8 *remote_wscript, *script[NUM_SIDES];
@@ -2566,7 +2566,7 @@ static void handle_their_cheat(const struct bitcoin_tx *tx,
 	init_reply("Tracking their illegal close: taking all funds");
 	onchain_annotate_txin(
 	    txid, 0, TX_CHANNEL_UNILATERAL | TX_CHANNEL_CHEAT | TX_THEIRS);
-	if (!open_is_replay)
+	if (!is_replay)
 		update_ledger_cheat(txid, tx_blockheight, outs[0]);
 
 	/* BOLT #5:
@@ -2714,7 +2714,7 @@ static void handle_their_cheat(const struct bitcoin_tx *tx,
 						 OUTPUT_TO_US, NULL, NULL, NULL);
 			ignore_output(out);
 
-			if (!open_is_replay)
+			if (!is_replay)
 				record_channel_withdrawal(txid, tx_blockheight, out);
 
 			tell_wallet_to_remote(tx, i, txid,
@@ -2739,7 +2739,7 @@ static void handle_their_cheat(const struct bitcoin_tx *tx,
 						 amt,
 						 DELAYED_CHEAT_OUTPUT_TO_THEM,
 						 NULL, NULL, NULL);
-			steal_to_them_output(out, open_is_replay);
+			steal_to_them_output(out, is_replay);
 			script[REMOTE] = NULL;
 			add_amt(&total_outs, amt);
 			continue;
@@ -2771,7 +2771,7 @@ static void handle_their_cheat(const struct bitcoin_tx *tx,
 						 &htlcs[which_htlc],
 						 htlc_scripts[which_htlc],
 						 NULL);
-			steal_htlc(out, open_is_replay);
+			steal_htlc(out, is_replay);
 			add_amt(&total_outs, amt);
 		} else {
 			out = new_tracked_output(tx->chainparams,
@@ -2790,7 +2790,7 @@ static void handle_their_cheat(const struct bitcoin_tx *tx,
 			 *     * spend the *commitment tx* using the payment preimage (if known).
 			 *     * spend the *HTLC-timeout tx*, if the remote node has published it.
 			 */
-			steal_htlc(out, open_is_replay);
+			steal_htlc(out, is_replay);
 			add_amt(&total_outs, amt);
 		}
 		htlc_scripts[which_htlc] = NULL;
@@ -2805,7 +2805,7 @@ static void handle_their_cheat(const struct bitcoin_tx *tx,
 	status_debug("recording chain fees for their cheat %s",
 		     type_to_string(tmpctx, struct amount_sat, &fee_cost));
 
-	if (!open_is_replay)
+	if (!is_replay)
 		update_ledger_chain_fees(txid, tx_blockheight, fee_cost);
 
 	wait_for_resolved(tx->chainparams, outs);
@@ -2819,7 +2819,8 @@ static void handle_their_unilateral(const struct bitcoin_tx *tx,
 				    const struct htlc_stub *htlcs,
 				    const bool *tell_if_missing,
 				    const bool *tell_immediately,
-				    struct tracked_output **outs)
+				    struct tracked_output **outs,
+				    bool is_replay)
 {
 	u8 **htlc_scripts;
 	u8 *remote_wscript, *script[NUM_SIDES];
@@ -2966,7 +2967,7 @@ static void handle_their_unilateral(const struct bitcoin_tx *tx,
 						 OUTPUT_TO_US, NULL, NULL, NULL);
 			ignore_output(out);
 
-			if (!open_is_replay)
+			if (!is_replay)
 				record_channel_withdrawal(txid, tx_blockheight, out);
 
 			tell_wallet_to_remote(tx, i, txid,
@@ -3024,7 +3025,7 @@ static void handle_their_unilateral(const struct bitcoin_tx *tx,
 								  matches,
 								  htlcs,
 								  htlc_scripts,
-								  open_is_replay);
+								  is_replay);
 			add_amt(&our_outs, amt);
 		} else {
 			out = new_tracked_output(tx->chainparams,
@@ -3042,7 +3043,7 @@ static void handle_their_unilateral(const struct bitcoin_tx *tx,
 			 *   Commitment, Remote Offers]
 			 */
 			which_htlc = resolve_their_htlc(out, matches, htlcs,
-							htlc_scripts, open_is_replay);
+							htlc_scripts, is_replay);
 			add_amt(&their_outs, amt);
 		}
 		out->htlc = htlcs[which_htlc];
@@ -3053,7 +3054,7 @@ static void handle_their_unilateral(const struct bitcoin_tx *tx,
 	note_missing_htlcs(htlc_scripts, htlcs,
 			   tell_if_missing, tell_immediately);
 
-	if (!open_is_replay)
+	if (!is_replay)
 		record_chain_fees_unilateral(txid, tx_blockheight,
 					     outs[0]->sat,
 					     their_outs, our_outs);
@@ -3111,7 +3112,8 @@ static void handle_unknown_commitment(const struct bitcoin_tx *tx,
 				      const struct basepoints basepoints[NUM_SIDES],
 				      const struct htlc_stub *htlcs,
 				      const bool *tell_if_missing,
-				      struct tracked_output **outs)
+				      struct tracked_output **outs,
+				      bool is_replay)
 {
 	int to_us_output = -1;
 	u8 *local_script;
@@ -3182,7 +3184,7 @@ static void handle_unknown_commitment(const struct bitcoin_tx *tx,
 						 OUTPUT_TO_US, NULL, NULL, NULL);
 			ignore_output(out);
 
-			if (!open_is_replay)
+			if (!is_replay)
 				record_channel_withdrawal(txid, tx_blockheight, out);
 
 			add_amt(&amt_salvaged, amt);
@@ -3211,7 +3213,7 @@ search_done:
 
 	/* update our accounting notions for this channel.
 	 * should result in a channel balance of zero */
-	if (!open_is_replay)
+	if (!is_replay)
 		update_ledger_unknown(txid, tx_blockheight, amt_salvaged);
 
 	/* Tell master to give up on HTLCs immediately. */
@@ -3250,6 +3252,7 @@ int main(int argc, char *argv[])
 	u32 tx_blockheight;
 	struct pubkey *possible_remote_per_commitment_point;
 	int mutual_outnum;
+	bool open_is_replay;
 
 	subdaemon_setup(argc, argv);
 
@@ -3344,7 +3347,7 @@ int main(int argc, char *argv[])
 	 */
 	if (is_mutual_close(tx, scriptpubkey[LOCAL], scriptpubkey[REMOTE], &mutual_outnum))
 		handle_mutual_close(tx->chainparams, &txid, outs, tx,
-				    tx_blockheight, mutual_outnum);
+				    tx_blockheight, mutual_outnum, open_is_replay);
 	else {
 		/* BOLT #5:
 		 *
@@ -3368,7 +3371,8 @@ int main(int argc, char *argv[])
 					      htlcs,
 					      tell_if_missing, tell_immediately,
 					      remote_htlc_sigs,
-					      outs);
+					      outs,
+					      open_is_replay);
 		/* BOLT #5:
 		 *
 		 * 3. The ugly way (*revoked transaction close*): one of the
@@ -3384,7 +3388,8 @@ int main(int argc, char *argv[])
 					   basepoints,
 					   htlcs,
 					   tell_if_missing, tell_immediately,
-					   outs);
+					   outs,
+					   open_is_replay);
 		/* BOLT #5:
 		 *
 		 * There may be more than one valid, *unrevoked* commitment
@@ -3403,7 +3408,8 @@ int main(int argc, char *argv[])
 						htlcs,
 						tell_if_missing,
 						tell_immediately,
-						outs);
+						outs,
+						open_is_replay);
 		} else if (commit_num == revocations_received(&shachain) + 1) {
 			status_debug("Their unilateral tx, new commit point");
 			handle_their_unilateral(tx, tx_blockheight,
@@ -3413,7 +3419,8 @@ int main(int argc, char *argv[])
 						htlcs,
 						tell_if_missing,
 						tell_immediately,
-						outs);
+						outs,
+						open_is_replay);
 		} else {
 			handle_unknown_commitment(tx, tx_blockheight,
 						  commit_num,
@@ -3422,7 +3429,8 @@ int main(int argc, char *argv[])
 						  basepoints,
 						  htlcs,
 						  tell_if_missing,
-						  outs);
+						  outs,
+						  open_is_replay);
 		}
 	}
 
