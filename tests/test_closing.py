@@ -4,7 +4,7 @@ from pyln.client import RpcError
 from shutil import copyfile
 from utils import (
     only_one, sync_blockheight, wait_for, DEVELOPER, TIMEOUT, VALGRIND,
-    SLOW_MACHINE, account_balance, first_channel_id, check_coin_moves_idx
+    SLOW_MACHINE, account_balance, first_channel_id
 )
 
 import os
