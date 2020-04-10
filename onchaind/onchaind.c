@@ -123,7 +123,7 @@ struct tracked_output {
 	const struct chainparams *chainparams;
 
 	/* stashed so we can pass it along to the coin ledger */
-	struct sha256 *payment_hash;
+	struct sha256 payment_hash;
 };
 
 static void send_coin_mvt(struct chain_coin_mvt *mvt TAKES)
@@ -1288,7 +1288,7 @@ static void handle_htlc_onchain_fulfill(struct tracked_output *out,
 
 	/* we stash the payment_hash into the tracking_output so we
 	 * can pass it along, if needbe, to the coin movement tracker */
-	out->payment_hash = tal_dup(out, struct sha256, &sha);
+	out->payment_hash = sha;
 
 	/* Tell master we found a preimage. */
 	status_debug("%s/%s gave us preimage %s",
@@ -1714,7 +1714,7 @@ static void handle_preimage(const struct chainparams *chainparams,
 		}
 
 		/* stash the payment_hash so we can track this coin movement */
-		outs[i]->payment_hash = tal_dup(outs[i], struct sha256, &sha);
+		outs[i]->payment_hash = sha;
 
 		/* Discard any previous resolution.  Could be a timeout,
 		 * could be due to multiple identical rhashes in tx. */
