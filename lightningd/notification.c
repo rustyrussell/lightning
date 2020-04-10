@@ -348,9 +348,7 @@ static void coin_movement_notification_serialize(struct json_stream *stream,
 {
 	json_object_start(stream, "coin_movement");
 	json_add_num(stream, "version", mvt->version);
-	json_add_string(stream, "node_id",
-			type_to_string(tmpctx, struct node_id,
-				       mvt->node_id));
+	json_add_node_id(stream, "node_id", mvt->node_id);
 	json_add_u64(stream, "movement_idx", mvt->counter);
 	json_add_string(stream, "type", mvt_type_str(mvt->type));
 	json_add_string(stream, "account_id", mvt->account_id);
