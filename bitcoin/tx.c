@@ -71,10 +71,9 @@ bool elements_tx_output_is_fee(const struct bitcoin_tx *tx, int outnum)
 }
 
 struct amount_sat bitcoin_tx_compute_fee_w_inputs(const struct bitcoin_tx *tx,
-						  struct amount_sat fee)
+						  struct amount_sat input_val)
 {
 	struct amount_asset asset;
-	struct amount_sat value;
 	bool ok;
 
 	for (size_t i = 0; i < tx->wtx->num_outputs; i++) {
@@ -83,11 +82,11 @@ struct amount_sat bitcoin_tx_compute_fee_w_inputs(const struct bitcoin_tx *tx,
 		    !amount_asset_is_main(&asset))
 			continue;
 
-		value = amount_asset_to_sat(&asset);
-		ok = amount_sat_sub(&fee, fee, value);
+		ok = amount_sat_sub(&input_val, input_val,
+				    amount_asset_to_sat(&asset));
 		assert(ok);
 	}
-	return fee;
+	return input_val;
 }
 
 /**
@@ -97,17 +96,17 @@ struct amount_sat bitcoin_tx_compute_fee_w_inputs(const struct bitcoin_tx *tx,
  */
 struct amount_sat bitcoin_tx_compute_fee(const struct bitcoin_tx *tx)
 {
-	struct amount_sat fee = AMOUNT_SAT(0), value;
+	struct amount_sat input_total = AMOUNT_SAT(0);
 	bool ok;
 
 	for (size_t i = 0; i < tal_count(tx->input_amounts); i++) {
 		assert(tx->input_amounts[i]);
-		value.satoshis = tx->input_amounts[i]->satoshis; /* Raw: fee computation */
-		ok = amount_sat_add(&fee, fee, value);
+		ok = amount_sat_add(&input_total, input_total,
+				    *tx->input_amounts[i]);
 		assert(ok);
 	}
 
-	return bitcoin_tx_compute_fee_w_inputs(tx, fee);
+	return bitcoin_tx_compute_fee_w_inputs(tx, input_total);
 }
 
 /*
