@@ -123,7 +123,6 @@ struct coin_mvt {
 	struct node_id *node_id;
 
 	/* id of this movement (on this node) */
-	// FIXME: what if node restarts?
 	u64 counter;
 };
 
