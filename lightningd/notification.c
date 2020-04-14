@@ -337,7 +337,8 @@ static void json_mvt_id(struct json_stream *stream, enum mvt_type mvt_type,
 			return;
 		case CHANNEL_MVT:
 			json_add_sha256(stream, "payment_hash", id->payment_hash);
-			json_add_u32(stream, "part_id", id->part_id);
+			if (id->part_id)
+				json_add_u64(stream, "part_id", *id->part_id);
 			return;
 	}
 	abort();
