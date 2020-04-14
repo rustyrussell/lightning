@@ -1816,7 +1816,7 @@ void wallet_htlc_update(struct wallet *wallet, const u64 htlc_dbid,
 			enum onion_type badonion,
 			const struct onionreply *failonion,
 			const u8 *failmsg,
-			bool we_filled)
+			bool *we_filled)
 {
 	struct db_stmt *stmt;
 
@@ -1854,7 +1854,7 @@ void wallet_htlc_update(struct wallet *wallet, const u64 htlc_dbid,
 		db_bind_null(stmt, 4);
 
 	if (we_filled)
-		db_bind_int(stmt, 5, 1);
+		db_bind_int(stmt, 5, *we_filled);
 	else
 		db_bind_null(stmt, 5);
 
@@ -1928,7 +1928,11 @@ static bool wallet_stmt2htlc_in(struct channel *channel,
 	}
 #endif
 
-	in->we_filled = !db_column_is_null(stmt, 13);
+	if (!db_column_is_null(stmt, 13)) {
+		in->we_filled = tal(in, bool);
+		*in->we_filled = db_column_int(stmt, 13);
+	} else
+		in->we_filled = NULL;
 
 	return ok;
 }
