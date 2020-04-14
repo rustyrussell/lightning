@@ -233,10 +233,8 @@ void towire_bitcoin_tx(u8 **pptr, const struct bitcoin_tx *tx)
 	/* we also save all of the input amounts */
 	towire_u16(pptr, tal_count(tx->input_amounts));
 	for (i = 0; i < tal_count(tx->input_amounts); i++) {
-		if (tx->input_amounts[i])
-			towire_amount_sat(pptr, *tx->input_amounts[i]);
-		else
-			towire_amount_sat(pptr, AMOUNT_SAT(0));
+		assert(tx->input_amounts[i]);
+		towire_amount_sat(pptr, *tx->input_amounts[i]);
 	}
 }
 
