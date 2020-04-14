@@ -4,16 +4,8 @@
 static s64 update_count(struct lightningd *ld)
 {
 	s64 count;
-	bool db_in_tx;
-	db_in_tx = db_in_transaction(ld->wallet->db);
-	if (!db_in_tx)
-		db_begin_transaction(ld->wallet->db);
-
 	count = ++ld->coin_moves_count;
 	db_set_intvar(ld->wallet->db, "coin_moves_count", count);
-
-	if (!db_in_tx)
-		db_commit_transaction(ld->wallet->db);
 
 	return count;
 }
