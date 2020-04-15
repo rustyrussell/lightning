@@ -750,6 +750,7 @@ def test_penalty_htlc_tx_fulfill(node_factory, bitcoind):
     l2_db_path_bak = os.path.join(l2.daemon.lightning_dir, 'regtest', 'lightningd.sqlite3.bak')
     copyfile(l2_db_path, l2_db_path_bak)
     l2.start()
+    sync_blockheight(bitcoind, [l2])
 
     # push some money from l3->l2, so that the commit counter advances
     l2.rpc.connect(l3.info['id'], 'localhost', l3.port)
@@ -763,6 +764,7 @@ def test_penalty_htlc_tx_fulfill(node_factory, bitcoind):
 
     # start l2 and force close channel with l3 while l3 is still offline
     l2.start()
+    sync_blockheight(bitcoind, [l2])
     l2.rpc.close(l3.info['id'], 1)
     l2.daemon.wait_for_log('sendrawtx exit 0')
 
@@ -903,6 +905,7 @@ def test_penalty_htlc_tx_timeout(node_factory, bitcoind):
     l2_db_path_bak = os.path.join(l2.daemon.lightning_dir, 'regtest', 'lightningd.sqlite3.bak')
     copyfile(l2_db_path, l2_db_path_bak)
     l2.start()
+    sync_blockheight(bitcoind, [l2])
 
     # push some money from l3->l2, so that the commit counter advances
     l2.rpc.connect(l3.info['id'], 'localhost', l3.port)
@@ -916,6 +919,7 @@ def test_penalty_htlc_tx_timeout(node_factory, bitcoind):
 
     # start l2, now back a bit. force close channel with l3 while l3 is still offline
     l2.start()
+    sync_blockheight(bitcoind, [l2])
     l2.rpc.close(l3.info['id'], 1)
     l2.daemon.wait_for_log('sendrawtx exit 0')
 
