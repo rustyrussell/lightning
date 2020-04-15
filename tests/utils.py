@@ -25,7 +25,7 @@ def check_coin_moves(n, account_id, expected_moves):
         assert mv['debit'] == "{}msat".format(exp['debit'])
         assert mv['tag'] == exp['tag']
         assert mv['timestamp'] > 0
-        assert mv['unit_of_account'] == 'btc'
+        assert mv['chain_id'] == 'bcrt'
         # chain moves should have blockheights
         if mv['type'] == 'chain_mvt':
             assert mv['blockheight'] is not None

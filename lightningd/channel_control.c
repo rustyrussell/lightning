@@ -103,7 +103,7 @@ static void record_channel_open(struct channel *channel)
 								  struct channel_id,
 								  &channel_id),
 					      &channel->funding_txid,
-					      blockheight, channel->push, BTC);
+					      blockheight, channel->push);
 			notify_chain_mvt(channel->peer->ld, mvt);
 		}
 	} else {
@@ -118,7 +118,7 @@ static void record_channel_open(struct channel *channel)
 					      &channel_id),
 			       &channel->funding_txid,
 			       channel->funding_outnum,
-			       blockheight, channel_open_amt, BTC);
+			       blockheight, channel_open_amt);
 	notify_chain_mvt(channel->peer->ld, mvt);
 	tal_free(ctx);
 }
