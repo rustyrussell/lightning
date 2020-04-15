@@ -230,7 +230,16 @@ void towire_bitcoin_tx(u8 **pptr, const struct bitcoin_tx *tx)
 	u8 *lin = linearize_tx(tmpctx, tx);
 	towire_u8_array(pptr, lin, tal_count(lin));
 
-	/* we also save all of the input amounts */
+	/* We only want to 'save' the amounts if every amount
+	 * has been populated */
+	for (i = 0; i < tal_count(tx->input_amounts); i++) {
+		if (!tx->input_amounts[i]) {
+			towire_u16(pptr, 0);
+			return;
+		}
+	}
+
+	/* Otherwise, we include the input amount set */
 	towire_u16(pptr, tal_count(tx->input_amounts));
 	for (i = 0; i < tal_count(tx->input_amounts); i++) {
 		assert(tx->input_amounts[i]);

@@ -374,15 +374,15 @@ struct bitcoin_tx *fromwire_bitcoin_tx(const tal_t *ctx,
 
 	tx = pull_bitcoin_tx(ctx, cursor, max);
 	input_amts_len = fromwire_u16(cursor, max);
-	assert(input_amts_len == tal_count(tx->input_amounts));
+	/* We don't serialize the amounts if they're not *all* populated */
+	if (input_amts_len != tal_count(tx->input_amounts))
+		return tx;
+
 	for (i = 0; i < input_amts_len; i++) {
 		struct amount_sat sat;
 		sat = fromwire_amount_sat(cursor, max);
-		if (amount_sat_eq(AMOUNT_SAT(0), sat))
-			tx->input_amounts[i] = NULL;
-		else
-			tx->input_amounts[i] =
-				tal_dup(tx, struct amount_sat, &sat);
+		tx->input_amounts[i] =
+			tal_dup(tx, struct amount_sat, &sat);
 	}
 
 	return tx;
