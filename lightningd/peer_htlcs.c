@@ -95,11 +95,10 @@ static bool htlc_out_update_state(struct channel *channel,
 			     "out"))
 		return false;
 
-	bool *we_filled = tal(hout, bool);
-	we_filled = false;
+	bool we_filled = false;
 	wallet_htlc_update(channel->peer->ld->wallet, hout->dbid, newstate,
 			   hout->preimage, 0, hout->failonion,
-			   hout->failmsg, we_filled);
+			   hout->failmsg, &we_filled);
 
 	hout->hstate = newstate;
 	return true;
