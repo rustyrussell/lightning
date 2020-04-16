@@ -535,7 +535,7 @@ i.e. only definitively resolved HTLCs or confirmed bitcoin transactions.
 		"tag":"deposit",
 		"blockheight":102, // (`channel_mvt` type only. may be null)
 		"timestamp":1585948198,
-		"chain_id":"bc"
+		"coin_type":"bc"
 	}
 }
 ```
@@ -596,7 +596,7 @@ before confirmation.
 The `timestamp` is seconds since Unix epoch of the node's machine time
 at the time lightningd broadcasts the notification.
 
-`chain_id` is the BIP173 name for the chain this coin movement occurred on.
+`coin_type` is the BIP173 name for the coin which moved.
 
 
 ## Hooks
