@@ -134,6 +134,42 @@ Everything should be declared static and const by default.  Note that
 `tal_free()` can free a const pointer (also, that it returns `NULL`, for
 convenience).
 
+## Prefer Variable Declarations At Top of Block
+
+Pre-ISO C you had to declare all your variables before any statements.
+This is still a good habit, as it keeps them out of the way, but there
+are two main exceptions: for-loop variables which aren't needed
+outside the loop should be declared inside, e.g. `for (size_t i = 0; i
+< len; i++).` And variables only needed inside `#if` statements can be
+declared there.
+
+## Prefer `#if` to `#ifdef`.
+
+Most preprocessor definitions, particularly `DEVELOPER` and
+`EXPERIMENTAL_FEATURES`, are defined to 1 if enabled, and 0 if
+disabled.  This means you MUST use `#if` instead of `#ifdef`.
+
+This has the advantage that if you make a typo such as `#if DEELOPER`,
+gcc's `-Wundef` will give you an error.
+
+The exception: `COMPAT_` settings are #ifdef.  Sorry.
+
+## Use CCAN Helpers
+
+There are many helpers in CCAN which provide additional sanity checks.
+It's generally worth reading ccan/ccan/*/_info, but here are some trivial
+ones which you might use almost anywhere:
+
+* BUILD_ASSERT() ensures something is true at compile time, such as
+  two types being the same size.
+* cast_const() ensures you're only removing const, not changing type.
+* PRINTF_FMT() tells the compiler to check format strings.
+* WARN_UNUSED_RESULT forces everyone to do something with the result of a
+  function.
+* memeq() compares to memory ranges for equality.
+* streq() compares two strings, with a clearer semantic than strcmp.
+* STRUCTEQ_DEF() helps you define ...eq functions for structures.
+
 ## Typesafety Is Worth Some Pain
 
 If code is typesafe, refactoring is as simple as changing a type and
