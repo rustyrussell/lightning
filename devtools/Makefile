@@ -1,6 +1,6 @@
 DEVTOOLS_SRC := devtools/gen_print_wire.c devtools/gen_print_onion_wire.c devtools/print_wire.c
 DEVTOOLS_OBJS := $(DEVTOOLS_SRC:.c=.o)
-DEVTOOLS := devtools/bolt11-cli devtools/decodemsg devtools/onion devtools/dump-gossipstore devtools/gossipwith devtools/create-gossipstore devtools/mkcommit devtools/mkfunding devtools/mkclose devtools/mkgossip devtools/mkencoded devtools/checkchannels devtools/mkquery devtools/lightning-checkmessage
+DEVTOOLS := devtools/bolt11-cli devtools/decodemsg devtools/onion devtools/dump-gossipstore devtools/gossipwith devtools/create-gossipstore devtools/mkcommit devtools/mkfunding devtools/mkclose devtools/mkgossip devtools/mkencoded devtools/checkchannels devtools/mkquery devtools/lightning-checkmessage devtools/features
 ifeq ($(EXPERIMENTAL_FEATURES),1)
 DEVTOOLS += devtools/blindedpath
 endif
@@ -53,6 +53,8 @@ devtools/gen_print_onion_wire.h: $(DEVTOOL_BOLT_DEPS) wire/gen_onion_wire_csv
 
 devtools/gen_print_onion_wire.c: $(DEVTOOL_BOLT_DEPS) wire/gen_onion_wire_csv
 	$(BOLT_GEN) -P -s --page impl ${@:.c=.h} onion_type < wire/gen_onion_wire_csv > $@
+
+devtools/features: $(CCAN_OBJS) common/features.o common/utils.o wire/fromwire.o wire/towire.o devtools/features.o
 
 devtools/bolt11-cli: $(DEVTOOLS_OBJS) $(DEVTOOLS_COMMON_OBJS) $(JSMN_OBJS) $(CCAN_OBJS) $(BITCOIN_OBJS) wire/fromwire.o wire/towire.o devtools/bolt11-cli.o
 

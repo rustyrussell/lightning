@@ -266,7 +266,7 @@ int features_unsupported(const struct feature_set *our_features,
 	return all_supported_features(our_features, their_features, p);
 }
 
-static const char *feature_name(const tal_t *ctx, size_t f)
+const char *feature_name(const tal_t *ctx, size_t f)
 {
 	static const char *fnames[] = {
 		"option_data_loss_protect",
@@ -278,6 +278,7 @@ static const char *feature_name(const tal_t *ctx, size_t f)
 		"option_static_remotekey",
 		"option_payment_secret",
 		"option_basic_mpp",
+		"option_support_large_channel",
 	};
 
 	if (f / 2 >= ARRAY_SIZE(fnames))
