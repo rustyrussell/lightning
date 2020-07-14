@@ -480,9 +480,12 @@ bool wallet_reserve_utxo(struct wallet *w, struct utxo *utxo, u32 current_height
 
 void wallet_unreserve_utxo(struct wallet *w, struct utxo *utxo, u32 current_height)
 {
-	if (utxo->status == output_state_reserved)
+	if (utxo->status == output_state_reserved) {
+		/* FIXME: old code didn't set reserved_til, so fake it here */
+		if (!utxo->reserved_til)
+			utxo->reserved_til = tal_dup(utxo, u32, &current_height);
 		assert(utxo->reserved_til);
-	else
+	} else
 		assert(!utxo->reserved_til);
 
 	if (utxo->status != output_state_reserved)
