@@ -185,7 +185,7 @@ static struct command_result *json_fundpsbt(struct command *cmd,
 	struct utxo **utxos;
 	u32 *feerate_per_kw;
 	u32 *minconf;
-	struct amount_sat *amount, input, needed, excess;
+	struct amount_sat *amount, input, needed, excess, total_fee;
 	bool all, *reserve;
 	u32 locktime, maxheight, current_height;
 	struct bitcoin_tx *tx;
@@ -206,6 +206,7 @@ static struct command_result *json_fundpsbt(struct command *cmd,
 	/* We keep adding until we meet their output requirements. */
 	input = AMOUNT_SAT(0);
 	utxos = tal_arr(cmd, struct utxo *, 0);
+	total_fee = AMOUNT_SAT(0);
 	while (amount_sat_sub(&needed, *amount, input)) {
 		struct utxo *utxo;
 
@@ -231,12 +232,20 @@ static struct command_result *json_fundpsbt(struct command *cmd,
 				/* Either they specified "all", or we
 				 * will fail anyway. */
 				*amount = AMOUNT_SAT(-1ULL);
+			if (!amount_sat_add(&total_fee, total_fee, fee))
+				return command_fail(cmd, LIGHTNINGD,
+						    "impossible fee value");
 			continue;
 		}
 
 		/* If they said "all", we expect to run out of utxos. */
-		if (all)
+		if (all) {
+			/* If we have none at all though, fail */
+			if (!tal_count(utxos))
+				return command_fail(cmd, FUND_CANNOT_AFFORD,
+						    "No available UTXOs");
 			break;
+		}
 
 		return command_fail(cmd, FUND_CANNOT_AFFORD,
 				    "Could not afford %s using all %zu available UTXOs: %s short",
@@ -272,9 +281,21 @@ static struct command_result *json_fundpsbt(struct command *cmd,
 			       false, 0, locktime,
 			       BITCOIN_TX_RBF_SEQUENCE);
 
-	/* This was the condition of exiting the loop above! */
-	if (!amount_sat_sub(&excess, input, *amount))
-		abort();
+	if (all) {
+		/* Count everything not going towards fees as excess. */
+		if (!amount_sat_sub(&excess, input, total_fee))
+			return command_fail(cmd, FUND_CANNOT_AFFORD,
+					    "All %zu inputs could not afford"
+					    " %s fees",
+					    tal_count(utxos),
+					    type_to_string(tmpctx,
+							   struct amount_sat,
+							   &total_fee));
+	} else {
+		/* This was the condition of exiting the loop above! */
+		if (!amount_sat_sub(&excess, input, *amount))
+			abort();
+	}
 
 	response = json_stream_success(cmd);
 	json_add_psbt(response, "psbt", tx->psbt);
