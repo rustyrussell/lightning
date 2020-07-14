@@ -207,7 +207,8 @@ static struct command_result *json_fundpsbt(struct command *cmd,
 	input = AMOUNT_SAT(0);
 	utxos = tal_arr(cmd, struct utxo *, 0);
 	total_fee = AMOUNT_SAT(0);
-	while (amount_sat_sub(&needed, *amount, input)) {
+	while (amount_sat_sub(&needed, *amount, input)
+	       && !amount_sat_eq(needed, AMOUNT_SAT(0))) {
 		struct utxo *utxo;
 
 		utxo = wallet_find_utxo(utxos, cmd->ld->wallet,
