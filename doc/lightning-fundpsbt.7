@@ -41,7 +41,9 @@ called (successfully, with \fIexclusive\fR true) on the returned PSBT\.
 
 On success, returns the \fIpsbt\fR containing the inputs, and
 \fIexcess_msat\fR containing the amount above \fIsatoshi\fR which is
-available\.  This could be zero, or dust\.
+available\.  This could be zero, or dust\.  If \fIsatoshi\fR was "all",
+then \fIexcess_msat\fR is the entire amount once fees are subtracted
+for the weights of the inputs\.
 
 
 If \fIreserve\fR was true, then a \fIreservations\fR array is returned,

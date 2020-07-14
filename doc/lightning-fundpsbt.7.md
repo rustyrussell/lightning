@@ -39,7 +39,9 @@ RETURN VALUE
 
 On success, returns the *psbt* containing the inputs, and
 *excess_msat* containing the amount above *satoshi* which is
-available.  This could be zero, or dust.
+available.  This could be zero, or dust.  If *satoshi* was "all",
+then *excess_msat* is the entire amount once fees are subtracted
+for the weights of the inputs.
 
 If *reserve* was true, then a *reservations* array is returned,
 exactly like *reserveinputs*.
