@@ -844,6 +844,7 @@ static u8 *accepter_start(struct state *state, const u8 *oc2_msg)
 	struct tlv_opening_tlvs *open_tlv;
 	u8 channel_flags;
 	struct wally_psbt *psbt;
+	struct wally_tx *funding_tx;
 	char *err_reason;
 	const u8 *wscript;
 	struct channel_id cid;
@@ -1055,7 +1056,6 @@ static u8 *accepter_start(struct state *state, const u8 *oc2_msg)
 		return NULL;
 
 	/* Find the funding transaction txid */
-	struct wally_tx *funding_tx;
 	psbt_txid(psbt, &state->funding_txid, &funding_tx);
 
 	wscript = bitcoin_redeem_2of2(state,
