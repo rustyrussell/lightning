@@ -679,7 +679,9 @@ wallet_commit_channel(struct lightningd *ld,
 		return NULL;
 	}
 
-	channel_info->fee_states = new_fee_states(uc, opener, &feerate);
+	channel_info->fee_states = take(new_fee_states(uc,
+						       opener,
+						       &feerate));
 
 	/* old_remote_per_commit not valid yet, copy valid one. */
 	channel_info->old_remote_per_commit = channel_info->remote_per_commit;
