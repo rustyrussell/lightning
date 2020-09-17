@@ -678,10 +678,6 @@ wallet_commit_channel(struct lightningd *ld,
 		return NULL;
 	}
 
-	channel_info->fee_states = take(new_fee_states(uc,
-						       opener,
-						       &feerate));
-
 	/* old_remote_per_commit not valid yet, copy valid one. */
 	channel_info->old_remote_per_commit = channel_info->remote_per_commit;
 
@@ -722,6 +718,7 @@ wallet_commit_channel(struct lightningd *ld,
 			      remote_commit_sig,
 			      NULL, /* No HTLC sigs yet */
 			      channel_info,
+			      take(new_fee_states(NULL, opener, &feerate)),
 			      NULL, /* No shutdown_scriptpubkey[REMOTE] yet */
 			      our_upfront_shutdown_script,
 			      final_key_idx, false,
