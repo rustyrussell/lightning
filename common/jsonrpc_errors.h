@@ -83,5 +83,6 @@ static const errcode_t OFFER_ALREADY_DISABLED = 1001;
 static const errcode_t OFFER_EXPIRED = 1002;
 static const errcode_t OFFER_ROUTE_NOT_FOUND = 1003;
 static const errcode_t OFFER_BAD_INVREQ_REPLY = 1004;
+static const errcode_t OFFER_TIMEOUT = 1005;
 
 #endif /* LIGHTNING_COMMON_JSONRPC_ERRORS_H */
