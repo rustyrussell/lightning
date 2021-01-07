@@ -382,10 +382,6 @@ static struct command_result *recv_onion_message(struct command *cmd,
 	struct pubkey blinding;
 	struct command_result *err;
 
-	plugin_log(cmd->plugin, LOG_INFORM, "Received onion message: %.*s",
-		   json_tok_full_len(params),
-		   json_tok_full(buf, params));
-
 	om = json_get_member(buf, params, "onion_message");
 	blindingtok = json_get_member(buf, om, "blinding_in");
 	if (!blindingtok || !json_to_pubkey(buf, blindingtok, &blinding))
@@ -399,6 +395,10 @@ static struct command_result *recv_onion_message(struct command *cmd,
 			   json_tok_full(buf, om));
 		return command_hook_success(cmd);
 	}
+
+	plugin_log(cmd->plugin, LOG_DBG, "Received onion message: %.*s",
+		   json_tok_full_len(params),
+		   json_tok_full(buf, params));
 
 	err = handle_error(cmd, sent, buf, om);
 	if (err)
