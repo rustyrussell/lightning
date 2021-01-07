@@ -17,18 +17,18 @@ offer and the returned invoice.
 
 The offer must not contain *send_invoice*; see lightning-sendinvoice(7).
 
-*msatoshi* is optional: it is required if the *offer* does not specify
+*msatoshi* is required if the *offer* does not specify
 an amount at all, otherwise it is not allowed.
 
-*quantity* is optional: it is required if the *offer* specifies
+*quantity* is is required if the *offer* specifies
 *quantity_min* or *quantity_max*, otherwise it is not allowed.
 
-*recurrence_counter* is optional: it is required if the *offer*
+*recurrence_counter* is required if the *offer*
 specifies *recurrence*, otherwise it is not allowed.
 *recurrence_counter* should first be set to 0, and incremented for
 each successive invoice in a given series.
 
-*recurrence_start* is optional: it is required if the *offer*
+*recurrence_start* is required if the *offer*
 specifies *recurrence_base* with *start_any_period* set, otherwise it
 is not allowed.  It indicates what period number to start at.
 
