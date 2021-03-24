@@ -530,8 +530,10 @@ static void destroy_subd(struct subd *sd)
 		fail_if_subd_fails = false;
 		break;
 	case -1:
-		log_unusual(sd->log, "Status closed, but waitpid %i says %s",
-			    sd->pid, strerror(errno));
+		/* FIXME: Unify child handling: we sometimes can race
+		 * with our SIGCHLD signal */
+		log_debug(sd->log, "Status closed, but waitpid %i says %s",
+			  sd->pid, strerror(errno));
 		status = -1;
 		break;
 	}
