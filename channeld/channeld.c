@@ -3245,6 +3245,11 @@ static void handle_dev_memleak(struct peer *peer, const u8 *msg)
 	struct htable *memtable;
 	bool found_leak;
 
+	const u8 *m;
+	status_debug("msg = %p", msg);
+	while ((m = msg_dequeue(peer->from_master)) != NULL)
+		status_debug("from_master queue msg %p", m);
+
 	memtable = memleak_find_allocations(tmpctx, msg, msg);
 
 	/* Now delete peer and things it has pointers to. */
