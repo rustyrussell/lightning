@@ -1,0 +1,13 @@
+--- wire/peer_exp_wire.csv	2021-06-09 11:13:40.168349259 +0930
++++ wire/peer_exp_wire.csv.2	2021-06-15 14:47:48.594430553 +0930
+@@ -185,6 +93,10 @@
+ msgdata,closing_signed,channel_id,channel_id,
+ msgdata,closing_signed,fee_satoshis,u64,
+ msgdata,closing_signed,signature,signature,
++msgtype,update_noop,129,option_simplified_update
++msgdata,update_noop,channel_id,channel_id,
++msgtype,yield,138,option_simplified_update
++msgdata,yield,channel_id,channel_id,
+ msgtype,update_add_htlc,128
+ msgdata,update_add_htlc,channel_id,channel_id,
+ msgdata,update_add_htlc,id,u64,

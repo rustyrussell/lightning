@@ -45,7 +45,9 @@ static bool unknown_type(enum peer_wire t)
 	case WIRE_INIT_RBF:
 	case WIRE_ACK_RBF:
 #if EXPERIMENTAL_FEATURES
+	case WIRE_YIELD:
 	case WIRE_STFU:
+	case WIRE_UPDATE_NOOP:
 #endif
 		return false;
 	}
@@ -97,7 +99,9 @@ bool is_msg_for_gossipd(const u8 *cursor)
 	case WIRE_INIT_RBF:
 	case WIRE_ACK_RBF:
 #if EXPERIMENTAL_FEATURES
+	case WIRE_YIELD:
 	case WIRE_STFU:
+	case WIRE_UPDATE_NOOP:
 #endif
 		break;
 	}

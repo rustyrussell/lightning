@@ -743,6 +743,8 @@ static struct io_plan *peer_msg_in(struct io_conn *conn,
 	case WIRE_ACK_RBF:
 #if EXPERIMENTAL_FEATURES
 	case WIRE_STFU:
+	case WIRE_UPDATE_NOOP:
+	case WIRE_YIELD:
 #endif
 		status_broken("peer %s: relayed unexpected msg of type %s",
 			      type_to_string(tmpctx, struct node_id, &peer->id),

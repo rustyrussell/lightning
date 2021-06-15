@@ -2123,6 +2123,10 @@ static void peer_in(struct peer *peer, const u8 *msg)
 		return;
 	case WIRE_INIT_RBF:
 	case WIRE_ACK_RBF:
+#if EXPERIMENTAL_FEATURES
+	case WIRE_UPDATE_NOOP:
+	case WIRE_YIELD:
+#endif
 		break;
 
 	case WIRE_CHANNEL_REESTABLISH:
