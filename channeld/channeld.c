@@ -2104,6 +2104,8 @@ static void peer_in(struct peer *peer, const u8 *msg)
 	case WIRE_STFU:
 		handle_stfu(peer, msg);
 		return;
+	case WIRE_UPDATE_NOOP:
+		return;
 #endif
 	case WIRE_INIT:
 	case WIRE_OPEN_CHANNEL:
@@ -2124,7 +2126,6 @@ static void peer_in(struct peer *peer, const u8 *msg)
 	case WIRE_INIT_RBF:
 	case WIRE_ACK_RBF:
 #if EXPERIMENTAL_FEATURES
-	case WIRE_UPDATE_NOOP:
 	case WIRE_YIELD:
 #endif
 		break;
