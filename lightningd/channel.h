@@ -194,6 +194,9 @@ struct channel {
 	/* Was this negotiated with `option_anchor_outputs? */
 	bool option_anchor_outputs;
 
+	/* Was this negotiated with `option_simplified_update? */
+	bool option_simplified_update;
+
 	/* Any commands trying to forget us. */
 	struct command **forgets;
 
@@ -273,7 +276,8 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 			    enum side closer,
 			    enum state_change reason,
 			    /* NULL or stolen */
-			    const struct bitcoin_outpoint *shutdown_wrong_funding STEALS);
+			    const struct bitcoin_outpoint *shutdown_wrong_funding STEALS,
+			    bool option_simplified_update);
 
 /* new_inflight - Create a new channel_inflight for a channel */
 struct channel_inflight *

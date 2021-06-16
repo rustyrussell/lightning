@@ -1292,7 +1292,8 @@ static struct channel *wallet_stmt2channel(struct wallet *w, struct db_stmt *stm
 			   db_column_int(stmt, 49),
 			   db_column_int(stmt, 51),
 			   db_column_int(stmt, 52),
-			   shutdown_wrong_funding);
+			   shutdown_wrong_funding,
+			   db_column_int(stmt, 60));
 
 	if (!wallet_channel_load_inflights(w, chan)) {
 		tal_free(chan);
@@ -1384,6 +1385,7 @@ static bool wallet_channels_load_active(struct wallet *w)
 					", funding_pubkey_local" // 57
 					", shutdown_wrong_txid" // 58
 					", shutdown_wrong_outnum" // 59
+					", option_simplified_update" // 60
 					" FROM channels"
                                         " WHERE state != ?;")); //? 0
 	db_bind_int(stmt, 0, CLOSED);
@@ -1671,8 +1673,9 @@ void wallet_channel_save(struct wallet *w, struct channel *chan)
 					"  closer=?," // 34
 					"  state_change_reason=?," // 35
 					"  shutdown_wrong_txid=?," // 36
-					"  shutdown_wrong_outnum=?" // 37
-					" WHERE id=?")); // 38
+					"  shutdown_wrong_outnum=?," // 37
+					"  option_simplified_update=?" // 38
+					" WHERE id=?")); // 39
 	db_bind_u64(stmt, 0, chan->their_shachain.id);
 	if (chan->scid)
 		db_bind_short_channel_id(stmt, 1, chan->scid);
@@ -1724,7 +1727,8 @@ void wallet_channel_save(struct wallet *w, struct channel *chan)
 		db_bind_null(stmt, 36);
 		db_bind_null(stmt, 37);
 	}
-	db_bind_u64(stmt, 38, chan->dbid);
+	db_bind_int(stmt, 38, chan->option_simplified_update);
+	db_bind_u64(stmt, 39, chan->dbid);
 	db_exec_prepared_v2(take(stmt));
 
 	wallet_channel_config_save(w, &chan->channel_info.their_config);

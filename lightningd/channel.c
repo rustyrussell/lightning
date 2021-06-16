@@ -341,7 +341,8 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 			    enum side closer,
 			    enum state_change reason,
 			    /* NULL or stolen */
-			    const struct bitcoin_outpoint *shutdown_wrong_funding)
+			    const struct bitcoin_outpoint *shutdown_wrong_funding,
+			    bool option_simplified_update)
 {
 	struct channel *channel = tal(peer->ld, struct channel);
 
@@ -428,6 +429,7 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 	channel->static_remotekey_start[LOCAL] = local_static_remotekey_start;
 	channel->static_remotekey_start[REMOTE] = remote_static_remotekey_start;
 	channel->option_anchor_outputs = option_anchor_outputs;
+	channel->option_simplified_update = option_simplified_update;
 	channel->forgets = tal_arr(channel, struct command *, 0);
 
 	list_add_tail(&peer->channels, &channel->list);

@@ -51,6 +51,9 @@ struct uncommitted_channel {
 	 */
 	bool got_offer;
 
+	/* Did we negotiate simplified updates for this? */
+	bool option_simplified_update;
+
 	/* These are *not* filled in by new_uncommitted_channel: */
 
 	/* Minimum funding depth (if opener == REMOTE). */

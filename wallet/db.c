@@ -728,6 +728,10 @@ static struct migration dbmigrations[] = {
 	 " local_static_remotekey_start = 9223372036854775807"
 	 " WHERE option_static_remotekey = 0"),
      NULL},
+    /* option_simplified_update. */
+    {SQL("ALTER TABLE channels ADD COLUMN option_simplified_update INTEGER"
+	 " DEFAULT 0;"),
+     NULL },
 };
 
 /* Leak tracking. */

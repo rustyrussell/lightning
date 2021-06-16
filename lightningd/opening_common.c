@@ -56,6 +56,9 @@ new_uncommitted_channel(struct peer *peer)
 	tal_add_destructor(uc, destroy_uncommitted_channel);
 
 	uc->got_offer = false;
+	uc->option_simplified_update = feature_negotiated(ld->our_features,
+							  peer->their_features,
+							  OPT_SIMPLIFIED_UPDATE);
 
 	return uc;
 }
