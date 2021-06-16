@@ -90,6 +90,10 @@ static const struct feature_style feature_styles[] = {
 	  .copy_style = { [INIT_FEATURE] = FEATURE_REPRESENT,
 			  [NODE_ANNOUNCE_FEATURE] = FEATURE_REPRESENT,
 			  [CHANNEL_FEATURE] = FEATURE_DONT_REPRESENT } },
+	{ OPT_SIMPLIFIED_UPDATE,
+	  .copy_style = { [INIT_FEATURE] = FEATURE_REPRESENT,
+			  [NODE_ANNOUNCE_FEATURE] = FEATURE_REPRESENT,
+			  [CHANNEL_FEATURE] = FEATURE_DONT_REPRESENT } },
 };
 
 struct dependency {
@@ -430,6 +434,8 @@ static const char *feature_name(const tal_t *ctx, size_t f)
 		NULL,
 		NULL, /* 100/101 */
 		"option_onion_messages", /* 102/103 */
+		NULL,
+		"option_simplified_update", /* 106/107 */
 	};
 
 	if (f / 2 >= ARRAY_SIZE(fnames) || !fnames[f / 2])

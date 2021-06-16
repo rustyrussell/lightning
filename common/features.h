@@ -135,4 +135,10 @@ const char *fmt_featurebits(const tal_t *ctx, const u8 *featurebits);
 
 #define OPT_SHUTDOWN_WRONG_FUNDING		104
 
+/* BOLT-baea88b253430bcbc23643591a2c78b45b9cafd5 #9:
+ *
+ * | 106/107 | `option_simplified_update` |... IN ...
+ */
+#define OPT_SIMPLIFIED_UPDATE			106
+
 #endif /* LIGHTNING_COMMON_FEATURES_H */
