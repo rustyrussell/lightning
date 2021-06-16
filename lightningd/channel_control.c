@@ -634,6 +634,7 @@ void peer_start_channeld(struct channel *channel,
 				       * negotiated now! */
 				      channel->next_index[LOCAL] >= channel->static_remotekey_start[LOCAL],
 				      channel->option_anchor_outputs,
+				      channel->option_simplified_update,
 				      IFDEV(ld->dev_fast_gossip, false),
 				      IFDEV(dev_fail_process_onionpacket, false),
 				      pbases);
