@@ -2515,6 +2515,130 @@ static bool capture_premature_msg(const u8 ***shit_lnd_says, const u8 *msg)
 	return true;
 }
 
+#if EXPERIMENTAL_FEATURES
+static struct tlv_channel_reestablish_tlvs *setup_send_tlvs(const tal_t *ctx,
+							    const struct peer *peer)
+{
+	struct tlv_channel_reestablish_tlvs *send_tlvs
+		= tlv_channel_reestablish_tlvs_new(peer);
+
+	/* BOLT-upgrade_protocol #2:
+	 * A node sending `channel_reestablish`, if it supports upgrading channels:
+	 *   - MUST set `next_to_send` the commitment number of the next
+	 *     `commitment_signed` it expects to send.
+	 */
+	send_tlvs->next_to_send = tal_dup(send_tlvs, u64, &peer->next_index[REMOTE]);
+
+	/* BOLT-upgrade_protocol #2:
+	 * - if it initiated the channel:
+	 *   - MUST set `desired_type` to the channel_type it wants for the
+	 *     channel.
+	 */
+	if (peer->channel->opener == LOCAL)
+		send_tlvs->desired_type = channel_desired_type(send_tlvs,
+							       peer->channel);
+	else {
+		/* BOLT-upgrade_protocol #2:
+		 * - otherwise:
+		 *  - MUST set `current_type` to the current channel_type of the
+		 *    channel.
+		 *  - MUST set `upgradable` to the channel types it could change
+		 *    to.
+		 *  - MAY not set `upgradable` if it would be empty.
+		 */
+		send_tlvs->current_type = channel_type(send_tlvs, peer->channel);
+		send_tlvs->upgradable = channel_upgradable_types(send_tlvs,
+								 peer->channel);
+	}
+	return send_tlvs;
+}
+
+static void look_for_upgrade(struct peer *peer,
+			     const struct tlv_channel_reestablish_tlvs *send_tlvs,
+			     const struct tlv_channel_reestablish_tlvs *recv_tlvs,
+			     bool retransmit_commitment_signed,
+			     bool retransmit_revoke_and_ack)
+{
+	if (recv_tlvs->desired_type)
+		status_debug("They sent desired_type [%s]",
+			     fmt_featurebits(tmpctx,
+					     recv_tlvs->desired_type->features));
+	if (recv_tlvs->current_type)
+		status_debug("They sent current_type [%s]",
+			     fmt_featurebits(tmpctx,
+					     recv_tlvs->current_type->features));
+
+	for (size_t i = 0; i < tal_count(recv_tlvs->upgradable); i++) {
+		status_debug("They offered upgrade to [%s]",
+			     fmt_featurebits(tmpctx,
+					     recv_tlvs->upgradable[i]->features));
+	}
+
+	/* BOLT-upgrade_protocol #2:
+	 *
+	 * A node receiving `channel_reestablish`:
+	 *  - if it has to retransmit `commitment_signed` or `revoke_and_ack`:
+	 *    - MUST consider the channel feature change failed.
+	 */
+	if (retransmit_commitment_signed || retransmit_revoke_and_ack) {
+		status_debug("No upgrade: we retransmitted");
+	/* BOLT-upgrade_protocol #2:
+	 *
+	 *  - if `next_to_send` is missing, or not equal to the
+	 *    `next_commitment_number` it sent:
+	 *    - MUST consider the channel feature change failed.
+	 */
+	} else if (!recv_tlvs->next_to_send) {
+		status_debug("No upgrade: no next_to_send received");
+	} else if (*recv_tlvs->next_to_send != peer->next_index[LOCAL]) {
+		status_debug("No upgrade: they're retransmitting");
+	/* BOLT-upgrade_protocol #2:
+	 *
+	 *  - if updates are pending on either sides' commitment transaction:
+	 *    - MUST consider the channel feature change failed.
+	 */
+		/* Note that we can have HTLCs we *want* to add or remove
+		 * but haven't yet: thats OK! */
+	} else if (pending_updates(peer->channel, LOCAL, true)
+		   || pending_updates(peer->channel, REMOTE, true)) {
+		status_debug("No upgrade: pending changes");
+	} else {
+		const struct tlv_channel_reestablish_tlvs *initr, *ninitr;
+		const struct channel_type *type;
+
+		if (peer->channel->opener == LOCAL) {
+			initr = send_tlvs;
+			ninitr = recv_tlvs;
+		} else {
+			initr = recv_tlvs;
+			ninitr = send_tlvs;
+		}
+
+		/* BOLT-upgrade_protocol #2:
+		 *
+		 * - if `desired_type` matches `current_type` or any
+		 *   `upgradable` `upgrades`:
+		 *   - MUST consider the channel type to be `desired_type`.
+		 * - otherwise:
+		 *   - MUST consider the channel feature change failed.
+		 *   - if there is a `current_type` field:
+		 *     - MUST consider the channel type to be `current_type`.
+		 */
+		/* Note: returns NULL on missing fields, aka NULL */
+		if (match_type(initr->desired_type,
+			       ninitr->current_type, ninitr->upgradable))
+			type = initr->desired_type;
+		else if (ninitr->current_type)
+			type = ninitr->current_type;
+		else
+			type = NULL;
+
+		if (type)
+			set_channel_type(peer->channel, type);
+	}
+}
+#endif /* EXPERIMENTAL_FEATURES */
+
 static void peer_reconnect(struct peer *peer,
 			   const struct secret *last_remote_per_commit_secret)
 {
@@ -2549,35 +2673,7 @@ static void peer_reconnect(struct peer *peer,
 
 #if EXPERIMENTAL_FEATURES
 	/* Subtle: we free tmpctx below as we loop, so tal off peer */
-	send_tlvs = tlv_channel_reestablish_tlvs_new(peer);
-	/* BOLT-upgrade_protocol #2:
-	 * A node sending `channel_reestablish`, if it supports upgrading channels:
-	 *   - MUST set `next_to_send` the commitment number of the next
-	 *     `commitment_signed` it expects to send.
-	 */
-	send_tlvs->next_to_send = tal_dup(send_tlvs, u64, &peer->next_index[REMOTE]);
-
-	/* BOLT-upgrade_protocol #2:
-	 * - if it initiated the channel:
-	 *   - MUST set `desired_type` to the channel_type it wants for the
-	 *     channel.
-	 */
-	if (peer->channel->opener == LOCAL)
-		send_tlvs->desired_type = channel_desired_type(send_tlvs,
-							       peer->channel);
-	else {
-		/* BOLT-upgrade_protocol #2:
-		 * - otherwise:
-		 *  - MUST set `current_type` to the current channel_type of the
-		 *    channel.
-		 *  - MUST set `upgradable` to the channel types it could change
-		 *    to.
-		 *  - MAY not set `upgradable` if it would be empty.
-		 */
-		send_tlvs->current_type = channel_type(send_tlvs, peer->channel);
-		send_tlvs->upgradable = channel_upgradable_types(send_tlvs,
-								 peer->channel);
-	}
+	send_tlvs = setup_send_tlvs(peer, peer);
 #endif
 
 	/* BOLT #2:
@@ -2834,85 +2930,10 @@ static void peer_reconnect(struct peer *peer,
 	maybe_send_shutdown(peer);
 
 #if EXPERIMENTAL_FEATURES
-	if (recv_tlvs->desired_type)
-		status_debug("They sent desired_type [%s]",
-			     fmt_featurebits(tmpctx,
-					     recv_tlvs->desired_type->features));
-	if (recv_tlvs->current_type)
-		status_debug("They sent current_type [%s]",
-			     fmt_featurebits(tmpctx,
-					     recv_tlvs->current_type->features));
-
-	for (size_t i = 0; i < tal_count(recv_tlvs->upgradable); i++) {
-		status_debug("They offered upgrade to [%s]",
-			     fmt_featurebits(tmpctx,
-					     recv_tlvs->upgradable[i]->features));
-	}
-
-	/* BOLT-upgrade_protocol #2:
-	 *
-	 * A node receiving `channel_reestablish`:
-	 *  - if it has to retransmit `commitment_signed` or `revoke_and_ack`:
-	 *    - MUST consider the channel feature change failed.
-	 */
-	if (retransmit_commitment_signed || retransmit_revoke_and_ack) {
-		status_debug("No upgrade: we retransmitted");
-	/* BOLT-upgrade_protocol #2:
-	 *
-	 *  - if `next_to_send` is missing, or not equal to the
-	 *    `next_commitment_number` it sent:
-	 *    - MUST consider the channel feature change failed.
-	 */
-	} else if (!recv_tlvs->next_to_send) {
-		status_debug("No upgrade: no next_to_send received");
-	} else if (*recv_tlvs->next_to_send != peer->next_index[LOCAL]) {
-		status_debug("No upgrade: they're retransmitting");
-	/* BOLT-upgrade_protocol #2:
-	 *
-	 *  - if updates are pending on either sides' commitment transaction:
-	 *    - MUST consider the channel feature change failed.
-	 */
-		/* Note that we can have HTLCs we *want* to add or remove
-		 * but haven't yet: thats OK! */
-	} else if (pending_updates(peer->channel, LOCAL, true)
-		   || pending_updates(peer->channel, REMOTE, true)) {
-		status_debug("No upgrade: pending changes");
-	} else {
-		const struct tlv_channel_reestablish_tlvs *initr, *ninitr;
-		const struct channel_type *type;
-
-		if (peer->channel->opener == LOCAL) {
-			initr = send_tlvs;
-			ninitr = recv_tlvs;
-		} else {
-			initr = recv_tlvs;
-			ninitr = send_tlvs;
-		}
-
-		/* BOLT-upgrade_protocol #2:
-		 *
-		 * - if `desired_type` matches `current_type` or any
-		 *   `upgradable` `upgrades`:
-		 *   - MUST consider the channel type to be `desired_type`.
-		 * - otherwise:
-		 *   - MUST consider the channel feature change failed.
-		 *   - if there is a `current_type` field:
-		 *     - MUST consider the channel type to be `current_type`.
-		 */
-		/* Note: returns NULL on missing fields, aka NULL */
-		if (match_type(initr->desired_type,
-			       ninitr->current_type, ninitr->upgradable))
-			type = initr->desired_type;
-		else if (ninitr->current_type)
-			type = ninitr->current_type;
-		else
-			type = NULL;
-
-		if (type)
-			set_channel_type(peer->channel, type);
-	}
+	look_for_upgrade(peer, send_tlvs, recv_tlvs,
+			 retransmit_commitment_signed,
+			 retransmit_revoke_and_ack);
 	tal_free(send_tlvs);
-
 #endif /* EXPERIMENTAL_FEATURES */
 
 	/* Corner case: we didn't send shutdown before because update_add_htlc
