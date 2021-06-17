@@ -2792,6 +2792,91 @@ static void look_for_upgrade(struct peer *peer,
 			set_channel_type(peer->channel, type);
 	}
 }
+
+static void peer_simplified_reconnect(struct peer *peer,
+				      const struct secret *last_remote_per_commit_secret)
+{
+	struct tlv_channel_reestablish_tlvs *send_tlvs, *recv_tlvs;
+
+	if (peer->channel->option_static_remotekey) {
+		msg = towire_channel_reestablish
+			(NULL, &peer->channel_id,
+			 peer->next_index[LOCAL],
+			 peer->revocations_received,
+			 last_remote_per_commit_secret,
+			 /* Can send any (valid) point here */
+			 &peer->remote_per_commit, send_tlvs);
+	} else {
+		msg = towire_channel_reestablish
+			(NULL, &peer->channel_id,
+			 peer->next_index[LOCAL],
+			 peer->revocations_received,
+			 last_remote_per_commit_secret,
+			 &my_current_per_commitment_point
+#if EXPERIMENTAL_FEATURES
+			 , send_tlvs
+#endif
+				);
+	}
+
+	sync_crypto_write(peer->pps, take(msg));
+
+	peer_billboard(false, "Sent reestablish, waiting for theirs");
+	bool soft_error = peer->funding_locked[REMOTE]
+		|| peer->funding_locked[LOCAL];
+
+	/* Read until they say something interesting (don't forward
+	 * gossip *to* them yet: we might try sending channel_update
+	 * before we've reestablished channel). */
+	do {
+		clean_tmpctx();
+		msg = sync_crypto_read(tmpctx, peer->pps);
+	} while (channeld_handle_custommsg(msg) ||
+		 handle_peer_gossip_or_error(peer->pps, &peer->channel_id, soft_error,
+					     msg) ||
+	if (peer->channel->option_static_remotekey) {
+		msg = towire_channel_reestablish
+			(NULL, &peer->channel_id,
+			 peer->next_index[LOCAL],
+			 peer->revocations_received,
+			 last_remote_per_commit_secret,
+			 /* Can send any (valid) point here */
+			 &peer->remote_per_commit
+#if EXPERIMENTAL_FEATURES
+			 , send_tlvs
+#endif
+				);
+	} else {
+		msg = towire_channel_reestablish
+			(NULL, &peer->channel_id,
+			 peer->next_index[LOCAL],
+			 peer->revocations_received,
+			 last_remote_per_commit_secret,
+			 &my_current_per_commitment_point
+#if EXPERIMENTAL_FEATURES
+			 , send_tlvs
+#endif
+				);
+	}
+
+	sync_crypto_write(peer->pps, take(msg));
+
+	peer_billboard(false, "Sent reestablish, waiting for theirs");
+	bool soft_error = peer->funding_locked[REMOTE]
+		|| peer->funding_locked[LOCAL];
+
+	/* Read until they say something interesting (don't forward
+	 * gossip *to* them yet: we might try sending channel_update
+	 * before we've reestablished channel). */
+	do {
+		clean_tmpctx();
+		msg = sync_crypto_read(tmpctx, peer->pps);
+	} while (channeld_handle_custommsg(msg) ||
+		 handle_peer_gossip_or_error(peer->pps, &peer->channel_id, soft_error,
+					     msg) ||
+	...
+		}
+
 #endif /* EXPERIMENTAL_FEATURES */
 
 static void peer_reconnect(struct peer *peer,
@@ -3750,6 +3835,10 @@ static void init_channel(struct peer *peer)
 	peer->option_simplified_update = option_simplified_update;
 	peer->turn = opener;
 	peer->can_yield = true;
+
+	if (reconnected && option_simplified_update)
+		peer_simplified_reconnect(peer, &last_remote_per_commit_secret);
+	else
 #endif
 
 	/* OK, now we can process peer messages. */
