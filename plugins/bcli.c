@@ -277,7 +277,7 @@ static void next_bcli(enum bitcoind_prio prio)
 	if (!bcli)
 		return;
 
-	bcli->pid = pipecmdarr(NULL, &bcli->fd, &bcli->fd,
+	bcli->pid = pipecmdarr(NULL, &bcli->fd, &pipecmd_preserve,
 			       cast_const2(char **, bcli->args));
 	if (bcli->pid < 0)
 		plugin_err(bcli->cmd->plugin, "%s exec failed: %s",
