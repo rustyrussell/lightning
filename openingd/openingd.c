@@ -114,9 +114,6 @@ struct state {
 	 * as initial channels never have HTLCs. */
 	struct channel *channel;
 
-	bool option_static_remotekey;
-	bool option_anchor_outputs;
-
 	struct feature_set *our_features;
 };
 
@@ -456,7 +453,9 @@ static u8 *funder_channel_start(struct state *state, u8 channel_flags)
 				 &state->remoteconf,
 				 &state->localconf,
 				 true,
-				 state->option_anchor_outputs,
+				 feature_negotiated(state->our_features,
+						    state->their_features,
+						    OPT_ANCHOR_OUTPUTS),
 				 &err_reason)) {
 		negotiation_failed(state, true, "%s", err_reason);
 		return NULL;
@@ -520,8 +519,12 @@ static bool funder_finalize_channel_setup(struct state *state,
 					     &state->their_points,
 					     &state->our_funding_pubkey,
 					     &state->their_funding_pubkey,
-					     state->option_static_remotekey,
-					     state->option_anchor_outputs,
+					     feature_negotiated(state->our_features,
+								state->their_features,
+								OPT_STATIC_REMOTEKEY),
+					     feature_negotiated(state->our_features,
+								state->their_features,
+								OPT_ANCHOR_OUTPUTS),
 					     /* Opener is local */
 					     LOCAL);
 	/* We were supposed to do enough checks above, but just in case,
@@ -897,7 +900,9 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 				 &state->remoteconf,
 				 &state->localconf,
 				 false,
-				 state->option_anchor_outputs,
+				 feature_negotiated(state->our_features,
+						    state->their_features,
+						    OPT_ANCHOR_OUTPUTS),
 				 &err_reason)) {
 		negotiation_failed(state, false, "%s", err_reason);
 		return NULL;
@@ -1009,8 +1014,12 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 					     &state->our_points, &theirs,
 					     &state->our_funding_pubkey,
 					     &their_funding_pubkey,
-					     state->option_static_remotekey,
-					     state->option_anchor_outputs,
+					     feature_negotiated(state->our_features,
+								state->their_features,
+								OPT_STATIC_REMOTEKEY),
+					     feature_negotiated(state->our_features,
+								state->their_features,
+								OPT_ANCHOR_OUTPUTS),
 					     REMOTE);
 	/* We don't expect this to fail, but it does do some additional
 	 * internal sanity checks. */
@@ -1347,6 +1356,7 @@ int main(int argc, char *argv[])
 	if (!fromwire_openingd_init(state, msg,
 				   &chainparams,
 				   &state->our_features,
+				   &state->their_features,
 				   &state->localconf,
 				   &state->max_to_self_delay,
 				   &state->min_effective_htlc_capacity,
@@ -1355,9 +1365,6 @@ int main(int argc, char *argv[])
 				   &state->our_funding_pubkey,
 				   &state->minimum_depth,
 				   &state->min_feerate, &state->max_feerate,
-				   &state->their_features,
-				   &state->option_static_remotekey,
-				   &state->option_anchor_outputs,
 				   &force_tmp_channel_id,
 				   &dev_fast_gossip))
 		master_badmsg(WIRE_OPENINGD_INIT, msg);
