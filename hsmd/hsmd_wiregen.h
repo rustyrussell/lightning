@@ -283,4 +283,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig);
 
 
 #endif /* LIGHTNING_HSMD_HSMD_WIREGEN_H */
-// SHA256STAMP:d802e57862a2ced1580824c7419e6c1075864496478c7ca6c47456df279d88df
+// SHA256STAMP:2773e45c988f754f56f094ee4c00b800ba89e435248bbfe1f0feae70465eac76

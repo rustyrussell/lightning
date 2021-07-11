@@ -232,4 +232,4 @@ bool fromwire_channeld_upgraded(const void *p, bool *option_static_remotekey);
 
 
 #endif /* LIGHTNING_CHANNELD_CHANNELD_WIREGEN_H */
-// SHA256STAMP:7fe345eb02876c231759ec37daba697e85ac3a43137e4b7cb67d136587e2bda5
+// SHA256STAMP:4bd4e2b032d613e3c305769351ef1d8060379cbfe93c71b190c7c22093a39898

@@ -180,4 +180,4 @@ bool fromwire_gossipd_addgossip_reply(const tal_t *ctx, const void *p, wirestrin
 
 
 #endif /* LIGHTNING_GOSSIPD_GOSSIPD_WIREGEN_H */
-// SHA256STAMP:9b38d439d81bbd471c821163b275c5cf3106a665dbdea563113742476f18e386
+// SHA256STAMP:66a0555c79cf97ada2eec875c99ff5017592a4eb8286efba5c5c82e2205a8f4f
