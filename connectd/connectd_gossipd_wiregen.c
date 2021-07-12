@@ -161,4 +161,4 @@ bool fromwire_gossipd_get_addrs_reply(const tal_t *ctx, const void *p, struct wi
 		fromwire_wireaddr(&cursor, &plen, *addrs + i);
 	return cursor != NULL;
 }
-// SHA256STAMP:6715a34654b81bff2a8fad5c3442faa839cfc94219f44dcd5b56d58cad14ce7e
+// SHA256STAMP:e8205cdf95a65921c84c076640e43f3de838396a54037617d120eaef09fd6d7d

@@ -2935,4 +2935,4 @@ void printpeer_wire_tlv_message(const char *tlv_name, const u8 *msg) {
 		printwire_tlvs(tlv_name, &msg, &plen, print_tlvs_onion_message_tlvs, ARRAY_SIZE(print_tlvs_onion_message_tlvs));
 	}
 }
-// SHA256STAMP:27ed5ee5eaa3ab1e96aa3329f75973031929981776531bf4de710b7a42f078b6
+// SHA256STAMP:b214b7f458957514eeb40d5c36994ea37d72531986424b607d71e0834dd4e976
