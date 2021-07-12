@@ -20,4 +20,4 @@ struct channel_type *fromwire_channel_type(const tal_t *ctx, const u8 **cursor, 
 
 
 #endif /* LIGHTNING_WIRE_CHANNEL_TYPE_WIREGEN_H */
-// SHA256STAMP:bb90bdf85bc5e833dfca202bb6502512dcf7c7786c919a798e130884e373d536
+// SHA256STAMP:aa4cb6462fc0a4dc257315c9c1c18aeea99a794759eeef048200ec5227ad75f2

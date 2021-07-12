@@ -8,9 +8,11 @@ ALL_TEST_PROGRAMS += $(WALLET_TEST_PROGRAMS)
 WALLET_TEST_COMMON_OBJS :=			\
 	common/amount.o				\
 	common/base32.o				\
+	common/channel_type.o			\
 	common/derive_basepoints.o		\
 	common/htlc_state.o			\
 	common/htlc_wire.o			\
+	common/features.o			\
 	common/fee_states.o			\
 	common/type_to_string.o			\
 	common/memleak.o			\

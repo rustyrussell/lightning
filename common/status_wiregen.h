@@ -58,4 +58,4 @@ bool fromwire_status_version(const tal_t *ctx, const void *p, wirestring **versi
 
 
 #endif /* LIGHTNING_COMMON_STATUS_WIREGEN_H */
-// SHA256STAMP:164453d73e15e2cd2cf21bedef01dee29834597776d586e94895f49a83d82b48
+// SHA256STAMP:b0eb10784bbcf7c79b9db6fffc730c1e8128582c75e170a350656d8496678364

@@ -202,6 +202,7 @@ void peer_start_closingd(struct channel *channel,
 	int hsmfd;
 	struct lightningd *ld = channel->peer->ld;
 	u32 final_commit_feerate;
+	bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
 
 	if (!channel->shutdown_scriptpubkey[REMOTE]) {
 		channel_internal_error(channel,
@@ -245,7 +246,7 @@ void peer_start_closingd(struct channel *channel,
 	final_commit_feerate = get_feerate(channel->fee_states,
 					   channel->opener, LOCAL);
 	feelimit = commit_tx_base_fee(final_commit_feerate, 0,
-				      channel->option_anchor_outputs);
+				      option_anchor_outputs);
 
 	/* If we can't determine feerate, start at half unilateral feerate. */
 	feerate = mutual_close_feerate(ld->topology);

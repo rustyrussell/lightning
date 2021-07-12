@@ -39,4 +39,4 @@ fromwire_u8_array(cursor, plen, channel_type->features, len);
 	return channel_type;
 }
 
-// SHA256STAMP:bb90bdf85bc5e833dfca202bb6502512dcf7c7786c919a798e130884e373d536
+// SHA256STAMP:aa4cb6462fc0a4dc257315c9c1c18aeea99a794759eeef048200ec5227ad75f2
