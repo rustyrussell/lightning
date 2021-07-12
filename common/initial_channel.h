@@ -65,11 +65,8 @@ struct channel {
 	/* What it looks like to each side. */
 	struct channel_view view[NUM_SIDES];
 
-	/* Is this using option_static_remotekey? */
-	bool option_static_remotekey;
-
-	/* Is this using option_anchor_outputs? */
-	bool option_anchor_outputs;
+	/* Features which apply to this channel. */
+	struct channel_type *type;
 };
 
 /**
@@ -88,8 +85,7 @@ struct channel {
  * @remote_basepoints: remote basepoints.
  * @local_fundingkey: local funding key
  * @remote_fundingkey: remote funding key
- * @option_static_remotekey: was this created with option_static_remotekey?
- * @option_anchor_outputs: was this created with option_anchor_outputs?
+ * @type: type for this channel
  * @opener: which side initiated it.
  *
  * Returns channel, or NULL if malformed.
@@ -108,8 +104,7 @@ struct channel *new_initial_channel(const tal_t *ctx,
 				    const struct basepoints *remote_basepoints,
 				    const struct pubkey *local_funding_pubkey,
 				    const struct pubkey *remote_funding_pubkey,
-				    bool option_static_remotekey,
-				    bool option_anchor_outputs,
+				    const struct channel_type *type TAKES,
 				    enum side opener);
 
 /**
@@ -144,9 +139,6 @@ u32 channel_feerate(const struct channel *channel, enum side side);
  * Channel features are explicitly enumerated as `channel_type` bitfields,
  * using odd features bits.
  */
-struct channel_type *current_channel_type(const tal_t *ctx,
-					  const struct channel *channel);
-
 /* What features can we upgrade?  (Returns NULL if none). */
 struct channel_type **channel_upgradable_types(const tal_t *ctx,
 					       const struct channel *channel);
@@ -155,4 +147,6 @@ struct channel_type **channel_upgradable_types(const tal_t *ctx,
 struct channel_type *channel_desired_type(const tal_t *ctx,
 					  const struct channel *channel);
 
+/* Convenience for querying channel->type */
+bool channel_has(const struct channel *channel, int feature);
 #endif /* LIGHTNING_COMMON_INITIAL_CHANNEL_H */

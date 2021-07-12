@@ -1645,6 +1645,7 @@ static void revert_channel_state(struct state *state)
 	struct amount_sat total;
 	struct amount_msat our_msats;
 	enum side opener = state->our_role == TX_INITIATOR ? LOCAL : REMOTE;
+	const struct channel_type *type;
 
 	/* We've already checked this */
 	if (!amount_sat_add(&total, tx_state->opener_funding,
@@ -1659,6 +1660,8 @@ static void revert_channel_state(struct state *state)
 		abort();
 
 	tal_free(state->channel);
+	type = default_channel_type(NULL,
+				    state->our_features, state->their_features);
 	state->channel = new_initial_channel(state,
 					     &state->channel_id,
 					     &tx_state->funding_txid,
@@ -1675,7 +1678,7 @@ static void revert_channel_state(struct state *state)
 					     &state->their_points,
 					     &state->our_funding_pubkey,
 					     &state->their_funding_pubkey,
-					     true, true,
+					     take(type),
 					     opener);
 }
 
@@ -1696,6 +1699,7 @@ static u8 *accepter_commits(struct state *state,
 	const u8 *wscript;
 	u8 *msg;
 	char *error;
+	const struct channel_type *type;
 
 	/* Find the funding transaction txid */
 	psbt_txid(NULL, tx_state->psbt, &tx_state->funding_txid, NULL);
@@ -1755,6 +1759,8 @@ static u8 *accepter_commits(struct state *state,
 	if (state->channel)
 		state->channel = tal_free(state->channel);
 
+	type = default_channel_type(NULL,
+				    state->our_features, state->their_features);
 	state->channel = new_initial_channel(state,
 					     &state->channel_id,
 					     &tx_state->funding_txid,
@@ -1771,7 +1777,7 @@ static u8 *accepter_commits(struct state *state,
 					     &state->their_points,
 					     &state->our_funding_pubkey,
 					     &state->their_funding_pubkey,
-					     true, true,
+					     take(type),
 					     REMOTE);
 
 	local_commit = initial_channel_tx(state, &wscript, state->channel,
@@ -2178,6 +2184,7 @@ static u8 *opener_commits(struct state *state,
 	const u8 *wscript;
 	u8 *msg;
 	char *error;
+	const struct channel_type *type;
 
 	wscript = bitcoin_redeem_2of2(tmpctx, &state->our_funding_pubkey,
 				      &state->their_funding_pubkey);
@@ -2219,6 +2226,8 @@ static u8 *opener_commits(struct state *state,
 	}
 
 	/* Ok, we're mostly good now? Let's do this */
+	type = default_channel_type(NULL,
+				    state->our_features, state->their_features);
 	state->channel = new_initial_channel(state,
 					     &cid,
 					     &tx_state->funding_txid,
@@ -2234,7 +2243,7 @@ static u8 *opener_commits(struct state *state,
 					     &state->their_points,
 					     &state->our_funding_pubkey,
 					     &state->their_funding_pubkey,
-					     true, true,
+					     take(type),
 					     /* Opener is local */
 					     LOCAL);
 
@@ -3452,6 +3461,7 @@ int main(int argc, char *argv[])
 	u8 *msg;
 	struct amount_sat total_funding;
 	struct amount_msat our_msat;
+	const struct channel_type *type;
 
 	subdaemon_setup(argc, argv);
 
@@ -3530,6 +3540,9 @@ int main(int argc, char *argv[])
 
 		/*~ We only reconnect on channels that the
 		 * saved the the database (exchanged commitment sigs) */
+		type = default_channel_type(NULL,
+					    state->our_features,
+					    state->their_features);
 		state->channel = new_initial_channel(state,
 						     &state->channel_id,
 						     &state->tx_state->funding_txid,
@@ -3544,7 +3557,7 @@ int main(int argc, char *argv[])
 						     &state->their_points,
 						     &state->our_funding_pubkey,
 						     &state->their_funding_pubkey,
-						     true, true, opener);
+						     take(type), opener);
 
 		if (opener == LOCAL)
 			state->our_role = TX_INITIATOR;
