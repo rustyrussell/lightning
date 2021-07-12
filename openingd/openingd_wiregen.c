@@ -261,7 +261,7 @@ bool fromwire_openingd_got_offer_reply(const tal_t *ctx, const void *p, wirestri
 /* WIRE: OPENINGD_FUNDER_REPLY */
 /* Openingd->master: we've successfully offered channel. */
 /* This gives their sig */
-u8 *towire_openingd_funder_reply(const tal_t *ctx, const struct channel_config *their_config, const struct bitcoin_tx *first_commit, const struct penalty_base *pbase, const struct bitcoin_signature *first_commit_sig, const struct per_peer_state *pps, const struct pubkey *revocation_basepoint, const struct pubkey *payment_basepoint, const struct pubkey *htlc_basepoint, const struct pubkey *delayed_payment_basepoint, const struct pubkey *their_per_commit_point, u32 minimum_depth, const struct pubkey *remote_fundingkey, const struct bitcoin_txid *funding_txid, u16 funding_txout, u32 feerate_per_kw, struct amount_sat our_channel_reserve_satoshis, const u8 *shutdown_scriptpubkey)
+u8 *towire_openingd_funder_reply(const tal_t *ctx, const struct channel_config *their_config, const struct bitcoin_tx *first_commit, const struct penalty_base *pbase, const struct bitcoin_signature *first_commit_sig, const struct per_peer_state *pps, const struct pubkey *revocation_basepoint, const struct pubkey *payment_basepoint, const struct pubkey *htlc_basepoint, const struct pubkey *delayed_payment_basepoint, const struct pubkey *their_per_commit_point, u32 minimum_depth, const struct pubkey *remote_fundingkey, const struct bitcoin_txid *funding_txid, u16 funding_txout, u32 feerate_per_kw, struct amount_sat our_channel_reserve_satoshis, const u8 *shutdown_scriptpubkey, const struct channel_type *channel_type)
 {
 	u16 shutdown_len = tal_count(shutdown_scriptpubkey);
 	u8 *p = tal_arr(ctx, u8, 0);
@@ -290,10 +290,11 @@ u8 *towire_openingd_funder_reply(const tal_t *ctx, const struct channel_config *
 	towire_amount_sat(&p, our_channel_reserve_satoshis);
 	towire_u16(&p, shutdown_len);
 	towire_u8_array(&p, shutdown_scriptpubkey, shutdown_len);
+	towire_channel_type(&p, channel_type);
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_openingd_funder_reply(const tal_t *ctx, const void *p, struct channel_config *their_config, struct bitcoin_tx **first_commit, struct penalty_base **pbase, struct bitcoin_signature *first_commit_sig, struct per_peer_state **pps, struct pubkey *revocation_basepoint, struct pubkey *payment_basepoint, struct pubkey *htlc_basepoint, struct pubkey *delayed_payment_basepoint, struct pubkey *their_per_commit_point, u32 *minimum_depth, struct pubkey *remote_fundingkey, struct bitcoin_txid *funding_txid, u16 *funding_txout, u32 *feerate_per_kw, struct amount_sat *our_channel_reserve_satoshis, u8 **shutdown_scriptpubkey)
+bool fromwire_openingd_funder_reply(const tal_t *ctx, const void *p, struct channel_config *their_config, struct bitcoin_tx **first_commit, struct penalty_base **pbase, struct bitcoin_signature *first_commit_sig, struct per_peer_state **pps, struct pubkey *revocation_basepoint, struct pubkey *payment_basepoint, struct pubkey *htlc_basepoint, struct pubkey *delayed_payment_basepoint, struct pubkey *their_per_commit_point, u32 *minimum_depth, struct pubkey *remote_fundingkey, struct bitcoin_txid *funding_txid, u16 *funding_txout, u32 *feerate_per_kw, struct amount_sat *our_channel_reserve_satoshis, u8 **shutdown_scriptpubkey, struct channel_type **channel_type)
 {
 	u16 shutdown_len;
 
@@ -327,6 +328,7 @@ bool fromwire_openingd_funder_reply(const tal_t *ctx, const void *p, struct chan
  	// 2nd case shutdown_scriptpubkey
 	*shutdown_scriptpubkey = shutdown_len ? tal_arr(ctx, u8, shutdown_len) : NULL;
 	fromwire_u8_array(&cursor, &plen, *shutdown_scriptpubkey, shutdown_len);
+ 	*channel_type = fromwire_channel_type(ctx, &cursor, &plen);
 	return cursor != NULL;
 }
 
@@ -469,7 +471,7 @@ bool fromwire_openingd_funder_failed(const tal_t *ctx, const void *p, wirestring
 /* WIRE: OPENINGD_FUNDEE */
 /* Openingd->master: they offered channel. */
 /* This gives their txid and info */
-u8 *towire_openingd_fundee(const tal_t *ctx, const struct channel_config *their_config, const struct bitcoin_tx *first_commit, const struct penalty_base *pbase, const struct bitcoin_signature *first_commit_sig, const struct per_peer_state *pps, const struct pubkey *revocation_basepoint, const struct pubkey *payment_basepoint, const struct pubkey *htlc_basepoint, const struct pubkey *delayed_payment_basepoint, const struct pubkey *their_per_commit_point, const struct pubkey *remote_fundingkey, const struct bitcoin_txid *funding_txid, u16 funding_txout, struct amount_sat funding_satoshis, struct amount_msat push_msat, u8 channel_flags, u32 feerate_per_kw, const u8 *funding_signed_msg, struct amount_sat our_channel_reserve_satoshis, const u8 *local_shutdown_scriptpubkey, const u8 *remote_shutdown_scriptpubkey)
+u8 *towire_openingd_fundee(const tal_t *ctx, const struct channel_config *their_config, const struct bitcoin_tx *first_commit, const struct penalty_base *pbase, const struct bitcoin_signature *first_commit_sig, const struct per_peer_state *pps, const struct pubkey *revocation_basepoint, const struct pubkey *payment_basepoint, const struct pubkey *htlc_basepoint, const struct pubkey *delayed_payment_basepoint, const struct pubkey *their_per_commit_point, const struct pubkey *remote_fundingkey, const struct bitcoin_txid *funding_txid, u16 funding_txout, struct amount_sat funding_satoshis, struct amount_msat push_msat, u8 channel_flags, u32 feerate_per_kw, const u8 *funding_signed_msg, struct amount_sat our_channel_reserve_satoshis, const u8 *local_shutdown_scriptpubkey, const u8 *remote_shutdown_scriptpubkey, const struct channel_type *channel_type)
 {
 	u16 msglen = tal_count(funding_signed_msg);
 	u16 local_shutdown_len = tal_count(local_shutdown_scriptpubkey);
@@ -507,10 +509,11 @@ u8 *towire_openingd_fundee(const tal_t *ctx, const struct channel_config *their_
 	towire_u8_array(&p, local_shutdown_scriptpubkey, local_shutdown_len);
 	towire_u16(&p, remote_shutdown_len);
 	towire_u8_array(&p, remote_shutdown_scriptpubkey, remote_shutdown_len);
+	towire_channel_type(&p, channel_type);
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_openingd_fundee(const tal_t *ctx, const void *p, struct channel_config *their_config, struct bitcoin_tx **first_commit, struct penalty_base **pbase, struct bitcoin_signature *first_commit_sig, struct per_peer_state **pps, struct pubkey *revocation_basepoint, struct pubkey *payment_basepoint, struct pubkey *htlc_basepoint, struct pubkey *delayed_payment_basepoint, struct pubkey *their_per_commit_point, struct pubkey *remote_fundingkey, struct bitcoin_txid *funding_txid, u16 *funding_txout, struct amount_sat *funding_satoshis, struct amount_msat *push_msat, u8 *channel_flags, u32 *feerate_per_kw, u8 **funding_signed_msg, struct amount_sat *our_channel_reserve_satoshis, u8 **local_shutdown_scriptpubkey, u8 **remote_shutdown_scriptpubkey)
+bool fromwire_openingd_fundee(const tal_t *ctx, const void *p, struct channel_config *their_config, struct bitcoin_tx **first_commit, struct penalty_base **pbase, struct bitcoin_signature *first_commit_sig, struct per_peer_state **pps, struct pubkey *revocation_basepoint, struct pubkey *payment_basepoint, struct pubkey *htlc_basepoint, struct pubkey *delayed_payment_basepoint, struct pubkey *their_per_commit_point, struct pubkey *remote_fundingkey, struct bitcoin_txid *funding_txid, u16 *funding_txout, struct amount_sat *funding_satoshis, struct amount_msat *push_msat, u8 *channel_flags, u32 *feerate_per_kw, u8 **funding_signed_msg, struct amount_sat *our_channel_reserve_satoshis, u8 **local_shutdown_scriptpubkey, u8 **remote_shutdown_scriptpubkey, struct channel_type **channel_type)
 {
 	u16 msglen;
 	u16 local_shutdown_len;
@@ -557,6 +560,7 @@ bool fromwire_openingd_fundee(const tal_t *ctx, const void *p, struct channel_co
  	// 2nd case remote_shutdown_scriptpubkey
 	*remote_shutdown_scriptpubkey = remote_shutdown_len ? tal_arr(ctx, u8, remote_shutdown_len) : NULL;
 	fromwire_u8_array(&cursor, &plen, *remote_shutdown_scriptpubkey, remote_shutdown_len);
+ 	*channel_type = fromwire_channel_type(ctx, &cursor, &plen);
 	return cursor != NULL;
 }
 
@@ -600,4 +604,4 @@ bool fromwire_openingd_dev_memleak_reply(const void *p, bool *leak)
  	*leak = fromwire_bool(&cursor, &plen);
 	return cursor != NULL;
 }
-// SHA256STAMP:73c217b9a306ababe8143378b0ad54fa2baf32629429fd924746ed98775db7c0
+// SHA256STAMP:1297f337e58fd184de9e11be8257113916c6c6cde2be8692bdb46a391759e662
