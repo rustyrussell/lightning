@@ -80,4 +80,6 @@ csv = [
     "msgdata,gossip_timestamp_filter,chain_hash,chain_hash,",
     "msgdata,gossip_timestamp_filter,first_timestamp,u32,",
     "msgdata,gossip_timestamp_filter,timestamp_range,u32,",
+    "msgtype,gossip_store_channel_amount,4101",
+    "msgdata,gossip_store_channel_amount,satoshis,u64,",
 ]
