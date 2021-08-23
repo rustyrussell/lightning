@@ -136,7 +136,7 @@ class Gossmap(object):
 
     def update_channel(self, rec: bytes, off: int):
         fields = channel_update.read(io.BytesIO(rec[2:]), {})
-        direction = fields['message_flags'] & 1
+        direction = fields['channel_flags'] & 1
         c = self.channels[ShortChannelId.from_int(fields['short_channel_id'])]
         c.updates_fields[direction] = fields
         c.updates_offset = off
