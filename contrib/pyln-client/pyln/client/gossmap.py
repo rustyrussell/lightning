@@ -51,7 +51,7 @@ class GossmapChannel(object):
 class GossmapNodeId(object):
     def __init__(self, buf: bytes):
         if len(buf) != 33 or (buf[0] != 2 and buf[0] != 3):
-            raise ValueError("{} is not a valid node_id".format(buf.hex))
+            raise ValueError("{} is not a valid node_id".format(buf.hex()))
         self.nodeid = buf
 
     def to_pubkey(self) -> PublicKey:
