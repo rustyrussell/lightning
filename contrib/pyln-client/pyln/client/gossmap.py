@@ -1,7 +1,9 @@
 #! /usr/bin/python3
 
-from pyln.spec.bolt7 import (channel_announcement, channel_update,
-                             node_announcement)
+from pyln.spec.bolt7 import (channel_announcement,
+                             channel_update,
+                             node_announcement,
+                             gossip_store_channel_amount)
 from pyln.proto import ShortChannelId, PublicKey
 from typing import Any, Dict, List, Optional
 
@@ -60,8 +62,7 @@ class GossmapChannel(object):
         self.node2_id = node2_id
         self.updates_fields: List[Optional[Dict[str, Any]]] = [None, None]
         self.updates_offset: List[Optional[int]] = [None, None]
-
-        self.capacity = None  # TODO: where do we get this?
+        self.satoshis = None
         self.half_channels: List[GossmapHalfchannel] = [None, None]
 
     def update_channel(self,
@@ -135,6 +136,7 @@ class Gossmap(object):
         self.store_buf = bytes()
         self.nodes: Dict[bytes, GossmapNode] = {}
         self.channels: Dict[ShortChannelId, GossmapChannel] = {}
+        self._last_scid: str = None
         version = self.store_file.read(1)
         if version[0] != GOSSIP_STORE_VERSION:
             raise ValueError("Invalid gossip store version {}".format(version))
@@ -156,6 +158,7 @@ class Gossmap(object):
         if node2_id not in self.nodes:
             self.nodes[node2_id] = GossmapNode(node2_id)
 
+        self._last_scid = scid
         self.channels[scid] = c
         self.nodes[node1_id].channels.append(c)
         self.nodes[node2_id].channels.append(c)
@@ -178,6 +181,11 @@ class Gossmap(object):
                           ShortChannelId.from_int(fields['short_channel_id']),
                           GossmapNodeId(fields['node_id_1']), GossmapNodeId(fields['node_id_2']),
                           is_private)
+
+    def _set_channel_amount(self, rec: bytes):
+        """ Sets channel capacity of last added channel """
+        fields = gossip_store_channel_amount.read(io.BytesIO(rec[2:]), {})
+        self.channels[self._last_scid].satoshis = fields['satoshis']
 
     def get_channel(self, short_channel_id: ShortChannelId):
         """ Resolves a channel by its short channel id """
@@ -252,6 +260,8 @@ class Gossmap(object):
                 self.add_channel(rec, off, False)
             elif rectype == WIRE_GOSSIP_STORE_PRIVATE_CHANNEL:
                 self.add_channel(rec[2 + 8 + 2:], off + 2 + 8 + 2, True)
+            elif rectype == gossip_store_channel_amount.number:
+                self._set_channel_amount(rec)
             elif rectype == channel_update.number:
                 self.update_channel(rec, off)
             elif rectype == WIRE_GOSSIP_STORE_PRIVATE_UPDATE:
