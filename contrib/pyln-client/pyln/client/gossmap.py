@@ -5,7 +5,7 @@ from pyln.spec.bolt7 import (channel_announcement,
                              node_announcement,
                              gossip_store_channel_amount)
 from pyln.proto import ShortChannelId, PublicKey
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, cast
 
 import io
 import struct
@@ -33,7 +33,7 @@ class GossipStoreHeader(object):
 
 class GossmapHalfchannel(object):
     """One direction of a GossmapChannel."""
-    def __init__(self, channel: GossmapChannel, direction: int,
+    def __init__(self, channel: 'GossmapChannel', direction: int,
                  timestamp: int, cltv_expiry_delta: int,
                  htlc_minimum_msat: int, htlc_maximum_msat: int,
                  fee_base_msat: int, fee_proportional_millionths: int):
@@ -71,12 +71,13 @@ class GossmapNodeId(object):
     def __repr__(self):
         return "GossmapNodeId[{}]".format(self.nodeid.hex())
 
-    def from_str(self, s: str):
+    @classmethod
+    def from_str(cls, s: str):
         if s.startswith('0x'):
             s = s[2:]
         if len(s) != 67:
             raise ValueError(f"{s} is not a valid hexstring of a node_id")
-        return GossmapNodeId(bytes.fromhex(s))
+        return cls(bytes.fromhex(s))
 
 
 class GossmapChannel(object):
@@ -97,14 +98,14 @@ class GossmapChannel(object):
         self.updates_fields: List[Optional[Dict[str, Any]]] = [None, None]
         self.updates_offset: List[Optional[int]] = [None, None]
         self.satoshis = None
-        self.half_channels: List[GossmapHalfchannel] = [None, None]
+        self.half_channels: List[Optional[GossmapHalfchannel]] = [None, None]
 
     def update_channel(self,
                        direction: int,
-                       fields: List[Optional[Dict[str, Any]]] = [None, None],
-                       off: List[Optional[int]] = [None, None]):
+                       fields: Dict[str, Any],
+                       off: int):
         self.updates_fields[direction] = fields
-        self.updates_offset = off
+        self.updates_offset[direction] = off
 
         half = GossmapHalfchannel(self, direction,
                                   fields['timestamp'],
@@ -132,8 +133,8 @@ class GossmapNode(object):
 """
     def __init__(self, node_id: GossmapNodeId):
         self.announce_fields: Optional[Dict[str, Any]] = None
-        self.announce_offset = None
-        self.channels = []
+        self.announce_offset: Optional[int] = None
+        self.channels: List[GossmapChannel] = []
         self.node_id = node_id
 
     def __repr__(self):
@@ -148,10 +149,10 @@ class Gossmap(object):
         self.store_buf = bytes()
         self.nodes: Dict[GossmapNodeId, GossmapNode] = {}
         self.channels: Dict[ShortChannelId, GossmapChannel] = {}
-        self._last_scid: str = None
+        self._last_scid: Optional[str] = None
         version = self.store_file.read(1)
         if version[0] != GOSSIP_STORE_VERSION:
-            raise ValueError("Invalid gossip store version {}".format(version))
+            raise ValueError("Invalid gossip store version {}".format(int(version)))
         self.bytes_read = 1
         self.refresh()
 
@@ -205,11 +206,11 @@ class Gossmap(object):
             short_channel_id = ShortChannelId.from_str(short_channel_id)
         return self.channels.get(short_channel_id)
 
-    def get_node(self, node_id: GossmapNodeId):
+    def get_node(self, node_id: Union[GossmapNodeId, str]):
         """ Resolves a node by its public key node_id """
-        if type(node_id) == str:
+        if isinstance(node_id, str):
             node_id = GossmapNodeId.from_str(node_id)
-        return self.nodes.get(node_id)
+        return self.nodes.get(cast(GossmapNodeId, node_id))
 
     def update_channel(self, rec: bytes, off: int):
         fields = channel_update.read(io.BytesIO(rec[2:]), {})
