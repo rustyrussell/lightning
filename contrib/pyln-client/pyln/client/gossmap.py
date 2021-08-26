@@ -202,7 +202,7 @@ class Gossmap(object):
 
     def get_channel(self, short_channel_id: ShortChannelId):
         """ Resolves a channel by its short channel id """
-        if type(short_channel_id) == str:
+        if isinstance(short_channel_id, str):
             short_channel_id = ShortChannelId.from_str(short_channel_id)
         return self.channels.get(short_channel_id)
 
