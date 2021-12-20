@@ -6,12 +6,10 @@
 
 struct channel;
 struct lightningd;
-struct per_peer_state;
 
 void resolve_close_command(struct lightningd *ld, struct channel *channel,
 			   bool cooperative);
 
-void peer_start_closingd(struct channel *channel,
-			 struct per_peer_state *pps);
+void peer_start_closingd(struct channel *channel, int peer_fd, int gossip_fd);
 
 #endif /* LIGHTNING_LIGHTNINGD_CLOSING_CONTROL_H */
