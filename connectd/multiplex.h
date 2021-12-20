@@ -27,4 +27,7 @@ void queue_peer_msg(struct peer *peer, const u8 *msg TAKES);
 void setup_peer_gossip_store(struct peer *peer,
 			     const struct feature_set *our_features,
 			     const u8 *their_features);
+
+/* When lightningd says to send a ping */
+void send_manual_ping(struct daemon *daemon, const u8 *msg);
 #endif /* LIGHTNING_CONNECTD_MULTIPLEX_H */

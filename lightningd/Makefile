@@ -30,7 +30,6 @@ LIGHTNINGD_SRC :=				\
 	lightningd/pay.c			\
 	lightningd/peer_control.c		\
 	lightningd/peer_htlcs.c			\
-	lightningd/ping.c			\
 	lightningd/plugin.c			\
 	lightningd/plugin_control.c		\
 	lightningd/plugin_hook.c		\
@@ -41,6 +40,7 @@ LIGHTNINGD_SRC :=				\
 
 LIGHTNINGD_SRC_NOHDR :=				\
 	lightningd/datastore.c			\
+	lightningd/ping.c			\
 	lightningd/offer.c			\
 	lightningd/signmessage.c
 
