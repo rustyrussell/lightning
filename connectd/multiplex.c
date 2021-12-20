@@ -10,8 +10,11 @@
 #include <common/utils.h>
 #include <connectd/multiplex.h>
 #include <errno.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <wire/peer_wire.h>
 #include <wire/wire.h>
 #include <wire/wire_io.h>
 
@@ -45,15 +48,61 @@ static struct io_plan *dev_leave_hanging(struct io_conn *peer_conn,
 }
 #endif /* DEVELOPER */
 
+/* We're happy for the kernel to batch update and gossip messages, but a
+ * commitment message, for example, should be instantly sent.  There's no
+ * great way of doing this, unfortunately.
+ *
+ * Setting TCP_NODELAY on Linux flushes the socket, which really means
+ * we'd want to toggle on then off it *after* sending.  But Linux has
+ * TCP_CORK.  On FreeBSD, it seems (looking at source) not to, so
+ * there we'd want to set it before the send, and reenable it
+ * afterwards.  Even if this is wrong on other non-Linux platforms, it
+ * only means one extra packet.
+ */
+static void set_urgent_flag(struct peer *peer, bool urgent)
+{
+	int val;
+	int opt;
+	const char *optname;
+	static bool complained = false;
+
+	if (!urgent && !peer->urgent)
+		return;
+
+#ifdef TCP_CORK
+	opt = TCP_CORK;
+	optname = "TCP_CORK";
+#elif defined(TCP_NODELAY)
+	opt = TCP_NODELAY;
+	optname = "TCP_NODELAY";
+#else
+#error "Please report platform with neither TCP_CORK nor TCP_NODELAY?"
+#endif
+
+	val = urgent;
+	if (setsockopt(io_conn_fd(peer->to_peer),
+		       IPPROTO_TCP, opt, &val, sizeof(val)) != 0) {
+		/* This actually happens in testing, where we blackhole the fd */
+		if (!complained) {
+			status_unusual("setsockopt %s=1: %s",
+				       optname,
+				       strerror(errno));
+			complained = true;
+		}
+	}
+	peer->urgent = urgent;
+}
+
+
 static struct io_plan *encrypt_and_send(struct peer *peer,
 					const u8 *msg TAKES,
 					struct io_plan *(*next)
 					(struct io_conn *peer_conn,
 					 struct peer *peer))
 {
-#if DEVELOPER
 	int type = fromwire_peektype(msg);
 
+#if DEVELOPER
 	switch (dev_disconnect(&peer->id, type)) {
 	case DEV_DISCONNECT_BEFORE:
 		if (taken(msg))
@@ -72,6 +121,14 @@ static struct io_plan *encrypt_and_send(struct peer *peer,
 		break;
 	}
 #endif
+
+	/* These are critical, and so send without delay. */
+	if (type == WIRE_COMMITMENT_SIGNED
+	    || type == WIRE_REVOKE_AND_ACK
+	    || type == WIRE_PING
+	    || type == WIRE_PONG) {
+		set_urgent_flag(peer, true);
+	}
 
 	/* We free this and the encrypted version in next write_to_peer */
 	peer->sent_to_peer = cryptomsg_encrypt_msg(peer, &peer->cs, msg);
@@ -101,6 +158,10 @@ static struct io_plan *write_to_peer(struct io_conn *peer_conn,
 						peer->final_msg,
 						after_final_msg);
 		}
+
+		/* Reset urgent flag, if set. */
+		set_urgent_flag(peer, false);
+
 		/* Tell them to read again, */
 		io_wake(&peer->subd_in);
 
