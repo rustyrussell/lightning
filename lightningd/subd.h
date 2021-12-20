@@ -47,7 +47,7 @@ struct subd {
 	 * sufficient information to hand back to gossipd, including the
 	 * error message we sent them if any. */
 	void (*errcb)(void *channel,
-		      int peer_fd, int gossip_fd,
+		      int peer_fd,
 		      const struct channel_id *channel_id,
 		      const char *desc,
 		      bool warning,
@@ -124,7 +124,7 @@ struct subd *new_channel_subd_(struct lightningd *ld,
 			       unsigned int (*msgcb)(struct subd *, const u8 *,
 						     const int *fds),
 			       void (*errcb)(void *channel,
-					     int peer_fd, int gossip_fd,
+					     int peer_fd,
 					     const struct channel_id *channel_id,
 					     const char *desc,
 					     bool warning,
@@ -141,7 +141,7 @@ struct subd *new_channel_subd_(struct lightningd *ld,
 			  (msgname), (msgcb),				\
 			  typesafe_cb_postargs(void, void *, (errcb),	\
 					       (channel),		\
-					       int, int,		\
+					       int,		\
 					       const struct channel_id *, \
 					       const char *, bool, const u8 *), \
 			  typesafe_cb_postargs(void, void *, (billboardcb), \

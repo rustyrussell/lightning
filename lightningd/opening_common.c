@@ -75,7 +75,7 @@ new_uncommitted_channel(struct peer *peer)
 }
 
 void opend_channel_errmsg(struct uncommitted_channel *uc,
-			  int peer_fd, int gossip_fd,
+			  int peer_fd,
 			  const struct channel_id *channel_id UNUSED,
 			  const char *desc,
 			  bool warning UNUSED,
@@ -83,7 +83,6 @@ void opend_channel_errmsg(struct uncommitted_channel *uc,
 {
 	/* Close fds, if any. */
 	close(peer_fd);
-	close(gossip_fd);
 	uncommitted_channel_disconnect(uc, LOG_INFORM, desc);
 	tal_free(uc);
 }
@@ -169,7 +168,7 @@ void handle_reestablish(struct lightningd *ld,
 			const struct node_id *peer_id,
 			const struct channel_id *channel_id,
 			const u8 *reestablish,
-			int peer_fd, int gossip_fd)
+			int peer_fd)
 {
 	struct peer *peer;
 	struct channel *c;
@@ -185,7 +184,7 @@ void handle_reestablish(struct lightningd *ld,
 	if (c && channel_closed(c)) {
 		log_debug(c->log, "Reestablish on %s channel: using channeld to reply",
 			  channel_state_name(c));
-		peer_start_channeld(c, peer_fd, gossip_fd, NULL, true,
+		peer_start_channeld(c, peer_fd, NULL, true,
 				    reestablish);
 	} else {
 		const u8 *err = towire_errorfmt(tmpctx, channel_id,
@@ -196,7 +195,6 @@ void handle_reestablish(struct lightningd *ld,
 			      take(towire_connectd_peer_final_msg(NULL, peer_id,
 								  err)));
 		subd_send_fd(ld->connectd, peer_fd);
-		subd_send_fd(ld->connectd, gossip_fd);
 	}
 }
 

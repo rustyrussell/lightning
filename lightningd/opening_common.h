@@ -95,7 +95,7 @@ struct uncommitted_channel *
 new_uncommitted_channel(struct peer *peer);
 
 void opend_channel_errmsg(struct uncommitted_channel *uc,
-			  int peer_fd, int gossip_fd,
+			  int peer_fd,
 			  const struct channel_id *channel_id UNUSED,
 			  const char *desc,
 			  bool warning UNUSED,
@@ -121,7 +121,7 @@ void handle_reestablish(struct lightningd *ld,
 			const struct node_id *peer_id,
 			const struct channel_id *channel_id,
 			const u8 *reestablish,
-			int peer_fd, int gossip_fd);
+			int peer_fd);
 
 #if DEVELOPER
 struct command;

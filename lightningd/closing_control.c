@@ -337,7 +337,7 @@ static unsigned closing_msg(struct subd *sd, const u8 *msg, const int *fds UNUSE
 	return 0;
 }
 
-void peer_start_closingd(struct channel *channel, int peer_fd, int gossip_fd)
+void peer_start_closingd(struct channel *channel, int peer_fd)
 {
 	u8 *initmsg;
 	u32 min_feerate, feerate, *max_feerate;
@@ -350,7 +350,6 @@ void peer_start_closingd(struct channel *channel, int peer_fd, int gossip_fd)
 
 	if (!channel->shutdown_scriptpubkey[REMOTE]) {
 		close(peer_fd);
-		close(gossip_fd);
 		channel_internal_error(channel,
 				       "Can't start closing: no remote info");
 		return;
@@ -369,7 +368,6 @@ void peer_start_closingd(struct channel *channel, int peer_fd, int gossip_fd)
 					   channel_errmsg,
 					   channel_set_billboard,
 					   take(&peer_fd),
-					   take(&gossip_fd),
 					   take(&hsmfd),
 					   NULL));
 

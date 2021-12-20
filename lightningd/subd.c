@@ -403,7 +403,7 @@ static bool log_status_fail(struct subd *sd, const u8 *msg)
 	return true;
 }
 
-static bool handle_peer_error(struct subd *sd, const u8 *msg, int fds[2])
+static bool handle_peer_error(struct subd *sd, const u8 *msg, int fds[1])
 {
 	void *channel = sd->channel;
 	struct channel_id channel_id;
@@ -415,14 +415,12 @@ static bool handle_peer_error(struct subd *sd, const u8 *msg, int fds[2])
 					&channel_id, &desc, &warning,
 					&err_for_them)) {
 		close(fds[0]);
-		close(fds[1]);
 		return false;
 	}
 
 	/* Don't free sd; we may be about to free channel. */
 	sd->channel = NULL;
-	sd->errcb(channel, fds[0], fds[1], &channel_id, desc, warning,
-		  err_for_them);
+	sd->errcb(channel, fds[0], &channel_id, desc, warning, err_for_them);
 	return true;
 }
 
@@ -523,11 +521,11 @@ static struct io_plan *sd_msg_read(struct io_conn *conn, struct subd *sd)
 	if (sd->channel) {
 		switch ((enum peer_status_wire)type) {
 		case WIRE_STATUS_PEER_ERROR:
-			/* We expect 2 fds after this */
+			/* We expect 1 fd after this */
 			if (!sd->fds_in) {
 				/* Don't free msg_in: we go around again. */
 				tal_steal(sd, sd->msg_in);
-				plan = sd_collect_fds(conn, sd, 2);
+				plan = sd_collect_fds(conn, sd, 1);
 				goto out;
 			}
 			if (!handle_peer_error(sd, sd->msg_in, sd->fds_in))
@@ -625,7 +623,7 @@ static void destroy_subd(struct subd *sd)
 		if (!outer_transaction)
 			db_begin_transaction(db);
 		if (sd->errcb)
-			sd->errcb(channel, -1, -1, NULL,
+			sd->errcb(channel, -1, NULL,
 				  tal_fmt(sd, "Owning subdaemon %s died (%i)",
 					  sd->name, status),
 				  false, NULL);
@@ -681,7 +679,7 @@ static struct subd *new_subd(struct lightningd *ld,
 			     unsigned int (*msgcb)(struct subd *,
 						   const u8 *, const int *fds),
 			     void (*errcb)(void *channel,
-					   int peer_fd, int gossip_fd,
+					   int peer_fd,
 					   const struct channel_id *channel_id,
 					   const char *desc,
 					   bool warning,
@@ -791,7 +789,7 @@ struct subd *new_channel_subd_(struct lightningd *ld,
 			       unsigned int (*msgcb)(struct subd *, const u8 *,
 						     const int *fds),
 			       void (*errcb)(void *channel,
-					     int peer_fd, int gossip_fd,
+					     int peer_fd,
 					     const struct channel_id *channel_id,
 					     const char *desc,
 					     bool warning,

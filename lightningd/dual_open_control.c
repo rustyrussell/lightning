@@ -1336,11 +1336,10 @@ static void handle_channel_closed(struct subd *dualopend,
 				       "Bad DUALOPEND_SHUTDOWN_COMPLETE: %s",
 				       tal_hex(msg, msg));
 		close(fds[0]);
-		close(fds[1]);
 		return;
 	}
 
-	peer_start_closingd(channel, fds[0], fds[1]);
+	peer_start_closingd(channel, fds[0]);
 	channel_set_state(channel,
 			  CHANNELD_SHUTTING_DOWN,
 			  CLOSINGD_SIGEXCHANGE,
@@ -1653,7 +1652,7 @@ static void handle_channel_locked(struct subd *dualopend,
 	wallet_channel_clear_inflights(dualopend->ld->wallet, channel);
 
 	/* FIXME: LND sigs/update_fee msgs? */
-	peer_start_channeld(channel, fds[0], fds[1], NULL, false, NULL);
+	peer_start_channeld(channel, fds[0], NULL, false, NULL);
 	return;
 }
 
@@ -2969,16 +2968,16 @@ static unsigned int dual_opend_msg(struct subd *dualopend,
 			handle_dry_run_finished(dualopend, msg);
 			return 0;
 		case WIRE_DUALOPEND_CHANNEL_LOCKED:
-			if (tal_count(fds) != 2)
-				return 2;
+			if (tal_count(fds) != 1)
+				return 1;
 			handle_channel_locked(dualopend, fds, msg);
 			return 0;
 		case WIRE_DUALOPEND_GOT_SHUTDOWN:
 			handle_peer_wants_to_close(dualopend, msg);
 			return 0;
 		case WIRE_DUALOPEND_SHUTDOWN_COMPLETE:
-			if (tal_count(fds) != 2)
-				return 2;
+			if (tal_count(fds) != 1)
+				return 1;
 			handle_channel_closed(dualopend, fds, msg);
 			return 0;
 		case WIRE_DUALOPEND_FAIL_FALLEN_BEHIND:
@@ -3182,7 +3181,7 @@ AUTODATA(json_command, &openchannel_bump_command);
 AUTODATA(json_command, &openchannel_abort_command);
 
 static void start_fresh_dualopend(struct peer *peer,
-				  int peer_fd, int gossip_fd,
+				  int peer_fd,
 				  struct channel *channel)
 {
 	int hsmfd;
@@ -3205,7 +3204,6 @@ static void start_fresh_dualopend(struct peer *peer,
 					  channel_errmsg,
 					  channel_set_billboard,
 					  take(&peer_fd),
-					  take(&gossip_fd),
 					  take(&hsmfd), NULL);
 
 	if (!channel->owner) {
@@ -3242,7 +3240,7 @@ static void start_fresh_dualopend(struct peer *peer,
 }
 
 void peer_restart_dualopend(struct peer *peer,
-			    int peer_fd, int gossip_fd,
+			    int peer_fd,
 			    struct channel *channel)
 {
 	u32 max_to_self_delay, blockheight;
@@ -3254,7 +3252,7 @@ void peer_restart_dualopend(struct peer *peer,
 	u8 *msg;
 
 	if (channel_unsaved(channel)) {
-		start_fresh_dualopend(peer, peer_fd, gossip_fd, channel);
+		start_fresh_dualopend(peer, peer_fd, channel);
 		return;
 	}
 	hsmfd = hsm_get_client_fd(peer->ld, &peer->id, channel->dbid,
@@ -3272,7 +3270,6 @@ void peer_restart_dualopend(struct peer *peer,
 					   channel_errmsg,
 					   channel_set_billboard,
 					   take(&peer_fd),
-					   take(&gossip_fd),
 					   take(&hsmfd), NULL));
 	if (!channel->owner) {
 		log_broken(channel->log, "Could not subdaemon channel: %s",
@@ -3346,7 +3343,7 @@ void peer_restart_dualopend(struct peer *peer,
 	subd_send_msg(channel->owner, take(msg));
 }
 
-void peer_start_dualopend(struct peer *peer, int peer_fd, int gossip_fd)
+void peer_start_dualopend(struct peer *peer, int peer_fd)
 {
 	struct channel *channel;
 
@@ -3356,5 +3353,5 @@ void peer_start_dualopend(struct peer *peer, int peer_fd, int gossip_fd)
 				      peer->ld->config.fee_base,
 				      peer->ld->config.fee_per_satoshi);
 
-	start_fresh_dualopend(peer, peer_fd, gossip_fd, channel);
+	start_fresh_dualopend(peer, peer_fd, channel);
 }

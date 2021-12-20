@@ -354,7 +354,7 @@ static void peer_start_closingd_after_shutdown(struct channel *channel,
 	}
 
 	/* This sets channel->owner, closes down channeld. */
-	peer_start_closingd(channel, fds[0], fds[1]);
+	peer_start_closingd(channel, fds[0]);
 
 	/* We might have reconnected, so already be here. */
 	if (!channel_closed(channel)
@@ -495,9 +495,9 @@ static unsigned channel_msg(struct subd *sd, const u8 *msg, const int *fds)
 		peer_got_shutdown(sd->channel, msg);
 		break;
 	case WIRE_CHANNELD_SHUTDOWN_COMPLETE:
-		/* We expect 2 fds. */
+		/* We expect 1 fd. */
 		if (!fds)
-			return 2;
+			return 1;
 		peer_start_closingd_after_shutdown(sd->channel, msg, fds);
 		break;
 	case WIRE_CHANNELD_FAIL_FALLEN_BEHIND:
@@ -556,7 +556,7 @@ static unsigned channel_msg(struct subd *sd, const u8 *msg, const int *fds)
 }
 
 void peer_start_channeld(struct channel *channel,
-			 int peer_fd, int gossip_fd,
+			 int peer_fd,
 			 const u8 *fwd_msg,
 			 bool reconnected,
 			 const u8 *reestablish_only)
@@ -592,7 +592,6 @@ void peer_start_channeld(struct channel *channel,
 					   channel_errmsg,
 					   channel_set_billboard,
 					   take(&peer_fd),
-					   take(&gossip_fd),
 					   take(&hsmfd), NULL));
 
 	if (!channel->owner) {

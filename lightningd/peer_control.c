@@ -279,7 +279,7 @@ void drop_to_chain(struct lightningd *ld, struct channel *channel,
 }
 
 void channel_errmsg(struct channel *channel,
-		    int peer_fd, int gossip_fd,
+		    int peer_fd,
 		    const struct channel_id *channel_id UNUSED,
 		    const char *desc,
 		    bool warning,
@@ -929,7 +929,7 @@ struct peer_connected_hook_payload {
 	struct wireaddr_internal addr;
 	bool incoming;
 	struct peer *peer;
-	int peer_fd, gossip_fd;
+	int peer_fd;
 	u8 *error;
 };
 
@@ -1011,7 +1011,6 @@ static void peer_connected_hook_final(struct peer_connected_hook_payload *payloa
 			channel->peer->connected_incoming = payload->incoming;
 			peer_restart_dualopend(peer,
 					       payload->peer_fd,
-					       payload->gossip_fd,
 					       channel);
 			return;
 		case CHANNELD_AWAITING_LOCKIN:
@@ -1023,7 +1022,6 @@ static void peer_connected_hook_final(struct peer_connected_hook_payload *payloa
 			channel->peer->connected_incoming = payload->incoming;
 			peer_start_channeld(channel,
 					    payload->peer_fd,
-					    payload->gossip_fd,
 					    NULL, true,
 					    NULL);
 			return;
@@ -1045,16 +1043,11 @@ static void peer_connected_hook_final(struct peer_connected_hook_payload *payloa
 			channel->peer->connected_incoming = payload->incoming;
 			peer_restart_dualopend(peer,
 					       payload->peer_fd,
-					       payload->gossip_fd,
 					       channel);
 		} else
-			peer_start_dualopend(peer,
-					     payload->peer_fd,
-					     payload->gossip_fd);
+			peer_start_dualopend(peer, payload->peer_fd);
 	} else
-		peer_start_openingd(peer,
-				    payload->peer_fd,
-				    payload->gossip_fd);
+		peer_start_openingd(peer, payload->peer_fd);
 	return;
 
 send_error:
@@ -1065,7 +1058,6 @@ send_error:
 		      take(towire_connectd_peer_final_msg(NULL, &peer->id,
 							  error)));
 	subd_send_fd(ld->connectd, payload->peer_fd);
-	subd_send_fd(ld->connectd, payload->gossip_fd);
 }
 
 static bool
@@ -1121,8 +1113,7 @@ REGISTER_PLUGIN_HOOK(peer_connected,
 
 /* Connectd tells us a peer has connected: it never hands us duplicates, since
  * it holds them until we say peer_died. */
-void peer_connected(struct lightningd *ld, const u8 *msg,
-		    int peer_fd, int gossip_fd)
+void peer_connected(struct lightningd *ld, const u8 *msg, int peer_fd)
 {
 	struct node_id id;
 	u8 *their_features;
@@ -1140,7 +1131,6 @@ void peer_connected(struct lightningd *ld, const u8 *msg,
 		      tal_hex(msg, msg));
 
 	hook_payload->peer_fd = peer_fd;
-	hook_payload->gossip_fd = gossip_fd;
 
 	/* If we're already dealing with this peer, hand off to correct
 	 * subdaemon.  Otherwise, we'll hand to openingd to wait there. */

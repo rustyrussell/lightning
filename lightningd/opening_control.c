@@ -405,7 +405,7 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 		wallet_penalty_base_add(ld->wallet, channel->dbid, pbase);
 
 	funding_success(channel);
-	peer_start_channeld(channel, fds[0], fds[1], NULL, false, NULL);
+	peer_start_channeld(channel, fds[0], NULL, false, NULL);
 
 cleanup:
 	/* Frees fc too */
@@ -515,14 +515,13 @@ static void opening_fundee_finished(struct subd *openingd,
 		wallet_penalty_base_add(ld->wallet, channel->dbid, pbase);
 
 	/* On to normal operation! */
-	peer_start_channeld(channel, fds[0], fds[1], fwd_msg, false, NULL);
+	peer_start_channeld(channel, fds[0], fwd_msg, false, NULL);
 
 	tal_free(uc);
 	return;
 
 failed:
 	close(fds[0]);
-	close(fds[1]);
 	tal_free(uc);
 }
 
@@ -795,7 +794,7 @@ static void opening_got_offer(struct subd *openingd,
 }
 
 static void opening_got_reestablish(struct subd *openingd, const u8 *msg,
-				    const int fds[2],
+				    const int fds[1],
 				    struct uncommitted_channel *uc)
 {
 	struct lightningd *ld = openingd->ld;
@@ -809,15 +808,13 @@ static void opening_got_reestablish(struct subd *openingd, const u8 *msg,
 			   tal_hex(tmpctx, msg));
 		tal_free(openingd);
 		close(fds[0]);
-		close(fds[1]);
 		return;
 	}
 
 	/* This could free peer */
 	tal_free(uc);
 
-	handle_reestablish(ld, &peer_id, &channel_id, reestablish,
-			   fds[0], fds[1]);
+	handle_reestablish(ld, &peer_id, &channel_id, reestablish, fds[0]);
 }
 
 static unsigned int openingd_msg(struct subd *openingd,
@@ -834,8 +831,8 @@ static unsigned int openingd_msg(struct subd *openingd,
 			tal_free(openingd);
 			return 0;
 		}
-		if (tal_count(fds) != 2)
-			return 2;
+		if (tal_count(fds) != 1)
+			return 1;
 		opening_funder_finished(openingd, msg, fds, uc->fc);
 		return 0;
 	case WIRE_OPENINGD_FUNDER_START_REPLY:
@@ -858,8 +855,8 @@ static unsigned int openingd_msg(struct subd *openingd,
 		return 0;
 
 	case WIRE_OPENINGD_FUNDEE:
-		if (tal_count(fds) != 2)
-			return 2;
+		if (tal_count(fds) != 1)
+			return 1;
 		opening_fundee_finished(openingd, msg, fds, uc);
 		return 0;
 
@@ -868,8 +865,8 @@ static unsigned int openingd_msg(struct subd *openingd,
 		return 0;
 
 	case WIRE_OPENINGD_GOT_REESTABLISH:
-		if (tal_count(fds) != 2)
-			return 2;
+		if (tal_count(fds) != 1)
+			return 1;
 		opening_got_reestablish(openingd, msg, fds, uc);
 		return 0;
 
@@ -891,7 +888,7 @@ static unsigned int openingd_msg(struct subd *openingd,
 	return 0;
 }
 
-void peer_start_openingd(struct peer *peer, int peer_fd, int gossip_fd)
+void peer_start_openingd(struct peer *peer, int peer_fd)
 {
 	int hsmfd;
 	u32 max_to_self_delay;
@@ -915,7 +912,6 @@ void peer_start_openingd(struct peer *peer, int peer_fd, int gossip_fd)
 					opend_channel_errmsg,
 					opend_channel_set_billboard,
 					take(&peer_fd),
-					take(&gossip_fd),
 					take(&hsmfd), NULL);
 	if (!uc->open_daemon) {
 		uncommitted_channel_disconnect(uc, LOG_BROKEN,
