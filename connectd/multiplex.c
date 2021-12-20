@@ -108,6 +108,8 @@ void setup_peer_gossip_store(struct peer *peer,
 	 *        unless explicitly requested.
 	 */
 	if (feature_negotiated(our_features, their_features, OPT_GOSSIP_QUERIES)) {
+		status_peer_debug(&peer->id, "gossip_store: deferring");
+
 		peer->gs.gossip_timer = NULL;
 		peer->gs.active = false;
 		peer->gs.off = 1;
@@ -130,14 +132,17 @@ void setup_peer_gossip_store(struct peer *peer,
 	 *   - SHOULD resume normal operation, as specified in the
 	 *     following [Rebroadcasting](#rebroadcasting) section.
 	 */
-	if (feature_offered(their_features, OPT_INITIAL_ROUTING_SYNC))
+	if (feature_offered(their_features, OPT_INITIAL_ROUTING_SYNC)) {
+		status_peer_debug(&peer->id, "gossip_store: initial_routing_sync");
 		peer->gs.off = 1;
-	else {
+	} else {
 		/* During tests, particularly, we find that the gossip_store
 		 * moves fast, so make sure it really does start at the end. */
 		peer->gs.off
 			= find_gossip_store_end(peer->daemon->gossip_store_fd,
 						peer->daemon->gossip_store_end);
+		status_peer_debug(&peer->id, "gossip_store: off = %zu",
+				  peer->gs.off);
 	}
 }
 

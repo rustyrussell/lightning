@@ -1261,6 +1261,7 @@ def test_node_reannounce(node_factory, bitcoind, chainparams):
     l1.start()
 
     wait_for(lambda: only_one(l2.rpc.listnodes(l1.info['id'])['nodes'])['alias'] == 'SENIORBEAM')
+    wait_for(lambda: only_one(l1.rpc.listnodes(l1.info['id'])['nodes'])['alias'] == 'SENIORBEAM')
 
     # Get node_announcements.
     msgs = l1.query_gossip('gossip_timestamp_filter',
@@ -1270,6 +1271,7 @@ def test_node_reannounce(node_factory, bitcoind, chainparams):
                            # channel_announcement and channel_updates.
                            filters=['0109', '0102', '0100'])
 
+    print("\n\n\n***{}\n\n\n".format(msgs))
     assert len(msgs) == 2
     assert (bytes("SENIORBEAM", encoding="utf8").hex() in msgs[0]
             or bytes("SENIORBEAM", encoding="utf8").hex() in msgs[1])
