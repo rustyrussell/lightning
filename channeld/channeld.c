@@ -419,17 +419,9 @@ static void send_channel_update(struct peer *peer, int disable_flag)
 	wire_sync_write(MASTER_FD, take(msg));
 }
 
-/**
- * Add a channel locally and send a channel update to the peer
- *
- * Send a local_add_channel message to gossipd in order to make the channel
- * usable locally, and also tell our peer about our parameters via a
- * channel_update message. The peer may accept the update and use the contained
- * information to route incoming payments through the channel. The
- * channel_update is not preceeded by a channel_announcement and won't make much
- * sense to other nodes, so we don't tell gossipd about it.
- */
-static void make_channel_local_active(struct peer *peer)
+/* Tells gossipd about our new channel, before it sees a
+ * channel_update from peer */
+static void tell_gossipd_new_channel(struct peer *peer)
 {
 	u8 *msg;
 	const u8 *annfeatures = get_agreed_channelfeatures(tmpctx,
@@ -441,10 +433,6 @@ static void make_channel_local_active(struct peer *peer)
 						    peer->channel->funding_sats,
 						    annfeatures);
  	wire_sync_write(MASTER_FD, take(msg));
-
-	/* Tell gossipd and the other side what parameters we expect should
-	 * they route through us */
-	send_channel_update(peer, 0);
 }
 
 static void send_announcement_signatures(struct peer *peer)
@@ -573,7 +561,9 @@ static void channel_announcement_negotiate(struct peer *peer)
 
 	if (!peer->channel_local_active) {
 		peer->channel_local_active = true;
-		make_channel_local_active(peer);
+		/* Tell gossipd and the other side what parameters we
+		 * expect should they route through us */
+		send_channel_update(peer, 0);
 	}
 
 	/* BOLT #7:
@@ -3281,6 +3271,8 @@ static void handle_funding_depth(struct peer *peer, const u8 *msg)
 				     peer->next_index[LOCAL],
 				     type_to_string(tmpctx, struct pubkey,
 						    &peer->next_local_per_commit));
+			tell_gossipd_new_channel(peer);
+
 			msg = towire_funding_locked(NULL,
 						    &peer->channel_id,
 						    &peer->next_local_per_commit);
@@ -4008,6 +4000,11 @@ static void init_channel(struct peer *peer)
 
 	/* from now we need keep watch over WIRE_CHANNELD_FUNDING_DEPTH */
 	peer->depth_togo = minimum_depth;
+
+	/* Make sure gossipd knows about this channel if we have sent
+	 * funding_locked */
+	if (peer->funding_locked[LOCAL])
+		tell_gossipd_new_channel(peer);
 
 	/* OK, now we can process peer messages. */
 	if (reconnected)
