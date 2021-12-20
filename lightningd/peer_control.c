@@ -1057,7 +1057,7 @@ send_error:
 	subd_send_msg(ld->connectd,
 		      take(towire_connectd_peer_final_msg(NULL, &peer->id,
 							  error)));
-	subd_send_fd(ld->connectd, payload->peer_fd);
+	close(payload->peer_fd);
 }
 
 static bool
