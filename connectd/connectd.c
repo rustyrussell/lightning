@@ -33,6 +33,7 @@
 #include <connectd/handshake.h>
 #include <connectd/multiplex.h>
 #include <connectd/netaddress.h>
+#include <connectd/onion_message.h>
 #include <connectd/peer_exchange_initmsg.h>
 #include <connectd/tor.h>
 #include <connectd/tor_autoservice.h>
@@ -1936,6 +1937,10 @@ static struct io_plan *recv_req(struct io_conn *conn,
 		send_manual_ping(daemon, msg);
 		goto out;
 
+	case WIRE_CONNECTD_SEND_ONIONMSG:
+		onionmsg_req(daemon, msg);
+		goto out;
+
 	case WIRE_CONNECTD_DEV_MEMLEAK:
 #if DEVELOPER
 		dev_connect_memleak(daemon, msg);
@@ -1949,6 +1954,7 @@ static struct io_plan *recv_req(struct io_conn *conn,
 	case WIRE_CONNECTD_CONNECT_FAILED:
 	case WIRE_CONNECTD_DEV_MEMLEAK_REPLY:
 	case WIRE_CONNECTD_PING_REPLY:
+	case WIRE_CONNECTD_GOT_ONIONMSG_TO_US:
 		break;
 	}
 
