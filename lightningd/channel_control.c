@@ -21,7 +21,6 @@
 #include <lightningd/hsm_control.h>
 #include <lightningd/notification.h>
 #include <lightningd/peer_control.h>
-#include <wire/common_wiregen.h>
 
 static void update_feerates(struct lightningd *ld, struct channel *channel)
 {
@@ -550,15 +549,6 @@ static unsigned channel_msg(struct subd *sd, const u8 *msg, const int *fds)
 	case WIRE_CHANNELD_DEV_MEMLEAK_REPLY:
 	case WIRE_CHANNELD_SEND_ERROR:
 	case WIRE_CHANNELD_DEV_QUIESCE_REPLY:
-		break;
-	}
-
-	switch ((enum common_wire)t) {
-	case WIRE_CUSTOMMSG_IN:
-		handle_custommsg_in(sd->ld, sd->node_id, msg);
-		break;
-	/* We send these. */
-	case WIRE_CUSTOMMSG_OUT:
 		break;
 	}
 

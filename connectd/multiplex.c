@@ -736,3 +736,17 @@ void send_manual_ping(struct daemon *daemon, const u8 *msg)
 	set_ping_timer(peer);
 }
 
+void send_custommsg(struct daemon *daemon, const u8 *msg)
+{
+	struct node_id id;
+	u8 *custommsg;
+	struct peer *peer;
+
+	if (!fromwire_connectd_custommsg_out(tmpctx, msg, &id, &custommsg))
+		master_badmsg(WIRE_CONNECTD_CUSTOMMSG_OUT, msg);
+
+	/* Races can happen: this might be gone by now. */
+	peer = peer_htable_get(&daemon->peers, &id);
+	if (peer)
+		queue_peer_msg(peer, take(custommsg));
+}

@@ -30,4 +30,7 @@ void setup_peer_gossip_store(struct peer *peer,
 
 /* When lightningd says to send a ping */
 void send_manual_ping(struct daemon *daemon, const u8 *msg);
+
+/* When lightningd says to send a custom message (from a plugin) */
+void send_custommsg(struct daemon *daemon, const u8 *msg);
 #endif /* LIGHTNING_CONNECTD_MULTIPLEX_H */
