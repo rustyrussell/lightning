@@ -10,6 +10,7 @@
 #include <lightningd/bitcoind.h>
 #include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
+#include <lightningd/channel_control.h>
 #include <lightningd/gossip_control.h>
 #include <lightningd/hsm_control.h>
 #include <lightningd/jsonrpc.h>
@@ -130,8 +131,7 @@ static void handle_local_channel_update(struct lightningd *ld, const u8 *msg)
 		return;
 	}
 
-	tal_free(channel->channel_update);
-	channel->channel_update = tal_steal(channel, update);
+	channel_replace_update(channel, take(update));
 }
 
 const u8 *get_channel_update(struct channel *channel)
