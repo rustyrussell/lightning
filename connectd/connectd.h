@@ -77,9 +77,6 @@ struct peer {
 
 	/* Random ping timer, to detect dead connections. */
 	struct oneshot *ping_timer;
-
-	/* FIXME: remove! */
-	int gossip_fd;
 };
 
 /*~ The HTABLE_DEFINE_TYPE() macro needs a keyof() function to extract the key:
