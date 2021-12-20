@@ -6,6 +6,7 @@
 #include <bitcoin/chainparams.h>
 #include <ccan/io/io.h>
 #include <common/cryptomsg.h>
+#include <common/daemon_conn.h>
 #include <common/dev_disconnect.h>
 #include <common/features.h>
 #include <common/gossip_constants.h>
@@ -17,6 +18,7 @@
 #include <common/utils.h>
 #include <common/wire_error.h>
 #include <connectd/connectd.h>
+#include <connectd/connectd_gossipd_wiregen.h>
 #include <connectd/multiplex.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -28,6 +30,7 @@
 #include <wire/peer_wire.h>
 #include <wire/wire.h>
 #include <wire/wire_io.h>
+#include <wire/wire_sync.h>
 
 void queue_peer_msg(struct peer *peer, const u8 *msg TAKES)
 {
@@ -313,7 +316,7 @@ again:
 	return NULL;
 }
 
-/* We only handle gossip_timestamp_filter for now */
+/* We handle gossip_timestamp_filter, and divert other gossip msgs to gossipd */
 static bool handle_message_locally(struct peer *peer, const u8 *msg)
 {
 	struct bitcoin_blkid chain_hash;
@@ -326,6 +329,14 @@ static bool handle_message_locally(struct peer *peer, const u8 *msg)
 	if (!fromwire_gossip_timestamp_filter(msg, &chain_hash,
 					      &first_timestamp,
 					      &timestamp_range)) {
+		/* Do we want to divert to gossipd? */
+		if (is_msg_for_gossipd(msg)) {
+			u8 *gmsg = towire_gossipd_recv_gossip(NULL,
+							      &peer->id, msg);
+			daemon_conn_send(peer->daemon->gossipd, take(gmsg));
+			return true;
+		}
+
 		return false;
 	}
 
