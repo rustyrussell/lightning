@@ -129,7 +129,7 @@ size_t find_gossip_store_end(int gossip_store_fd, size_t off)
 		u32 msglen = be32_to_cpu(buf.hdr.len) & GOSSIP_STORE_LEN_MASK;
 
 		/* Don't swallow end marker! */
-		if (buf.type == CPU_TO_BE32(WIRE_GOSSIP_STORE_ENDED))
+		if (buf.type == CPU_TO_BE16(WIRE_GOSSIP_STORE_ENDED))
 			break;
 
 		off += sizeof(buf.hdr) + msglen;
