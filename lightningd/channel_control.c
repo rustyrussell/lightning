@@ -6,7 +6,6 @@
 #include <common/json_tok.h>
 #include <common/memleak.h>
 #include <common/param.h>
-#include <common/per_peer_state.h>
 #include <common/shutdown_scriptpubkey.h>
 #include <common/type_to_string.h>
 #include <common/wire_error.h>
@@ -356,18 +355,14 @@ static void peer_start_closingd_after_shutdown(struct channel *channel,
 					       const u8 *msg,
 					       const int *fds)
 {
-	struct per_peer_state *pps;
-
 	if (!fromwire_channeld_shutdown_complete(msg)) {
 		channel_internal_error(channel, "bad shutdown_complete: %s",
 				       tal_hex(msg, msg));
 		return;
 	}
-	pps = new_per_peer_state(msg);
-	per_peer_state_set_fds_arr(pps, fds);
 
 	/* This sets channel->owner, closes down channeld. */
-	peer_start_closingd(channel, pps);
+	peer_start_closingd(channel, fds[0], fds[1]);
 
 	/* We might have reconnected, so already be here. */
 	if (!channel_closed(channel)
@@ -551,7 +546,7 @@ static unsigned channel_msg(struct subd *sd, const u8 *msg, const int *fds)
 }
 
 void peer_start_channeld(struct channel *channel,
-			 struct per_peer_state *pps,
+			 int peer_fd, int gossip_fd,
 			 const u8 *fwd_msg,
 			 bool reconnected,
 			 const u8 *reestablish_only)
@@ -586,8 +581,8 @@ void peer_start_channeld(struct channel *channel,
 					   channel_msg,
 					   channel_errmsg,
 					   channel_set_billboard,
-					   take(&pps->peer_fd),
-					   take(&pps->gossip_fd),
+					   take(&peer_fd),
+					   take(&gossip_fd),
 					   take(&hsmfd), NULL));
 
 	if (!channel->owner) {

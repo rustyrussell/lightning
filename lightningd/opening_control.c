@@ -12,7 +12,6 @@
 #include <common/json_helpers.h>
 #include <common/json_tok.h>
 #include <common/param.h>
-#include <common/per_peer_state.h>
 #include <common/type_to_string.h>
 #include <errno.h>
 #include <hsmd/capabilities.h>
@@ -337,7 +336,6 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 	struct channel *channel;
 	struct lightningd *ld = openingd->ld;
 	u8 *remote_upfront_shutdown_script;
-	struct per_peer_state *pps;
 	struct penalty_base *pbase;
 	struct channel_type *type;
 
@@ -370,9 +368,6 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 		goto cleanup;
 	}
 	remote_commit->chainparams = chainparams;
-
-	pps = new_per_peer_state(resp);
-	per_peer_state_set_fds_arr(pps, fds);
 
 	log_debug(ld->log,
 		  "%s", type_to_string(tmpctx, struct pubkey,
@@ -411,7 +406,7 @@ static void opening_funder_finished(struct subd *openingd, const u8 *resp,
 		wallet_penalty_base_add(ld->wallet, channel->dbid, pbase);
 
 	funding_success(channel);
-	peer_start_channeld(channel, pps, NULL, false, NULL);
+	peer_start_channeld(channel, fds[0], fds[1], NULL, false, NULL);
 
 cleanup:
 	/* Frees fc too */
@@ -436,7 +431,6 @@ static void opening_fundee_finished(struct subd *openingd,
 	u8 channel_flags;
 	struct channel *channel;
 	u8 *remote_upfront_shutdown_script, *local_upfront_shutdown_script;
-	struct per_peer_state *pps;
 	struct penalty_base *pbase;
 	struct channel_type *type;
 
@@ -474,8 +468,6 @@ static void opening_fundee_finished(struct subd *openingd,
 	}
 
 	remote_commit->chainparams = chainparams;
-	pps = new_per_peer_state(tmpctx);
-	per_peer_state_set_fds_arr(pps, fds);
 
 	/* openingd should never accept them funding channel in this case. */
 	if (peer_active_channel(uc->peer)) {
@@ -524,7 +516,7 @@ static void opening_fundee_finished(struct subd *openingd,
 		wallet_penalty_base_add(ld->wallet, channel->dbid, pbase);
 
 	/* On to normal operation! */
-	peer_start_channeld(channel, pps, fwd_msg, false, NULL);
+	peer_start_channeld(channel, fds[0], fds[1], fwd_msg, false, NULL);
 
 	tal_free(uc);
 	return;
@@ -811,22 +803,23 @@ static void opening_got_reestablish(struct subd *openingd, const u8 *msg,
 	struct node_id peer_id = uc->peer->id;
 	struct channel_id channel_id;
 	u8 *reestablish;
-	struct per_peer_state *pps;
+	int peer_fd = fds[0], gossip_fd = fds[1];
 
 	if (!fromwire_openingd_got_reestablish(tmpctx, msg, &channel_id,
 					       &reestablish)) {
 		log_broken(openingd->log, "Malformed opening_got_reestablish %s",
 			   tal_hex(tmpctx, msg));
 		tal_free(openingd);
+		close(peer_fd);
+		close(gossip_fd);
 		return;
 	}
-	pps = new_per_peer_state(tmpctx);
-	per_peer_state_set_fds_arr(pps, fds);
 
 	/* This could free peer */
 	tal_free(uc);
 
-	handle_reestablish(ld, &peer_id, &channel_id, reestablish, pps);
+	handle_reestablish(ld, &peer_id, &channel_id, reestablish,
+			   peer_fd, gossip_fd);
 }
 
 static unsigned int openingd_msg(struct subd *openingd,
@@ -909,7 +902,7 @@ static unsigned int openingd_msg(struct subd *openingd,
 	return 0;
 }
 
-void peer_start_openingd(struct peer *peer, struct per_peer_state *pps)
+void peer_start_openingd(struct peer *peer, int peer_fd, int gossip_fd)
 {
 	int hsmfd;
 	u32 max_to_self_delay;
@@ -932,8 +925,8 @@ void peer_start_openingd(struct peer *peer, struct per_peer_state *pps)
 					openingd_msg,
 					opend_channel_errmsg,
 					opend_channel_set_billboard,
-					take(&pps->peer_fd),
-					take(&pps->gossip_fd),
+					take(&peer_fd),
+					take(&gossip_fd),
 					take(&hsmfd), NULL);
 	if (!uc->open_daemon) {
 		uncommitted_channel_disconnect(uc, LOG_BROKEN,

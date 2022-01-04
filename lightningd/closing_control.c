@@ -14,7 +14,6 @@
 #include <common/json_helpers.h>
 #include <common/json_tok.h>
 #include <common/param.h>
-#include <common/per_peer_state.h>
 #include <common/shutdown_scriptpubkey.h>
 #include <common/timeout.h>
 #include <common/type_to_string.h>
@@ -348,8 +347,7 @@ static unsigned closing_msg(struct subd *sd, const u8 *msg, const int *fds UNUSE
 	return 0;
 }
 
-void peer_start_closingd(struct channel *channel,
-			 struct per_peer_state *pps)
+void peer_start_closingd(struct channel *channel, int peer_fd, int gossip_fd)
 {
 	u8 *initmsg;
 	u32 min_feerate, feerate, *max_feerate;
@@ -361,6 +359,8 @@ void peer_start_closingd(struct channel *channel,
 	bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
 
 	if (!channel->shutdown_scriptpubkey[REMOTE]) {
+		close(peer_fd);
+		close(gossip_fd);
 		channel_internal_error(channel,
 				       "Can't start closing: no remote info");
 		return;
@@ -378,8 +378,8 @@ void peer_start_closingd(struct channel *channel,
 					   closingd_wire_name, closing_msg,
 					   channel_errmsg,
 					   channel_set_billboard,
-					   take(&pps->peer_fd),
-					   take(&pps->gossip_fd),
+					   take(&peer_fd),
+					   take(&gossip_fd),
 					   take(&hsmfd),
 					   NULL));
 

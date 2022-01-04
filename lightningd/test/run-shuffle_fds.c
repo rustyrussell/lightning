@@ -108,12 +108,6 @@ struct log *new_log(const tal_t *ctx UNNEEDED, struct log_book *record UNNEEDED,
 		    const struct node_id *default_node_id UNNEEDED,
 		    const char *fmt UNNEEDED, ...)
 { fprintf(stderr, "new_log called!\n"); abort(); }
-/* Generated stub for new_per_peer_state */
-struct per_peer_state *new_per_peer_state(const tal_t *ctx UNNEEDED)
-{ fprintf(stderr, "new_per_peer_state called!\n"); abort(); }
-/* Generated stub for per_peer_state_set_fds_arr */
-void per_peer_state_set_fds_arr(struct per_peer_state *pps UNNEEDED, const int *fds UNNEEDED)
-{ fprintf(stderr, "per_peer_state_set_fds_arr called!\n"); abort(); }
 /* Generated stub for subdaemon_path */
 const char *subdaemon_path(const tal_t *ctx UNNEEDED, const struct lightningd *ld UNNEEDED, const char *name UNNEEDED)
 { fprintf(stderr, "subdaemon_path called!\n"); abort(); }
