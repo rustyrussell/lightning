@@ -1132,6 +1132,10 @@ class LightningNode(object):
         except RpcError:
             return None
 
+    def only_chan(self):
+        """Return listpeers assuming a single peer with a single channel"""
+        return only_one(only_one(self.rpc.listpeers()['peers'])['channels'])
+
 
 @contextmanager
 def flock(directory: Path):
