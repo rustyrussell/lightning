@@ -22,6 +22,7 @@ typemap = {
     'u16': 'uint32',  # Yeah, I know...
     'f32': 'float',
     'integer': 'sint64',
+    "utxo": "Utxo",
 }
 
 

@@ -230,6 +230,7 @@ class PrimitiveField(Field):
         "integer",
         "u16",
         "number",
+        "utxo",  # A string representing the tuple (txid, outnum)
     ]
 
     def __init__(self, typename, path, description):
