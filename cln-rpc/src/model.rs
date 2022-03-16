@@ -45,6 +45,7 @@ pub enum Request {
 	WaitSendPay(requests::WaitsendpayRequest),
 	NewAddr(requests::NewaddrRequest),
 	Withdraw(requests::WithdrawRequest),
+	KeySend(requests::KeysendRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -80,6 +81,7 @@ pub enum Response {
 	WaitSendPay(responses::WaitsendpayResponse),
 	NewAddr(responses::NewaddrResponse),
 	Withdraw(responses::WithdrawResponse),
+	KeySend(responses::KeysendResponse),
 }
 
 pub mod requests {
@@ -466,6 +468,24 @@ pub mod requests {
 	    pub minconf: Option<u16>,
 	    #[serde(alias = "utxos")]
 	    pub utxos: Vec<Utxo>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct KeysendRequest {
+	    #[serde(alias = "destination")]
+	    pub destination: String,
+	    #[serde(alias = "msatoshi")]
+	    pub msatoshi: Amount,
+	    #[serde(alias = "label", skip_serializing_if = "Option::is_none")]
+	    pub label: Option<String>,
+	    #[serde(alias = "maxfeepercent", skip_serializing_if = "Option::is_none")]
+	    pub maxfeepercent: Option<f32>,
+	    #[serde(alias = "retry_for", skip_serializing_if = "Option::is_none")]
+	    pub retry_for: Option<i64>,
+	    #[serde(alias = "maxdelay", skip_serializing_if = "Option::is_none")]
+	    pub maxdelay: Option<i64>,
+	    #[serde(alias = "exemptfee", skip_serializing_if = "Option::is_none")]
+	    pub exemptfee: Option<Amount>,
 	}
 
 }
@@ -1924,6 +1944,45 @@ pub mod responses {
 	    pub txid: String,
 	    #[serde(alias = "psbt")]
 	    pub psbt: String,
+	}
+
+	/// status of payment
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum KeysendStatus {
+	    COMPLETE,
+	}
+
+	impl TryFrom<i32> for KeysendStatus {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<KeysendStatus, anyhow::Error> {
+	        match c {
+	    0 => Ok(KeysendStatus::COMPLETE),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum KeysendStatus", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct KeysendResponse {
+	    #[serde(alias = "payment_preimage")]
+	    pub payment_preimage: String,
+	    #[serde(alias = "destination", skip_serializing_if = "Option::is_none")]
+	    pub destination: Option<String>,
+	    #[serde(alias = "payment_hash")]
+	    pub payment_hash: String,
+	    #[serde(alias = "created_at")]
+	    pub created_at: i64,
+	    #[serde(alias = "parts")]
+	    pub parts: u32,
+	    #[serde(alias = "amount_msat")]
+	    pub amount_msat: Amount,
+	    #[serde(alias = "amount_sent_msat")]
+	    pub amount_sent_msat: Amount,
+	    #[serde(alias = "warning_partial_completion", skip_serializing_if = "Option::is_none")]
+	    pub warning_partial_completion: Option<String>,
+	    // Path `KeySend.status`
+	    #[serde(rename = "status")]
+	    pub status: KeysendStatus,
 	}
 
 }

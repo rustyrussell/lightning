@@ -37,6 +37,7 @@ service Node {
 	rpc WaitSendPay(WaitsendpayRequest) returns (WaitsendpayResponse) {}
 	rpc NewAddr(NewaddrRequest) returns (NewaddrResponse) {}
 	rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {}
+	rpc KeySend(KeysendRequest) returns (KeysendResponse) {}
 }
 
 message GetinfoRequest {
@@ -911,4 +912,30 @@ message WithdrawResponse {
 	bytes tx = 1;
 	bytes txid = 2;
 	string psbt = 3;
+}
+
+message KeysendRequest {
+	bytes destination = 1;
+	Amount msatoshi = 2;
+	optional string label = 3;
+	optional float maxfeepercent = 4;
+	optional sint64 retry_for = 5;
+	optional sint64 maxdelay = 6;
+	optional Amount exemptfee = 7;
+}
+
+message KeysendResponse {
+	// KeySend.status
+	enum KeysendStatus {
+		COMPLETE = 0;
+	}
+	bytes payment_preimage = 1;
+	optional bytes destination = 2;
+	bytes payment_hash = 3;
+	sint64 created_at = 4;
+	uint32 parts = 5;
+	Amount amount_msat = 6;
+	Amount amount_sent_msat = 7;
+	optional string warning_partial_completion = 8;
+	KeysendStatus status = 9;
 }

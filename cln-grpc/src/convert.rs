@@ -709,6 +709,23 @@ impl From<&responses::WithdrawResponse> for pb::WithdrawResponse {
 }
 
 #[allow(unused_variables)]
+impl From<&responses::KeysendResponse> for pb::KeysendResponse {
+    fn from(c: &responses::KeysendResponse) -> Self {
+        Self {
+            payment_preimage: hex::decode(&c.payment_preimage).unwrap(), // Rule #2 for type hex
+            destination: c.destination.as_ref().map(|v| hex::decode(&v).unwrap()), // Rule #2 for type pubkey?
+            payment_hash: hex::decode(&c.payment_hash).unwrap(), // Rule #2 for type hex
+            created_at: c.created_at.clone(), // Rule #2 for type number
+            parts: c.parts.clone(), // Rule #2 for type u32
+            amount_msat: Some(c.amount_msat.into()), // Rule #2 for type msat
+            amount_sent_msat: Some(c.amount_sent_msat.into()), // Rule #2 for type msat
+            warning_partial_completion: c.warning_partial_completion.clone(), // Rule #2 for type string?
+            status: c.status as i32,
+        }
+    }
+}
+
+#[allow(unused_variables)]
 impl From<&pb::GetinfoRequest> for requests::GetinfoRequest {
     fn from(c: &pb::GetinfoRequest) -> Self {
         Self {
@@ -1037,6 +1054,21 @@ impl From<&pb::WithdrawRequest> for requests::WithdrawRequest {
             satoshi: c.satoshi.as_ref().map(|a| a.into()), // Rule #1 for type msat?
             minconf: c.minconf.map(|v| v as u16), // Rule #1 for type u16?
             utxos: c.utxos.iter().map(|s| s.into()).collect(),
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::KeysendRequest> for requests::KeysendRequest {
+    fn from(c: &pb::KeysendRequest) -> Self {
+        Self {
+            destination: hex::encode(&c.destination), // Rule #1 for type pubkey
+            msatoshi: c.msatoshi.as_ref().unwrap().into(), // Rule #1 for type msat
+            label: c.label.clone(), // Rule #1 for type string?
+            maxfeepercent: c.maxfeepercent.clone(), // Rule #1 for type float?
+            retry_for: c.retry_for.clone(), // Rule #1 for type number?
+            maxdelay: c.maxdelay.clone(), // Rule #1 for type number?
+            exemptfee: c.exemptfee.as_ref().map(|a| a.into()), // Rule #1 for type msat?
         }
     }
 }

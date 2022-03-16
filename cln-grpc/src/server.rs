@@ -896,4 +896,34 @@ async fn withdraw(
 
 }
 
+async fn key_send(
+    &self,
+    request: tonic::Request<pb::KeysendRequest>,
+) -> Result<tonic::Response<pb::KeysendResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::KeysendRequest = (&req).into();
+    debug!("Client asked for getinfo");
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::KeySend(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method KeySend: {:?}", e)))?;
+    match result {
+        Response::KeySend(r) => Ok(
+            tonic::Response::new((&r).into())
+        ),
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call KeySend",
+                r
+            )
+        )),
+    }
+
+}
+
 }

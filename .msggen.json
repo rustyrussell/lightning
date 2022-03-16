@@ -48,6 +48,9 @@
             "torv2": 3,
             "torv3": 4
         },
+        "KeysendStatus": {
+            "complete": 0
+        },
         "ListfundsOutputsStatus": {
             "confirmed": 1,
             "spent": 2,
@@ -351,6 +354,26 @@
             "Invoice.warning_mpp": 9,
             "Invoice.warning_offline": 6,
             "Invoice.warning_private_unused": 8
+        },
+        "KeysendRequest": {
+            "KeySend.destination": 1,
+            "KeySend.exemptfee": 7,
+            "KeySend.label": 3,
+            "KeySend.maxdelay": 6,
+            "KeySend.maxfeepercent": 4,
+            "KeySend.msatoshi": 2,
+            "KeySend.retry_for": 5
+        },
+        "KeysendResponse": {
+            "KeySend.amount_msat": 6,
+            "KeySend.amount_sent_msat": 7,
+            "KeySend.created_at": 4,
+            "KeySend.destination": 2,
+            "KeySend.parts": 5,
+            "KeySend.payment_hash": 3,
+            "KeySend.payment_preimage": 1,
+            "KeySend.status": 9,
+            "KeySend.warning_partial_completion": 8
         },
         "ListchannelsChannels": {
             "ListChannels.channels[].active": 8,
