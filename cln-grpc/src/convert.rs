@@ -218,6 +218,28 @@ impl From<&responses::ListfundsResponse> for pb::ListfundsResponse {
 }
 
 #[allow(unused_variables)]
+impl From<&responses::SendpayResponse> for pb::SendpayResponse {
+    fn from(c: &responses::SendpayResponse) -> Self {
+        Self {
+            id: c.id.clone(),
+            groupid: c.groupid.clone(),
+            payment_hash: hex::decode(&c.payment_hash).unwrap(),
+            status: c.status as i32,
+            amount_msat: c.amount_msat.map(|f| f.into()),
+            destination: c.destination.as_ref().map(|v| hex::decode(&v).unwrap()),
+            created_at: c.created_at.clone(),
+            amount_sent_msat: Some(c.amount_sent_msat.into()),
+            label: c.label.clone(),
+            partid: c.partid.clone(),
+            bolt11: c.bolt11.clone(),
+            bolt12: c.bolt12.clone(),
+            payment_preimage: c.payment_preimage.as_ref().map(|v| hex::decode(&v).unwrap()),
+            message: c.message.clone(),
+        }
+    }
+}
+
+#[allow(unused_variables)]
 impl From<&responses::ListchannelsChannels> for pb::ListchannelsChannels {
     fn from(c: &responses::ListchannelsChannels) -> Self {
         Self {
@@ -335,6 +357,16 @@ impl From<&responses::DatastoreResponse> for pb::DatastoreResponse {
 }
 
 #[allow(unused_variables)]
+impl From<&responses::CreateonionResponse> for pb::CreateonionResponse {
+    fn from(c: &responses::CreateonionResponse) -> Self {
+        Self {
+            onion: hex::decode(&c.onion).unwrap(),
+            shared_secrets: c.shared_secrets.iter().map(|i| hex::decode(i).unwrap()).collect(),
+        }
+    }
+}
+
+#[allow(unused_variables)]
 impl From<&responses::DeldatastoreResponse> for pb::DeldatastoreResponse {
     fn from(c: &responses::DeldatastoreResponse) -> Self {
         Self {
@@ -442,6 +474,26 @@ impl From<&responses::ListinvoicesResponse> for pb::ListinvoicesResponse {
 }
 
 #[allow(unused_variables)]
+impl From<&responses::SendonionResponse> for pb::SendonionResponse {
+    fn from(c: &responses::SendonionResponse) -> Self {
+        Self {
+            id: c.id.clone(),
+            payment_hash: hex::decode(&c.payment_hash).unwrap(),
+            status: c.status as i32,
+            amount_msat: c.amount_msat.map(|f| f.into()),
+            destination: c.destination.as_ref().map(|v| hex::decode(&v).unwrap()),
+            created_at: c.created_at.clone(),
+            amount_sent_msat: Some(c.amount_sent_msat.into()),
+            label: c.label.clone(),
+            bolt11: c.bolt11.clone(),
+            bolt12: c.bolt12.clone(),
+            payment_preimage: c.payment_preimage.as_ref().map(|v| hex::decode(&v).unwrap()),
+            message: c.message.clone(),
+        }
+    }
+}
+
+#[allow(unused_variables)]
 impl From<&pb::GetinfoRequest> for requests::GetinfoRequest {
     fn from(c: &pb::GetinfoRequest) -> Self {
         Self {
@@ -453,8 +505,8 @@ impl From<&pb::GetinfoRequest> for requests::GetinfoRequest {
 impl From<&pb::ListpeersRequest> for requests::ListpeersRequest {
     fn from(c: &pb::ListpeersRequest) -> Self {
         Self {
-            id: c.id.clone().map(|v| hex::encode(v)),
-            level: c.level.clone(),
+            id: c.id.clone().map(|v| hex::encode(v)), // Rule #1 for type pubkey?
+            level: c.level.clone(), // Rule #1 for type string?
         }
     }
 }
@@ -463,7 +515,34 @@ impl From<&pb::ListpeersRequest> for requests::ListpeersRequest {
 impl From<&pb::ListfundsRequest> for requests::ListfundsRequest {
     fn from(c: &pb::ListfundsRequest) -> Self {
         Self {
-            spent: c.spent.clone(),
+            spent: c.spent.clone(), // Rule #1 for type boolean?
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::SendpayRoute> for requests::SendpayRoute {
+    fn from(c: &pb::SendpayRoute) -> Self {
+        Self {
+            msatoshi: c.msatoshi.as_ref().unwrap().into(), // Rule #1 for type msat
+            id: hex::encode(&c.id), // Rule #1 for type pubkey
+            delay: c.delay as u16, // Rule #1 for type u16
+            channel: c.channel.clone(), // Rule #1 for type short_channel_id
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::SendpayRequest> for requests::SendpayRequest {
+    fn from(c: &pb::SendpayRequest) -> Self {
+        Self {
+            route: c.route.iter().map(|s| s.into()).collect(),
+            payment_hash: hex::encode(&c.payment_hash), // Rule #1 for type hex
+            label: c.label.clone(), // Rule #1 for type string?
+            msatoshi: c.msatoshi.as_ref().map(|a| a.into()), // Rule #1 for type msat?
+            bolt11: c.bolt11.clone(), // Rule #1 for type string?
+            payment_secret: c.payment_secret.clone().map(|v| hex::encode(v)), // Rule #1 for type hex?
+            partid: c.partid.map(|v| v as u16), // Rule #1 for type u16?
         }
     }
 }
@@ -472,9 +551,9 @@ impl From<&pb::ListfundsRequest> for requests::ListfundsRequest {
 impl From<&pb::ListchannelsRequest> for requests::ListchannelsRequest {
     fn from(c: &pb::ListchannelsRequest) -> Self {
         Self {
-            short_channel_id: c.short_channel_id.clone(),
-            source: c.source.clone().map(|v| hex::encode(v)),
-            destination: c.destination.clone().map(|v| hex::encode(v)),
+            short_channel_id: c.short_channel_id.clone(), // Rule #1 for type short_channel_id?
+            source: c.source.clone().map(|v| hex::encode(v)), // Rule #1 for type pubkey?
+            destination: c.destination.clone().map(|v| hex::encode(v)), // Rule #1 for type pubkey?
         }
     }
 }
@@ -483,7 +562,7 @@ impl From<&pb::ListchannelsRequest> for requests::ListchannelsRequest {
 impl From<&pb::AddgossipRequest> for requests::AddgossipRequest {
     fn from(c: &pb::AddgossipRequest) -> Self {
         Self {
-            message: hex::encode(&c.message),
+            message: hex::encode(&c.message), // Rule #1 for type hex
         }
     }
 }
@@ -492,8 +571,8 @@ impl From<&pb::AddgossipRequest> for requests::AddgossipRequest {
 impl From<&pb::AutocleaninvoiceRequest> for requests::AutocleaninvoiceRequest {
     fn from(c: &pb::AutocleaninvoiceRequest) -> Self {
         Self {
-            expired_by: c.expired_by.clone(),
-            cycle_seconds: c.cycle_seconds.clone(),
+            expired_by: c.expired_by.clone(), // Rule #1 for type u64?
+            cycle_seconds: c.cycle_seconds.clone(), // Rule #1 for type u64?
         }
     }
 }
@@ -502,9 +581,9 @@ impl From<&pb::AutocleaninvoiceRequest> for requests::AutocleaninvoiceRequest {
 impl From<&pb::CheckmessageRequest> for requests::CheckmessageRequest {
     fn from(c: &pb::CheckmessageRequest) -> Self {
         Self {
-            message: c.message.clone(),
-            zbase: c.zbase.clone(),
-            pubkey: c.pubkey.clone().map(|v| hex::encode(v)),
+            message: c.message.clone(), // Rule #1 for type string
+            zbase: c.zbase.clone(), // Rule #1 for type string
+            pubkey: c.pubkey.clone().map(|v| hex::encode(v)), // Rule #1 for type pubkey?
         }
     }
 }
@@ -513,12 +592,12 @@ impl From<&pb::CheckmessageRequest> for requests::CheckmessageRequest {
 impl From<&pb::CloseRequest> for requests::CloseRequest {
     fn from(c: &pb::CloseRequest) -> Self {
         Self {
-            id: hex::encode(&c.id),
-            unilateraltimeout: c.unilateraltimeout.clone(),
-            destination: c.destination.clone(),
-            fee_negotiation_step: c.fee_negotiation_step.clone(),
-            wrong_funding: c.wrong_funding.clone().map(|v| hex::encode(v)),
-            force_lease_closed: c.force_lease_closed.clone(),
+            id: hex::encode(&c.id), // Rule #1 for type pubkey
+            unilateraltimeout: c.unilateraltimeout.clone(), // Rule #1 for type u32?
+            destination: c.destination.clone(), // Rule #1 for type string?
+            fee_negotiation_step: c.fee_negotiation_step.clone(), // Rule #1 for type string?
+            wrong_funding: c.wrong_funding.clone().map(|v| hex::encode(v)), // Rule #1 for type txid?
+            force_lease_closed: c.force_lease_closed.clone(), // Rule #1 for type boolean?
         }
     }
 }
@@ -527,9 +606,9 @@ impl From<&pb::CloseRequest> for requests::CloseRequest {
 impl From<&pb::ConnectRequest> for requests::ConnectRequest {
     fn from(c: &pb::ConnectRequest) -> Self {
         Self {
-            id: hex::encode(&c.id),
-            host: c.host.clone(),
-            port: c.port.map(|v| v as u16),
+            id: hex::encode(&c.id), // Rule #1 for type pubkey
+            host: c.host.clone(), // Rule #1 for type string?
+            port: c.port.map(|v| v as u16), // Rule #1 for type u16?
         }
     }
 }
@@ -538,9 +617,9 @@ impl From<&pb::ConnectRequest> for requests::ConnectRequest {
 impl From<&pb::CreateinvoiceRequest> for requests::CreateinvoiceRequest {
     fn from(c: &pb::CreateinvoiceRequest) -> Self {
         Self {
-            invstring: c.invstring.clone(),
-            label: c.label.clone(),
-            preimage: hex::encode(&c.preimage),
+            invstring: c.invstring.clone(), // Rule #1 for type string
+            label: c.label.clone(), // Rule #1 for type string
+            preimage: hex::encode(&c.preimage), // Rule #1 for type hex
         }
     }
 }
@@ -550,9 +629,31 @@ impl From<&pb::DatastoreRequest> for requests::DatastoreRequest {
     fn from(c: &pb::DatastoreRequest) -> Self {
         Self {
             key: c.key.iter().map(|s| s.into()).collect(),
-            hex: c.hex.clone().map(|v| hex::encode(v)),
+            hex: c.hex.clone().map(|v| hex::encode(v)), // Rule #1 for type hex?
             mode: c.mode.map(|v| v.try_into().unwrap()),
-            generation: c.generation.clone(),
+            generation: c.generation.clone(), // Rule #1 for type u64?
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::CreateonionHops> for requests::CreateonionHops {
+    fn from(c: &pb::CreateonionHops) -> Self {
+        Self {
+            pubkey: hex::encode(&c.pubkey), // Rule #1 for type pubkey
+            payload: hex::encode(&c.payload), // Rule #1 for type hex
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::CreateonionRequest> for requests::CreateonionRequest {
+    fn from(c: &pb::CreateonionRequest) -> Self {
+        Self {
+            hops: c.hops.iter().map(|s| s.into()).collect(),
+            assocdata: hex::encode(&c.assocdata), // Rule #1 for type hex
+            session_key: c.session_key.clone().map(|v| hex::encode(v)), // Rule #1 for type hex?
+            onion_size: c.onion_size.map(|v| v as u16), // Rule #1 for type u16?
         }
     }
 }
@@ -562,7 +663,7 @@ impl From<&pb::DeldatastoreRequest> for requests::DeldatastoreRequest {
     fn from(c: &pb::DeldatastoreRequest) -> Self {
         Self {
             key: c.key.iter().map(|s| s.into()).collect(),
-            generation: c.generation.clone(),
+            generation: c.generation.clone(), // Rule #1 for type u64?
         }
     }
 }
@@ -571,7 +672,7 @@ impl From<&pb::DeldatastoreRequest> for requests::DeldatastoreRequest {
 impl From<&pb::DelexpiredinvoiceRequest> for requests::DelexpiredinvoiceRequest {
     fn from(c: &pb::DelexpiredinvoiceRequest) -> Self {
         Self {
-            maxexpirytime: c.maxexpirytime.clone(),
+            maxexpirytime: c.maxexpirytime.clone(), // Rule #1 for type u32
         }
     }
 }
@@ -580,7 +681,7 @@ impl From<&pb::DelexpiredinvoiceRequest> for requests::DelexpiredinvoiceRequest 
 impl From<&pb::DelinvoiceRequest> for requests::DelinvoiceRequest {
     fn from(c: &pb::DelinvoiceRequest) -> Self {
         Self {
-            label: c.label.clone(),
+            label: c.label.clone(), // Rule #1 for type string
             status: c.status.try_into().unwrap(),
         }
     }
@@ -590,12 +691,12 @@ impl From<&pb::DelinvoiceRequest> for requests::DelinvoiceRequest {
 impl From<&pb::InvoiceRequest> for requests::InvoiceRequest {
     fn from(c: &pb::InvoiceRequest) -> Self {
         Self {
-            msatoshi: c.msatoshi.as_ref().unwrap().into(),
-            description: c.description.clone(),
-            label: c.label.clone(),
+            msatoshi: c.msatoshi.as_ref().unwrap().into(), // Rule #1 for type msat
+            description: c.description.clone(), // Rule #1 for type string
+            label: c.label.clone(), // Rule #1 for type string
             fallbacks: c.fallbacks.iter().map(|s| s.into()).collect(),
-            preimage: c.preimage.clone().map(|v| hex::encode(v)),
-            cltv: c.cltv.clone(),
+            preimage: c.preimage.clone().map(|v| hex::encode(v)), // Rule #1 for type hex?
+            cltv: c.cltv.clone(), // Rule #1 for type u32?
         }
     }
 }
@@ -613,10 +714,19 @@ impl From<&pb::ListdatastoreRequest> for requests::ListdatastoreRequest {
 impl From<&pb::ListinvoicesRequest> for requests::ListinvoicesRequest {
     fn from(c: &pb::ListinvoicesRequest) -> Self {
         Self {
-            label: c.label.clone(),
-            invstring: c.invstring.clone(),
-            payment_hash: c.payment_hash.clone().map(|v| hex::encode(v)),
-            offer_id: c.offer_id.clone(),
+            label: c.label.clone(), // Rule #1 for type string?
+            invstring: c.invstring.clone(), // Rule #1 for type string?
+            payment_hash: c.payment_hash.clone().map(|v| hex::encode(v)), // Rule #1 for type hex?
+            offer_id: c.offer_id.clone(), // Rule #1 for type string?
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::SendonionRequest> for requests::SendonionRequest {
+    fn from(c: &pb::SendonionRequest) -> Self {
+        Self {
+            onion: hex::encode(&c.onion), // Rule #1 for type hex
         }
     }
 }

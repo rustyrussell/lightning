@@ -116,6 +116,36 @@ async fn list_funds(
 
 }
 
+async fn send_pay(
+    &self,
+    request: tonic::Request<pb::SendpayRequest>,
+) -> Result<tonic::Response<pb::SendpayResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::SendpayRequest = (&req).into();
+    debug!("Client asked for getinfo");
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::SendPay(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method SendPay: {:?}", e)))?;
+    match result {
+        Response::SendPay(r) => Ok(
+            tonic::Response::new((&r).into())
+        ),
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call SendPay",
+                r
+            )
+        )),
+    }
+
+}
+
 async fn list_channels(
     &self,
     request: tonic::Request<pb::ListchannelsRequest>,
@@ -356,6 +386,36 @@ async fn datastore(
 
 }
 
+async fn create_onion(
+    &self,
+    request: tonic::Request<pb::CreateonionRequest>,
+) -> Result<tonic::Response<pb::CreateonionResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::CreateonionRequest = (&req).into();
+    debug!("Client asked for getinfo");
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::CreateOnion(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method CreateOnion: {:?}", e)))?;
+    match result {
+        Response::CreateOnion(r) => Ok(
+            tonic::Response::new((&r).into())
+        ),
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call CreateOnion",
+                r
+            )
+        )),
+    }
+
+}
+
 async fn del_datastore(
     &self,
     request: tonic::Request<pb::DeldatastoreRequest>,
@@ -529,6 +589,36 @@ async fn list_invoices(
             Code::Internal,
             format!(
                 "Unexpected result {:?} to method call ListInvoices",
+                r
+            )
+        )),
+    }
+
+}
+
+async fn send_onion(
+    &self,
+    request: tonic::Request<pb::SendonionRequest>,
+) -> Result<tonic::Response<pb::SendonionResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::SendonionRequest = (&req).into();
+    debug!("Client asked for getinfo");
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::SendOnion(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method SendOnion: {:?}", e)))?;
+    match result {
+        Response::SendOnion(r) => Ok(
+            tonic::Response::new((&r).into())
+        ),
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call SendOnion",
                 r
             )
         )),

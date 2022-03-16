@@ -387,12 +387,13 @@ class GrpcUnconverterGenerator(GrpcConverterGenerator):
                     'txid?': f'c.{name}.clone().map(|v| hex::encode(v))',
                     'pubkey': f'hex::encode(&c.{name})',
                     'pubkey?': f'c.{name}.clone().map(|v| hex::encode(v))',
-                    'msat': f'c.{name}.as_ref().unwrap().into()'
+                    'msat': f'c.{name}.as_ref().unwrap().into()',
+                    'msat?': f'c.{name}.as_ref().map(|a| a.into())',
                 }.get(
                     typ,
                     f'c.{name}.clone()'  # default to just assignment
                 )
-                self.write(f"{name}: {rhs},\n", numindent=3)
+                self.write(f"{name}: {rhs}, // Rule #1 for type {typ}\n", numindent=3)
 
         self.write(f"""\
                 }}

@@ -19,6 +19,7 @@ pub enum Request {
 	Getinfo(requests::GetinfoRequest),
 	ListPeers(requests::ListpeersRequest),
 	ListFunds(requests::ListfundsRequest),
+	SendPay(requests::SendpayRequest),
 	ListChannels(requests::ListchannelsRequest),
 	AddGossip(requests::AddgossipRequest),
 	AutoCleanInvoice(requests::AutocleaninvoiceRequest),
@@ -27,12 +28,14 @@ pub enum Request {
 	ConnectPeer(requests::ConnectRequest),
 	CreateInvoice(requests::CreateinvoiceRequest),
 	Datastore(requests::DatastoreRequest),
+	CreateOnion(requests::CreateonionRequest),
 	DelDatastore(requests::DeldatastoreRequest),
 	DelExpiredInvoice(requests::DelexpiredinvoiceRequest),
 	DelInvoice(requests::DelinvoiceRequest),
 	Invoice(requests::InvoiceRequest),
 	ListDatastore(requests::ListdatastoreRequest),
 	ListInvoices(requests::ListinvoicesRequest),
+	SendOnion(requests::SendonionRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -42,6 +45,7 @@ pub enum Response {
 	Getinfo(responses::GetinfoResponse),
 	ListPeers(responses::ListpeersResponse),
 	ListFunds(responses::ListfundsResponse),
+	SendPay(responses::SendpayResponse),
 	ListChannels(responses::ListchannelsResponse),
 	AddGossip(responses::AddgossipResponse),
 	AutoCleanInvoice(responses::AutocleaninvoiceResponse),
@@ -50,12 +54,14 @@ pub enum Response {
 	ConnectPeer(responses::ConnectResponse),
 	CreateInvoice(responses::CreateinvoiceResponse),
 	Datastore(responses::DatastoreResponse),
+	CreateOnion(responses::CreateonionResponse),
 	DelDatastore(responses::DeldatastoreResponse),
 	DelExpiredInvoice(responses::DelexpiredinvoiceResponse),
 	DelInvoice(responses::DelinvoiceResponse),
 	Invoice(responses::InvoiceResponse),
 	ListDatastore(responses::ListdatastoreResponse),
 	ListInvoices(responses::ListinvoicesResponse),
+	SendOnion(responses::SendonionResponse),
 }
 
 pub mod requests {
@@ -80,6 +86,36 @@ pub mod requests {
 	pub struct ListfundsRequest {
 	    #[serde(alias = "spent", skip_serializing_if = "Option::is_none")]
 	    pub spent: Option<bool>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct SendpayRoute {
+	    #[serde(alias = "msatoshi")]
+	    pub msatoshi: Amount,
+	    #[serde(alias = "id")]
+	    pub id: String,
+	    #[serde(alias = "delay")]
+	    pub delay: u16,
+	    #[serde(alias = "channel")]
+	    pub channel: String,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct SendpayRequest {
+	    #[serde(alias = "route")]
+	    pub route: Vec<SendpayRoute>,
+	    #[serde(alias = "payment_hash")]
+	    pub payment_hash: String,
+	    #[serde(alias = "label", skip_serializing_if = "Option::is_none")]
+	    pub label: Option<String>,
+	    #[serde(alias = "msatoshi", skip_serializing_if = "Option::is_none")]
+	    pub msatoshi: Option<Amount>,
+	    #[serde(alias = "bolt11", skip_serializing_if = "Option::is_none")]
+	    pub bolt11: Option<String>,
+	    #[serde(alias = "payment_secret", skip_serializing_if = "Option::is_none")]
+	    pub payment_secret: Option<String>,
+	    #[serde(alias = "partid", skip_serializing_if = "Option::is_none")]
+	    pub partid: Option<u16>,
 	}
 
 	#[derive(Clone, Debug, Deserialize, Serialize)]
@@ -187,6 +223,26 @@ pub mod requests {
 	}
 
 	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct CreateonionHops {
+	    #[serde(alias = "pubkey")]
+	    pub pubkey: String,
+	    #[serde(alias = "payload")]
+	    pub payload: String,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct CreateonionRequest {
+	    #[serde(alias = "hops")]
+	    pub hops: Vec<CreateonionHops>,
+	    #[serde(alias = "assocdata")]
+	    pub assocdata: String,
+	    #[serde(alias = "session_key", skip_serializing_if = "Option::is_none")]
+	    pub session_key: Option<String>,
+	    #[serde(alias = "onion_size", skip_serializing_if = "Option::is_none")]
+	    pub onion_size: Option<u16>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
 	pub struct DeldatastoreRequest {
 	    #[serde(alias = "key")]
 	    pub key: Vec<String>,
@@ -260,6 +316,22 @@ pub mod requests {
 	    pub payment_hash: Option<String>,
 	    #[serde(alias = "offer_id", skip_serializing_if = "Option::is_none")]
 	    pub offer_id: Option<String>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct SendonionFirst_hop {
+	    #[serde(alias = "id")]
+	    pub id: String,
+	    #[serde(alias = "amount_msat")]
+	    pub amount_msat: Amount,
+	    #[serde(alias = "delay")]
+	    pub delay: u16,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct SendonionRequest {
+	    #[serde(alias = "onion")]
+	    pub onion: String,
 	}
 
 }
@@ -786,6 +858,57 @@ pub mod responses {
 	    pub channels: Vec<ListfundsChannels>,
 	}
 
+	/// status of the payment (could be complete if already sent previously)
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum SendpayStatus {
+	    PENDING,
+	    COMPLETE,
+	}
+
+	impl TryFrom<i32> for SendpayStatus {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<SendpayStatus, anyhow::Error> {
+	        match c {
+	    0 => Ok(SendpayStatus::PENDING),
+	    1 => Ok(SendpayStatus::COMPLETE),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum SendpayStatus", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct SendpayResponse {
+	    #[serde(alias = "id")]
+	    pub id: u64,
+	    #[serde(alias = "groupid", skip_serializing_if = "Option::is_none")]
+	    pub groupid: Option<u64>,
+	    #[serde(alias = "payment_hash")]
+	    pub payment_hash: String,
+	    // Path `SendPay.status`
+	    #[serde(rename = "status")]
+	    pub status: SendpayStatus,
+	    #[serde(alias = "amount_msat", skip_serializing_if = "Option::is_none")]
+	    pub amount_msat: Option<Amount>,
+	    #[serde(alias = "destination", skip_serializing_if = "Option::is_none")]
+	    pub destination: Option<String>,
+	    #[serde(alias = "created_at")]
+	    pub created_at: u64,
+	    #[serde(alias = "amount_sent_msat")]
+	    pub amount_sent_msat: Amount,
+	    #[serde(alias = "label", skip_serializing_if = "Option::is_none")]
+	    pub label: Option<String>,
+	    #[serde(alias = "partid", skip_serializing_if = "Option::is_none")]
+	    pub partid: Option<u64>,
+	    #[serde(alias = "bolt11", skip_serializing_if = "Option::is_none")]
+	    pub bolt11: Option<String>,
+	    #[serde(alias = "bolt12", skip_serializing_if = "Option::is_none")]
+	    pub bolt12: Option<String>,
+	    #[serde(alias = "payment_preimage", skip_serializing_if = "Option::is_none")]
+	    pub payment_preimage: Option<String>,
+	    #[serde(alias = "message", skip_serializing_if = "Option::is_none")]
+	    pub message: Option<String>,
+	}
+
 	#[derive(Clone, Debug, Deserialize, Serialize)]
 	pub struct ListchannelsChannels {
 	    #[serde(alias = "source")]
@@ -1011,6 +1134,14 @@ pub mod responses {
 	}
 
 	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct CreateonionResponse {
+	    #[serde(alias = "onion")]
+	    pub onion: String,
+	    #[serde(alias = "shared_secrets")]
+	    pub shared_secrets: Vec<String>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
 	pub struct DeldatastoreResponse {
 	    #[serde(alias = "key")]
 	    pub key: Vec<String>,
@@ -1168,6 +1299,53 @@ pub mod responses {
 	pub struct ListinvoicesResponse {
 	    #[serde(alias = "invoices")]
 	    pub invoices: Vec<ListinvoicesInvoices>,
+	}
+
+	/// status of the payment (could be complete if already sent previously)
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum SendonionStatus {
+	    PENDING,
+	    COMPLETE,
+	}
+
+	impl TryFrom<i32> for SendonionStatus {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<SendonionStatus, anyhow::Error> {
+	        match c {
+	    0 => Ok(SendonionStatus::PENDING),
+	    1 => Ok(SendonionStatus::COMPLETE),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum SendonionStatus", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct SendonionResponse {
+	    #[serde(alias = "id")]
+	    pub id: u64,
+	    #[serde(alias = "payment_hash")]
+	    pub payment_hash: String,
+	    // Path `SendOnion.status`
+	    #[serde(rename = "status")]
+	    pub status: SendonionStatus,
+	    #[serde(alias = "amount_msat", skip_serializing_if = "Option::is_none")]
+	    pub amount_msat: Option<Amount>,
+	    #[serde(alias = "destination", skip_serializing_if = "Option::is_none")]
+	    pub destination: Option<String>,
+	    #[serde(alias = "created_at")]
+	    pub created_at: u64,
+	    #[serde(alias = "amount_sent_msat")]
+	    pub amount_sent_msat: Amount,
+	    #[serde(alias = "label", skip_serializing_if = "Option::is_none")]
+	    pub label: Option<String>,
+	    #[serde(alias = "bolt11", skip_serializing_if = "Option::is_none")]
+	    pub bolt11: Option<String>,
+	    #[serde(alias = "bolt12", skip_serializing_if = "Option::is_none")]
+	    pub bolt12: Option<String>,
+	    #[serde(alias = "payment_preimage", skip_serializing_if = "Option::is_none")]
+	    pub payment_preimage: Option<String>,
+	    #[serde(alias = "message", skip_serializing_if = "Option::is_none")]
+	    pub message: Option<String>,
 	}
 
 }

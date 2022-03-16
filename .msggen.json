@@ -95,6 +95,14 @@
             "IO_OUT": 6,
             "SKIPPED": 0,
             "UNUSUAL": 2
+        },
+        "SendonionStatus": {
+            "complete": 1,
+            "pending": 0
+        },
+        "SendpayStatus": {
+            "complete": 1,
+            "pending": 0
         }
     },
     "grpc-field-map": {
@@ -169,6 +177,20 @@
             "CreateInvoice.payment_hash": 4,
             "CreateInvoice.payment_preimage": 12,
             "CreateInvoice.status": 6
+        },
+        "CreateonionHops": {
+            "CreateOnion.hops[].payload": 2,
+            "CreateOnion.hops[].pubkey": 1
+        },
+        "CreateonionRequest": {
+            "CreateOnion.assocdata": 2,
+            "CreateOnion.hops[]": 1,
+            "CreateOnion.onion_size": 4,
+            "CreateOnion.session_key": 3
+        },
+        "CreateonionResponse": {
+            "CreateOnion.onion": 1,
+            "CreateOnion.shared_secrets[]": 2
         },
         "DatastoreRequest": {
             "Datastore.generation": 4,
@@ -454,6 +476,60 @@
         },
         "ListpeersResponse": {
             "ListPeers.peers[]": 1
+        },
+        "SendonionFirst_hop": {
+            "SendOnion.first_hop.amount_msat": 2,
+            "SendOnion.first_hop.delay": 3,
+            "SendOnion.first_hop.id": 1
+        },
+        "SendonionRequest": {
+            "SendOnion.first_hop": 2,
+            "SendOnion.onion": 1
+        },
+        "SendonionResponse": {
+            "SendOnion.amount_msat": 4,
+            "SendOnion.amount_sent_msat": 7,
+            "SendOnion.bolt11": 9,
+            "SendOnion.bolt12": 10,
+            "SendOnion.created_at": 6,
+            "SendOnion.destination": 5,
+            "SendOnion.id": 1,
+            "SendOnion.label": 8,
+            "SendOnion.message": 12,
+            "SendOnion.payment_hash": 2,
+            "SendOnion.payment_preimage": 11,
+            "SendOnion.status": 3
+        },
+        "SendpayRequest": {
+            "SendPay.bolt11": 5,
+            "SendPay.label": 3,
+            "SendPay.msatoshi": 4,
+            "SendPay.partid": 7,
+            "SendPay.payment_hash": 2,
+            "SendPay.payment_secret": 6,
+            "SendPay.route[]": 1
+        },
+        "SendpayResponse": {
+            "SendPay.amount_msat": 5,
+            "SendPay.amount_sent_msat": 8,
+            "SendPay.bolt11": 11,
+            "SendPay.bolt12": 12,
+            "SendPay.created_at": 7,
+            "SendPay.destination": 6,
+            "SendPay.groupid": 2,
+            "SendPay.id": 1,
+            "SendPay.label": 9,
+            "SendPay.message": 14,
+            "SendPay.partid": 10,
+            "SendPay.payment_hash": 3,
+            "SendPay.payment_preimage": 13,
+            "SendPay.status": 4
+        },
+        "SendpayRoute": {
+            "SendPay.route[].channel": 4,
+            "SendPay.route[].delay": 3,
+            "SendPay.route[].id": 2,
+            "SendPay.route[].msatoshi": 1
         }
     }
 }

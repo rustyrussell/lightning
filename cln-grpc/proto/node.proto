@@ -11,6 +11,7 @@ service Node {
 	rpc Getinfo(GetinfoRequest) returns (GetinfoResponse) {}
 	rpc ListPeers(ListpeersRequest) returns (ListpeersResponse) {}
 	rpc ListFunds(ListfundsRequest) returns (ListfundsResponse) {}
+	rpc SendPay(SendpayRequest) returns (SendpayResponse) {}
 	rpc ListChannels(ListchannelsRequest) returns (ListchannelsResponse) {}
 	rpc AddGossip(AddgossipRequest) returns (AddgossipResponse) {}
 	rpc AutoCleanInvoice(AutocleaninvoiceRequest) returns (AutocleaninvoiceResponse) {}
@@ -19,12 +20,14 @@ service Node {
 	rpc ConnectPeer(ConnectRequest) returns (ConnectResponse) {}
 	rpc CreateInvoice(CreateinvoiceRequest) returns (CreateinvoiceResponse) {}
 	rpc Datastore(DatastoreRequest) returns (DatastoreResponse) {}
+	rpc CreateOnion(CreateonionRequest) returns (CreateonionResponse) {}
 	rpc DelDatastore(DeldatastoreRequest) returns (DeldatastoreResponse) {}
 	rpc DelExpiredInvoice(DelexpiredinvoiceRequest) returns (DelexpiredinvoiceResponse) {}
 	rpc DelInvoice(DelinvoiceRequest) returns (DelinvoiceResponse) {}
 	rpc Invoice(InvoiceRequest) returns (InvoiceResponse) {}
 	rpc ListDatastore(ListdatastoreRequest) returns (ListdatastoreResponse) {}
 	rpc ListInvoices(ListinvoicesRequest) returns (ListinvoicesResponse) {}
+	rpc SendOnion(SendonionRequest) returns (SendonionResponse) {}
 }
 
 message GetinfoRequest {
@@ -271,6 +274,45 @@ message ListfundsChannels {
 	optional string short_channel_id = 8;
 }
 
+message SendpayRequest {
+	repeated SendpayRoute route = 1;
+	bytes payment_hash = 2;
+	optional string label = 3;
+	optional Amount msatoshi = 4;
+	optional string bolt11 = 5;
+	optional bytes payment_secret = 6;
+	optional uint32 partid = 7;
+}
+
+message SendpayResponse {
+	// SendPay.status
+	enum SendpayStatus {
+		PENDING = 0;
+		COMPLETE = 1;
+	}
+	uint64 id = 1;
+	optional uint64 groupid = 2;
+	bytes payment_hash = 3;
+	SendpayStatus status = 4;
+	optional Amount amount_msat = 5;
+	optional bytes destination = 6;
+	uint64 created_at = 7;
+	Amount amount_sent_msat = 8;
+	optional string label = 9;
+	optional uint64 partid = 10;
+	optional string bolt11 = 11;
+	optional string bolt12 = 12;
+	optional bytes payment_preimage = 13;
+	optional string message = 14;
+}
+
+message SendpayRoute {
+	Amount msatoshi = 1;
+	bytes id = 2;
+	uint32 delay = 3;
+	string channel = 4;
+}
+
 message ListchannelsRequest {
 	optional string short_channel_id = 1;
 	optional bytes source = 2;
@@ -432,6 +474,23 @@ message DatastoreResponse {
 	optional string string = 4;
 }
 
+message CreateonionRequest {
+	repeated CreateonionHops hops = 1;
+	bytes assocdata = 2;
+	optional bytes session_key = 3;
+	optional uint32 onion_size = 4;
+}
+
+message CreateonionResponse {
+	bytes onion = 1;
+	repeated bytes shared_secrets = 2;
+}
+
+message CreateonionHops {
+	bytes pubkey = 1;
+	bytes payload = 2;
+}
+
 message DeldatastoreRequest {
 	repeated string key = 1;
 	optional uint64 generation = 2;
@@ -549,4 +608,34 @@ message ListinvoicesInvoices {
 	optional Amount amount_received_msat = 12;
 	optional uint64 paid_at = 13;
 	optional bytes payment_preimage = 14;
+}
+
+message SendonionRequest {
+	bytes onion = 1;
+}
+
+message SendonionResponse {
+	// SendOnion.status
+	enum SendonionStatus {
+		PENDING = 0;
+		COMPLETE = 1;
+	}
+	uint64 id = 1;
+	bytes payment_hash = 2;
+	SendonionStatus status = 3;
+	optional Amount amount_msat = 4;
+	optional bytes destination = 5;
+	uint64 created_at = 6;
+	Amount amount_sent_msat = 7;
+	optional string label = 8;
+	optional string bolt11 = 9;
+	optional string bolt12 = 10;
+	optional bytes payment_preimage = 11;
+	optional string message = 12;
+}
+
+message SendonionFirst_hop {
+	bytes id = 1;
+	Amount amount_msat = 2;
+	uint32 delay = 3;
 }
