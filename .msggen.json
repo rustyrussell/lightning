@@ -152,6 +152,17 @@
         "SendpayStatus": {
             "complete": 1,
             "pending": 0
+        },
+        "WaitanyinvoiceStatus": {
+            "expired": 1,
+            "paid": 0
+        },
+        "WaitinvoiceStatus": {
+            "expired": 1,
+            "paid": 0
+        },
+        "WaitsendpayStatus": {
+            "complete": 0
         }
     },
     "grpc-field-map": {
@@ -671,6 +682,61 @@
             "SendPay.route[].delay": 3,
             "SendPay.route[].id": 2,
             "SendPay.route[].msatoshi": 1
+        },
+        "WaitanyinvoiceRequest": {
+            "WaitAnyInvoice.lastpay_index": 1,
+            "WaitAnyInvoice.timeout": 2
+        },
+        "WaitanyinvoiceResponse": {
+            "WaitAnyInvoice.amount_msat": 6,
+            "WaitAnyInvoice.amount_received_msat": 10,
+            "WaitAnyInvoice.bolt11": 7,
+            "WaitAnyInvoice.bolt12": 8,
+            "WaitAnyInvoice.description": 2,
+            "WaitAnyInvoice.expires_at": 5,
+            "WaitAnyInvoice.label": 1,
+            "WaitAnyInvoice.paid_at": 11,
+            "WaitAnyInvoice.pay_index": 9,
+            "WaitAnyInvoice.payment_hash": 3,
+            "WaitAnyInvoice.payment_preimage": 12,
+            "WaitAnyInvoice.status": 4
+        },
+        "WaitinvoiceRequest": {
+            "WaitInvoice.label": 1
+        },
+        "WaitinvoiceResponse": {
+            "WaitInvoice.amount_msat": 6,
+            "WaitInvoice.amount_received_msat": 10,
+            "WaitInvoice.bolt11": 7,
+            "WaitInvoice.bolt12": 8,
+            "WaitInvoice.description": 2,
+            "WaitInvoice.expires_at": 5,
+            "WaitInvoice.label": 1,
+            "WaitInvoice.paid_at": 11,
+            "WaitInvoice.pay_index": 9,
+            "WaitInvoice.payment_hash": 3,
+            "WaitInvoice.payment_preimage": 12,
+            "WaitInvoice.status": 4
+        },
+        "WaitsendpayRequest": {
+            "WaitSendPay.partid": 2,
+            "WaitSendPay.payment_hash": 1,
+            "WaitSendPay.timeout": 3
+        },
+        "WaitsendpayResponse": {
+            "WaitSendPay.amount_msat": 5,
+            "WaitSendPay.amount_sent_msat": 8,
+            "WaitSendPay.bolt11": 11,
+            "WaitSendPay.bolt12": 12,
+            "WaitSendPay.created_at": 7,
+            "WaitSendPay.destination": 6,
+            "WaitSendPay.groupid": 2,
+            "WaitSendPay.id": 1,
+            "WaitSendPay.label": 9,
+            "WaitSendPay.partid": 10,
+            "WaitSendPay.payment_hash": 3,
+            "WaitSendPay.payment_preimage": 13,
+            "WaitSendPay.status": 4
         }
     }
 }

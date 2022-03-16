@@ -32,6 +32,9 @@ service Node {
 	rpc ListTransactions(ListtransactionsRequest) returns (ListtransactionsResponse) {}
 	rpc Pay(PayRequest) returns (PayResponse) {}
 	rpc ListNodes(ListnodesRequest) returns (ListnodesResponse) {}
+	rpc WaitAnyInvoice(WaitanyinvoiceRequest) returns (WaitanyinvoiceResponse) {}
+	rpc WaitInvoice(WaitinvoiceRequest) returns (WaitinvoiceResponse) {}
+	rpc WaitSendPay(WaitsendpayRequest) returns (WaitsendpayResponse) {}
 }
 
 message GetinfoRequest {
@@ -804,4 +807,79 @@ message ListnodesNodesAddresses {
 	ListnodesNodesAddressesType item_type = 1;
 	uint32 port = 2;
 	optional string address = 3;
+}
+
+message WaitanyinvoiceRequest {
+	optional sint64 lastpay_index = 1;
+	optional sint64 timeout = 2;
+}
+
+message WaitanyinvoiceResponse {
+	// WaitAnyInvoice.status
+	enum WaitanyinvoiceStatus {
+		PAID = 0;
+		EXPIRED = 1;
+	}
+	string label = 1;
+	string description = 2;
+	bytes payment_hash = 3;
+	WaitanyinvoiceStatus status = 4;
+	uint64 expires_at = 5;
+	optional Amount amount_msat = 6;
+	optional string bolt11 = 7;
+	optional string bolt12 = 8;
+	optional uint64 pay_index = 9;
+	optional Amount amount_received_msat = 10;
+	optional uint64 paid_at = 11;
+	optional bytes payment_preimage = 12;
+}
+
+message WaitinvoiceRequest {
+	string label = 1;
+}
+
+message WaitinvoiceResponse {
+	// WaitInvoice.status
+	enum WaitinvoiceStatus {
+		PAID = 0;
+		EXPIRED = 1;
+	}
+	string label = 1;
+	string description = 2;
+	bytes payment_hash = 3;
+	WaitinvoiceStatus status = 4;
+	uint64 expires_at = 5;
+	optional Amount amount_msat = 6;
+	optional string bolt11 = 7;
+	optional string bolt12 = 8;
+	optional uint64 pay_index = 9;
+	optional Amount amount_received_msat = 10;
+	optional uint64 paid_at = 11;
+	optional bytes payment_preimage = 12;
+}
+
+message WaitsendpayRequest {
+	bytes payment_hash = 1;
+	optional uint32 partid = 2;
+	optional uint32 timeout = 3;
+}
+
+message WaitsendpayResponse {
+	// WaitSendPay.status
+	enum WaitsendpayStatus {
+		COMPLETE = 0;
+	}
+	uint64 id = 1;
+	optional uint64 groupid = 2;
+	bytes payment_hash = 3;
+	WaitsendpayStatus status = 4;
+	optional Amount amount_msat = 5;
+	optional bytes destination = 6;
+	uint64 created_at = 7;
+	Amount amount_sent_msat = 8;
+	optional string label = 9;
+	optional uint64 partid = 10;
+	optional string bolt11 = 11;
+	optional string bolt12 = 12;
+	optional bytes payment_preimage = 13;
 }

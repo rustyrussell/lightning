@@ -40,6 +40,9 @@ pub enum Request {
 	ListTransactions(requests::ListtransactionsRequest),
 	Pay(requests::PayRequest),
 	ListNodes(requests::ListnodesRequest),
+	WaitAnyInvoice(requests::WaitanyinvoiceRequest),
+	WaitInvoice(requests::WaitinvoiceRequest),
+	WaitSendPay(requests::WaitsendpayRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -70,6 +73,9 @@ pub enum Response {
 	ListTransactions(responses::ListtransactionsResponse),
 	Pay(responses::PayResponse),
 	ListNodes(responses::ListnodesResponse),
+	WaitAnyInvoice(responses::WaitanyinvoiceResponse),
+	WaitInvoice(responses::WaitinvoiceResponse),
+	WaitSendPay(responses::WaitsendpayResponse),
 }
 
 pub mod requests {
@@ -398,6 +404,30 @@ pub mod requests {
 	pub struct ListnodesRequest {
 	    #[serde(alias = "id", skip_serializing_if = "Option::is_none")]
 	    pub id: Option<String>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct WaitanyinvoiceRequest {
+	    #[serde(alias = "lastpay_index", skip_serializing_if = "Option::is_none")]
+	    pub lastpay_index: Option<i64>,
+	    #[serde(alias = "timeout", skip_serializing_if = "Option::is_none")]
+	    pub timeout: Option<i64>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct WaitinvoiceRequest {
+	    #[serde(alias = "label")]
+	    pub label: String,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct WaitsendpayRequest {
+	    #[serde(alias = "payment_hash")]
+	    pub payment_hash: String,
+	    #[serde(alias = "partid", skip_serializing_if = "Option::is_none")]
+	    pub partid: Option<u16>,
+	    #[serde(alias = "timeout", skip_serializing_if = "Option::is_none")]
+	    pub timeout: Option<u32>,
 	}
 
 }
@@ -1697,6 +1727,147 @@ pub mod responses {
 	pub struct ListnodesResponse {
 	    #[serde(alias = "nodes")]
 	    pub nodes: Vec<ListnodesNodes>,
+	}
+
+	/// Whether it's paid or expired
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum WaitanyinvoiceStatus {
+	    PAID,
+	    EXPIRED,
+	}
+
+	impl TryFrom<i32> for WaitanyinvoiceStatus {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<WaitanyinvoiceStatus, anyhow::Error> {
+	        match c {
+	    0 => Ok(WaitanyinvoiceStatus::PAID),
+	    1 => Ok(WaitanyinvoiceStatus::EXPIRED),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum WaitanyinvoiceStatus", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct WaitanyinvoiceResponse {
+	    #[serde(alias = "label")]
+	    pub label: String,
+	    #[serde(alias = "description")]
+	    pub description: String,
+	    #[serde(alias = "payment_hash")]
+	    pub payment_hash: String,
+	    // Path `WaitAnyInvoice.status`
+	    #[serde(rename = "status")]
+	    pub status: WaitanyinvoiceStatus,
+	    #[serde(alias = "expires_at")]
+	    pub expires_at: u64,
+	    #[serde(alias = "amount_msat", skip_serializing_if = "Option::is_none")]
+	    pub amount_msat: Option<Amount>,
+	    #[serde(alias = "bolt11", skip_serializing_if = "Option::is_none")]
+	    pub bolt11: Option<String>,
+	    #[serde(alias = "bolt12", skip_serializing_if = "Option::is_none")]
+	    pub bolt12: Option<String>,
+	    #[serde(alias = "pay_index", skip_serializing_if = "Option::is_none")]
+	    pub pay_index: Option<u64>,
+	    #[serde(alias = "amount_received_msat", skip_serializing_if = "Option::is_none")]
+	    pub amount_received_msat: Option<Amount>,
+	    #[serde(alias = "paid_at", skip_serializing_if = "Option::is_none")]
+	    pub paid_at: Option<u64>,
+	    #[serde(alias = "payment_preimage", skip_serializing_if = "Option::is_none")]
+	    pub payment_preimage: Option<String>,
+	}
+
+	/// Whether it's paid or expired
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum WaitinvoiceStatus {
+	    PAID,
+	    EXPIRED,
+	}
+
+	impl TryFrom<i32> for WaitinvoiceStatus {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<WaitinvoiceStatus, anyhow::Error> {
+	        match c {
+	    0 => Ok(WaitinvoiceStatus::PAID),
+	    1 => Ok(WaitinvoiceStatus::EXPIRED),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum WaitinvoiceStatus", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct WaitinvoiceResponse {
+	    #[serde(alias = "label")]
+	    pub label: String,
+	    #[serde(alias = "description")]
+	    pub description: String,
+	    #[serde(alias = "payment_hash")]
+	    pub payment_hash: String,
+	    // Path `WaitInvoice.status`
+	    #[serde(rename = "status")]
+	    pub status: WaitinvoiceStatus,
+	    #[serde(alias = "expires_at")]
+	    pub expires_at: u64,
+	    #[serde(alias = "amount_msat", skip_serializing_if = "Option::is_none")]
+	    pub amount_msat: Option<Amount>,
+	    #[serde(alias = "bolt11", skip_serializing_if = "Option::is_none")]
+	    pub bolt11: Option<String>,
+	    #[serde(alias = "bolt12", skip_serializing_if = "Option::is_none")]
+	    pub bolt12: Option<String>,
+	    #[serde(alias = "pay_index", skip_serializing_if = "Option::is_none")]
+	    pub pay_index: Option<u64>,
+	    #[serde(alias = "amount_received_msat", skip_serializing_if = "Option::is_none")]
+	    pub amount_received_msat: Option<Amount>,
+	    #[serde(alias = "paid_at", skip_serializing_if = "Option::is_none")]
+	    pub paid_at: Option<u64>,
+	    #[serde(alias = "payment_preimage", skip_serializing_if = "Option::is_none")]
+	    pub payment_preimage: Option<String>,
+	}
+
+	/// status of the payment
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum WaitsendpayStatus {
+	    COMPLETE,
+	}
+
+	impl TryFrom<i32> for WaitsendpayStatus {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<WaitsendpayStatus, anyhow::Error> {
+	        match c {
+	    0 => Ok(WaitsendpayStatus::COMPLETE),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum WaitsendpayStatus", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct WaitsendpayResponse {
+	    #[serde(alias = "id")]
+	    pub id: u64,
+	    #[serde(alias = "groupid", skip_serializing_if = "Option::is_none")]
+	    pub groupid: Option<u64>,
+	    #[serde(alias = "payment_hash")]
+	    pub payment_hash: String,
+	    // Path `WaitSendPay.status`
+	    #[serde(rename = "status")]
+	    pub status: WaitsendpayStatus,
+	    #[serde(alias = "amount_msat", skip_serializing_if = "Option::is_none")]
+	    pub amount_msat: Option<Amount>,
+	    #[serde(alias = "destination", skip_serializing_if = "Option::is_none")]
+	    pub destination: Option<String>,
+	    #[serde(alias = "created_at")]
+	    pub created_at: u64,
+	    #[serde(alias = "amount_sent_msat")]
+	    pub amount_sent_msat: Amount,
+	    #[serde(alias = "label", skip_serializing_if = "Option::is_none")]
+	    pub label: Option<String>,
+	    #[serde(alias = "partid", skip_serializing_if = "Option::is_none")]
+	    pub partid: Option<u64>,
+	    #[serde(alias = "bolt11", skip_serializing_if = "Option::is_none")]
+	    pub bolt11: Option<String>,
+	    #[serde(alias = "bolt12", skip_serializing_if = "Option::is_none")]
+	    pub bolt12: Option<String>,
+	    #[serde(alias = "payment_preimage", skip_serializing_if = "Option::is_none")]
+	    pub payment_preimage: Option<String>,
 	}
 
 }

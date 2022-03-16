@@ -627,6 +627,67 @@ impl From<&responses::ListnodesResponse> for pb::ListnodesResponse {
 }
 
 #[allow(unused_variables)]
+impl From<&responses::WaitanyinvoiceResponse> for pb::WaitanyinvoiceResponse {
+    fn from(c: &responses::WaitanyinvoiceResponse) -> Self {
+        Self {
+            label: c.label.clone(), // Rule #2 for type string
+            description: c.description.clone(), // Rule #2 for type string
+            payment_hash: hex::decode(&c.payment_hash).unwrap(), // Rule #2 for type hex
+            status: c.status as i32,
+            expires_at: c.expires_at.clone(), // Rule #2 for type u64
+            amount_msat: c.amount_msat.map(|f| f.into()), // Rule #2 for type msat?
+            bolt11: c.bolt11.clone(), // Rule #2 for type string?
+            bolt12: c.bolt12.clone(), // Rule #2 for type string?
+            pay_index: c.pay_index.clone(), // Rule #2 for type u64?
+            amount_received_msat: c.amount_received_msat.map(|f| f.into()), // Rule #2 for type msat?
+            paid_at: c.paid_at.clone(), // Rule #2 for type u64?
+            payment_preimage: c.payment_preimage.as_ref().map(|v| hex::decode(&v).unwrap()), // Rule #2 for type hex?
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&responses::WaitinvoiceResponse> for pb::WaitinvoiceResponse {
+    fn from(c: &responses::WaitinvoiceResponse) -> Self {
+        Self {
+            label: c.label.clone(), // Rule #2 for type string
+            description: c.description.clone(), // Rule #2 for type string
+            payment_hash: hex::decode(&c.payment_hash).unwrap(), // Rule #2 for type hex
+            status: c.status as i32,
+            expires_at: c.expires_at.clone(), // Rule #2 for type u64
+            amount_msat: c.amount_msat.map(|f| f.into()), // Rule #2 for type msat?
+            bolt11: c.bolt11.clone(), // Rule #2 for type string?
+            bolt12: c.bolt12.clone(), // Rule #2 for type string?
+            pay_index: c.pay_index.clone(), // Rule #2 for type u64?
+            amount_received_msat: c.amount_received_msat.map(|f| f.into()), // Rule #2 for type msat?
+            paid_at: c.paid_at.clone(), // Rule #2 for type u64?
+            payment_preimage: c.payment_preimage.as_ref().map(|v| hex::decode(&v).unwrap()), // Rule #2 for type hex?
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&responses::WaitsendpayResponse> for pb::WaitsendpayResponse {
+    fn from(c: &responses::WaitsendpayResponse) -> Self {
+        Self {
+            id: c.id.clone(), // Rule #2 for type u64
+            groupid: c.groupid.clone(), // Rule #2 for type u64?
+            payment_hash: hex::decode(&c.payment_hash).unwrap(), // Rule #2 for type hex
+            status: c.status as i32,
+            amount_msat: c.amount_msat.map(|f| f.into()), // Rule #2 for type msat?
+            destination: c.destination.as_ref().map(|v| hex::decode(&v).unwrap()), // Rule #2 for type pubkey?
+            created_at: c.created_at.clone(), // Rule #2 for type u64
+            amount_sent_msat: Some(c.amount_sent_msat.into()), // Rule #2 for type msat
+            label: c.label.clone(), // Rule #2 for type string?
+            partid: c.partid.clone(), // Rule #2 for type u64?
+            bolt11: c.bolt11.clone(), // Rule #2 for type string?
+            bolt12: c.bolt12.clone(), // Rule #2 for type string?
+            payment_preimage: c.payment_preimage.as_ref().map(|v| hex::decode(&v).unwrap()), // Rule #2 for type hex?
+        }
+    }
+}
+
+#[allow(unused_variables)]
 impl From<&pb::GetinfoRequest> for requests::GetinfoRequest {
     fn from(c: &pb::GetinfoRequest) -> Self {
         Self {
@@ -904,6 +965,36 @@ impl From<&pb::ListnodesRequest> for requests::ListnodesRequest {
     fn from(c: &pb::ListnodesRequest) -> Self {
         Self {
             id: c.id.clone().map(|v| hex::encode(v)), // Rule #1 for type pubkey?
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::WaitanyinvoiceRequest> for requests::WaitanyinvoiceRequest {
+    fn from(c: &pb::WaitanyinvoiceRequest) -> Self {
+        Self {
+            lastpay_index: c.lastpay_index.clone(), // Rule #1 for type number?
+            timeout: c.timeout.clone(), // Rule #1 for type number?
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::WaitinvoiceRequest> for requests::WaitinvoiceRequest {
+    fn from(c: &pb::WaitinvoiceRequest) -> Self {
+        Self {
+            label: c.label.clone(), // Rule #1 for type string
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::WaitsendpayRequest> for requests::WaitsendpayRequest {
+    fn from(c: &pb::WaitsendpayRequest) -> Self {
+        Self {
+            payment_hash: hex::encode(&c.payment_hash), // Rule #1 for type hex
+            partid: c.partid.map(|v| v as u16), // Rule #1 for type u16?
+            timeout: c.timeout.clone(), // Rule #1 for type u32?
         }
     }
 }
