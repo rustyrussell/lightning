@@ -716,4 +716,34 @@ async fn pay(
 
 }
 
+async fn list_nodes(
+    &self,
+    request: tonic::Request<pb::ListnodesRequest>,
+) -> Result<tonic::Response<pb::ListnodesResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::ListnodesRequest = (&req).into();
+    debug!("Client asked for getinfo");
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::ListNodes(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method ListNodes: {:?}", e)))?;
+    match result {
+        Response::ListNodes(r) => Ok(
+            tonic::Response::new((&r).into())
+        ),
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call ListNodes",
+                r
+            )
+        )),
+    }
+
+}
+
 }

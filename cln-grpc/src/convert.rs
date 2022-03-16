@@ -593,6 +593,40 @@ impl From<&responses::PayResponse> for pb::PayResponse {
 }
 
 #[allow(unused_variables)]
+impl From<&responses::ListnodesNodesAddresses> for pb::ListnodesNodesAddresses {
+    fn from(c: &responses::ListnodesNodesAddresses) -> Self {
+        Self {
+            item_type: c.item_type as i32,
+            port: c.port.into(), // Rule #2 for type u16
+            address: c.address.clone(), // Rule #2 for type string?
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&responses::ListnodesNodes> for pb::ListnodesNodes {
+    fn from(c: &responses::ListnodesNodes) -> Self {
+        Self {
+            nodeid: hex::decode(&c.nodeid).unwrap(), // Rule #2 for type pubkey
+            last_timestamp: c.last_timestamp.clone(), // Rule #2 for type u32?
+            alias: c.alias.clone(), // Rule #2 for type string?
+            color: c.color.as_ref().map(|v| hex::decode(&v).unwrap()), // Rule #2 for type hex?
+            features: c.features.as_ref().map(|v| hex::decode(&v).unwrap()), // Rule #2 for type hex?
+            addresses: c.addresses.iter().map(|i| i.into()).collect(),
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&responses::ListnodesResponse> for pb::ListnodesResponse {
+    fn from(c: &responses::ListnodesResponse) -> Self {
+        Self {
+            nodes: c.nodes.iter().map(|i| i.into()).collect(),
+        }
+    }
+}
+
+#[allow(unused_variables)]
 impl From<&pb::GetinfoRequest> for requests::GetinfoRequest {
     fn from(c: &pb::GetinfoRequest) -> Self {
         Self {
@@ -861,6 +895,15 @@ impl From<&pb::PayRequest> for requests::PayRequest {
             retry_for: c.retry_for.map(|v| v as u16), // Rule #1 for type u16?
             maxdelay: c.maxdelay.map(|v| v as u16), // Rule #1 for type u16?
             exemptfee: c.exemptfee.clone(), // Rule #1 for type f32?
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::ListnodesRequest> for requests::ListnodesRequest {
+    fn from(c: &pb::ListnodesRequest) -> Self {
+        Self {
+            id: c.id.clone().map(|v| hex::encode(v)), // Rule #1 for type pubkey?
         }
     }
 }

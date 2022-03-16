@@ -31,6 +31,7 @@ service Node {
 	rpc ListSendPays(ListsendpaysRequest) returns (ListsendpaysResponse) {}
 	rpc ListTransactions(ListtransactionsRequest) returns (ListtransactionsResponse) {}
 	rpc Pay(PayRequest) returns (PayResponse) {}
+	rpc ListNodes(ListnodesRequest) returns (ListnodesResponse) {}
 }
 
 message GetinfoRequest {
@@ -771,4 +772,36 @@ message PayResponse {
 	Amount amount_sent_msat = 7;
 	optional string warning_partial_completion = 8;
 	PayStatus status = 9;
+}
+
+message ListnodesRequest {
+	optional bytes id = 1;
+}
+
+message ListnodesResponse {
+	repeated ListnodesNodes nodes = 1;
+}
+
+message ListnodesNodes {
+	bytes nodeid = 1;
+	optional uint32 last_timestamp = 2;
+	optional string alias = 3;
+	optional bytes color = 4;
+	optional bytes features = 5;
+	repeated ListnodesNodesAddresses addresses = 6;
+}
+
+message ListnodesNodesAddresses {
+	// ListNodes.nodes[].addresses[].type
+	enum ListnodesNodesAddressesType {
+		DNS = 0;
+		IPV4 = 1;
+		IPV6 = 2;
+		TORV2 = 3;
+		TORV3 = 4;
+		WEBSOCKET = 5;
+	}
+	ListnodesNodesAddressesType item_type = 1;
+	uint32 port = 2;
+	optional string address = 3;
 }

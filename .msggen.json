@@ -58,6 +58,14 @@
             "paid": 1,
             "unpaid": 0
         },
+        "ListnodesNodesAddressesType": {
+            "dns": 0,
+            "ipv4": 1,
+            "ipv6": 2,
+            "torv2": 3,
+            "torv3": 4,
+            "websocket": 5
+        },
         "ListpeersPeersChannelsHtlcsDirection": {
             "in": 0,
             "out": 1
@@ -417,6 +425,25 @@
         },
         "ListinvoicesResponse": {
             "ListInvoices.invoices[]": 1
+        },
+        "ListnodesNodes": {
+            "ListNodes.nodes[].addresses[]": 6,
+            "ListNodes.nodes[].alias": 3,
+            "ListNodes.nodes[].color": 4,
+            "ListNodes.nodes[].features": 5,
+            "ListNodes.nodes[].last_timestamp": 2,
+            "ListNodes.nodes[].nodeid": 1
+        },
+        "ListnodesNodesAddresses": {
+            "ListNodes.nodes[].addresses[].address": 3,
+            "ListNodes.nodes[].addresses[].port": 2,
+            "ListNodes.nodes[].addresses[].type": 1
+        },
+        "ListnodesRequest": {
+            "ListNodes.id": 1
+        },
+        "ListnodesResponse": {
+            "ListNodes.nodes[]": 1
         },
         "ListpeersPeers": {
             "ListPeers.peers[].channels[]": 4,

@@ -39,6 +39,7 @@ pub enum Request {
 	ListSendPays(requests::ListsendpaysRequest),
 	ListTransactions(requests::ListtransactionsRequest),
 	Pay(requests::PayRequest),
+	ListNodes(requests::ListnodesRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -68,6 +69,7 @@ pub enum Response {
 	ListSendPays(responses::ListsendpaysResponse),
 	ListTransactions(responses::ListtransactionsResponse),
 	Pay(responses::PayResponse),
+	ListNodes(responses::ListnodesResponse),
 }
 
 pub mod requests {
@@ -390,6 +392,12 @@ pub mod requests {
 	    pub maxdelay: Option<u16>,
 	    #[serde(alias = "exemptfee", skip_serializing_if = "Option::is_none")]
 	    pub exemptfee: Option<f32>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListnodesRequest {
+	    #[serde(alias = "id", skip_serializing_if = "Option::is_none")]
+	    pub id: Option<String>,
 	}
 
 }
@@ -1630,6 +1638,65 @@ pub mod responses {
 	    // Path `Pay.status`
 	    #[serde(rename = "status")]
 	    pub status: PayStatus,
+	}
+
+	/// Type of connection
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum ListnodesNodesAddressesType {
+	    DNS,
+	    IPV4,
+	    IPV6,
+	    TORV2,
+	    TORV3,
+	    WEBSOCKET,
+	}
+
+	impl TryFrom<i32> for ListnodesNodesAddressesType {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<ListnodesNodesAddressesType, anyhow::Error> {
+	        match c {
+	    0 => Ok(ListnodesNodesAddressesType::DNS),
+	    1 => Ok(ListnodesNodesAddressesType::IPV4),
+	    2 => Ok(ListnodesNodesAddressesType::IPV6),
+	    3 => Ok(ListnodesNodesAddressesType::TORV2),
+	    4 => Ok(ListnodesNodesAddressesType::TORV3),
+	    5 => Ok(ListnodesNodesAddressesType::WEBSOCKET),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum ListnodesNodesAddressesType", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListnodesNodesAddresses {
+	    // Path `ListNodes.nodes[].addresses[].type`
+	    #[serde(rename = "type")]
+	    pub item_type: ListnodesNodesAddressesType,
+	    #[serde(alias = "port")]
+	    pub port: u16,
+	    #[serde(alias = "address", skip_serializing_if = "Option::is_none")]
+	    pub address: Option<String>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListnodesNodes {
+	    #[serde(alias = "nodeid")]
+	    pub nodeid: String,
+	    #[serde(alias = "last_timestamp", skip_serializing_if = "Option::is_none")]
+	    pub last_timestamp: Option<u32>,
+	    #[serde(alias = "alias", skip_serializing_if = "Option::is_none")]
+	    pub alias: Option<String>,
+	    #[serde(alias = "color", skip_serializing_if = "Option::is_none")]
+	    pub color: Option<String>,
+	    #[serde(alias = "features", skip_serializing_if = "Option::is_none")]
+	    pub features: Option<String>,
+	    #[serde(alias = "addresses")]
+	    pub addresses: Vec<ListnodesNodesAddresses>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListnodesResponse {
+	    #[serde(alias = "nodes")]
+	    pub nodes: Vec<ListnodesNodes>,
 	}
 
 }
