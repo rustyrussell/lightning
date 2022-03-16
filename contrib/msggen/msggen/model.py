@@ -218,6 +218,8 @@ class PrimitiveField(Field):
         "u32",
         "u64",
         "u8",
+        "f32",
+        "float",
         "string",
         "pubkey",
         "signature",

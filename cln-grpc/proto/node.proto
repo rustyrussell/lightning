@@ -30,6 +30,7 @@ service Node {
 	rpc SendOnion(SendonionRequest) returns (SendonionResponse) {}
 	rpc ListSendPays(ListsendpaysRequest) returns (ListsendpaysResponse) {}
 	rpc ListTransactions(ListtransactionsRequest) returns (ListtransactionsResponse) {}
+	rpc Pay(PayRequest) returns (PayResponse) {}
 }
 
 message GetinfoRequest {
@@ -741,4 +742,33 @@ message ListtransactionsTransactionsOutputs {
 	bytes scriptPubKey = 3;
 	optional ListtransactionsTransactionsOutputsType item_type = 4;
 	optional string channel = 5;
+}
+
+message PayRequest {
+	string bolt11 = 1;
+	optional Amount msatoshi = 2;
+	optional string label = 3;
+	optional float riskfactor = 8;
+	optional float maxfeepercent = 4;
+	optional uint32 retry_for = 5;
+	optional uint32 maxdelay = 6;
+	optional float exemptfee = 7;
+}
+
+message PayResponse {
+	// Pay.status
+	enum PayStatus {
+		COMPLETE = 0;
+		PENDING = 1;
+		FAILED = 2;
+	}
+	bytes payment_preimage = 1;
+	optional bytes destination = 2;
+	bytes payment_hash = 3;
+	sint64 created_at = 4;
+	uint32 parts = 5;
+	Amount amount_msat = 6;
+	Amount amount_sent_msat = 7;
+	optional string warning_partial_completion = 8;
+	PayStatus status = 9;
 }

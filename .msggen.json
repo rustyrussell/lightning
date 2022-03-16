@@ -132,6 +132,11 @@
             "theirs": 0,
             "withdraw": 2
         },
+        "PayStatus": {
+            "complete": 0,
+            "failed": 2,
+            "pending": 1
+        },
         "SendonionStatus": {
             "complete": 1,
             "pending": 0
@@ -564,6 +569,27 @@
             "ListTransactions.transactions[].outputs[].msat": 2,
             "ListTransactions.transactions[].outputs[].scriptPubKey": 3,
             "ListTransactions.transactions[].outputs[].type": 4
+        },
+        "PayRequest": {
+            "Pay.bolt11": 1,
+            "Pay.exemptfee": 7,
+            "Pay.label": 3,
+            "Pay.maxdelay": 6,
+            "Pay.maxfeepercent": 4,
+            "Pay.msatoshi": 2,
+            "Pay.retry_for": 5,
+            "Pay.riskfactor": 8
+        },
+        "PayResponse": {
+            "Pay.amount_msat": 6,
+            "Pay.amount_sent_msat": 7,
+            "Pay.created_at": 4,
+            "Pay.destination": 2,
+            "Pay.parts": 5,
+            "Pay.payment_hash": 3,
+            "Pay.payment_preimage": 1,
+            "Pay.status": 9,
+            "Pay.warning_partial_completion": 8
         },
         "SendonionFirst_hop": {
             "SendOnion.first_hop.amount_msat": 2,

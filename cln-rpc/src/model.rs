@@ -38,6 +38,7 @@ pub enum Request {
 	SendOnion(requests::SendonionRequest),
 	ListSendPays(requests::ListsendpaysRequest),
 	ListTransactions(requests::ListtransactionsRequest),
+	Pay(requests::PayRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -66,6 +67,7 @@ pub enum Response {
 	SendOnion(responses::SendonionResponse),
 	ListSendPays(responses::ListsendpaysResponse),
 	ListTransactions(responses::ListtransactionsResponse),
+	Pay(responses::PayResponse),
 }
 
 pub mod requests {
@@ -368,6 +370,26 @@ pub mod requests {
 
 	#[derive(Clone, Debug, Deserialize, Serialize)]
 	pub struct ListtransactionsRequest {
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct PayRequest {
+	    #[serde(alias = "bolt11")]
+	    pub bolt11: String,
+	    #[serde(alias = "msatoshi", skip_serializing_if = "Option::is_none")]
+	    pub msatoshi: Option<Amount>,
+	    #[serde(alias = "label", skip_serializing_if = "Option::is_none")]
+	    pub label: Option<String>,
+	    #[serde(alias = "riskfactor", skip_serializing_if = "Option::is_none")]
+	    pub riskfactor: Option<f32>,
+	    #[serde(alias = "maxfeepercent", skip_serializing_if = "Option::is_none")]
+	    pub maxfeepercent: Option<f32>,
+	    #[serde(alias = "retry_for", skip_serializing_if = "Option::is_none")]
+	    pub retry_for: Option<u16>,
+	    #[serde(alias = "maxdelay", skip_serializing_if = "Option::is_none")]
+	    pub maxdelay: Option<u16>,
+	    #[serde(alias = "exemptfee", skip_serializing_if = "Option::is_none")]
+	    pub exemptfee: Option<f32>,
 	}
 
 }
@@ -1565,6 +1587,49 @@ pub mod responses {
 	pub struct ListtransactionsResponse {
 	    #[serde(alias = "transactions")]
 	    pub transactions: Vec<ListtransactionsTransactions>,
+	}
+
+	/// status of payment
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum PayStatus {
+	    COMPLETE,
+	    PENDING,
+	    FAILED,
+	}
+
+	impl TryFrom<i32> for PayStatus {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<PayStatus, anyhow::Error> {
+	        match c {
+	    0 => Ok(PayStatus::COMPLETE),
+	    1 => Ok(PayStatus::PENDING),
+	    2 => Ok(PayStatus::FAILED),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum PayStatus", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct PayResponse {
+	    #[serde(alias = "payment_preimage")]
+	    pub payment_preimage: String,
+	    #[serde(alias = "destination", skip_serializing_if = "Option::is_none")]
+	    pub destination: Option<String>,
+	    #[serde(alias = "payment_hash")]
+	    pub payment_hash: String,
+	    #[serde(alias = "created_at")]
+	    pub created_at: i64,
+	    #[serde(alias = "parts")]
+	    pub parts: u32,
+	    #[serde(alias = "amount_msat")]
+	    pub amount_msat: Amount,
+	    #[serde(alias = "amount_sent_msat")]
+	    pub amount_sent_msat: Amount,
+	    #[serde(alias = "warning_partial_completion", skip_serializing_if = "Option::is_none")]
+	    pub warning_partial_completion: Option<String>,
+	    // Path `Pay.status`
+	    #[serde(rename = "status")]
+	    pub status: PayStatus,
 	}
 
 }

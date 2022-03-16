@@ -38,6 +38,7 @@ typemap = {
     'signature': 'String',
     'string': 'String',
     'txid': 'String',
+    'float': 'f32',
 }
 
 header = f"""#![allow(non_camel_case_types)]

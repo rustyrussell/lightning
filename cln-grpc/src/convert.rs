@@ -576,6 +576,23 @@ impl From<&responses::ListtransactionsResponse> for pb::ListtransactionsResponse
 }
 
 #[allow(unused_variables)]
+impl From<&responses::PayResponse> for pb::PayResponse {
+    fn from(c: &responses::PayResponse) -> Self {
+        Self {
+            payment_preimage: hex::decode(&c.payment_preimage).unwrap(), // Rule #2 for type hex
+            destination: c.destination.as_ref().map(|v| hex::decode(&v).unwrap()), // Rule #2 for type pubkey?
+            payment_hash: hex::decode(&c.payment_hash).unwrap(), // Rule #2 for type hex
+            created_at: c.created_at.clone(), // Rule #2 for type number
+            parts: c.parts.clone(), // Rule #2 for type u32
+            amount_msat: Some(c.amount_msat.into()), // Rule #2 for type msat
+            amount_sent_msat: Some(c.amount_sent_msat.into()), // Rule #2 for type msat
+            warning_partial_completion: c.warning_partial_completion.clone(), // Rule #2 for type string?
+            status: c.status as i32,
+        }
+    }
+}
+
+#[allow(unused_variables)]
 impl From<&pb::GetinfoRequest> for requests::GetinfoRequest {
     fn from(c: &pb::GetinfoRequest) -> Self {
         Self {
@@ -828,6 +845,22 @@ impl From<&pb::ListsendpaysRequest> for requests::ListsendpaysRequest {
 impl From<&pb::ListtransactionsRequest> for requests::ListtransactionsRequest {
     fn from(c: &pb::ListtransactionsRequest) -> Self {
         Self {
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::PayRequest> for requests::PayRequest {
+    fn from(c: &pb::PayRequest) -> Self {
+        Self {
+            bolt11: c.bolt11.clone(), // Rule #1 for type string
+            msatoshi: c.msatoshi.as_ref().map(|a| a.into()), // Rule #1 for type msat?
+            label: c.label.clone(), // Rule #1 for type string?
+            riskfactor: c.riskfactor.clone(), // Rule #1 for type float?
+            maxfeepercent: c.maxfeepercent.clone(), // Rule #1 for type f32?
+            retry_for: c.retry_for.map(|v| v as u16), // Rule #1 for type u16?
+            maxdelay: c.maxdelay.map(|v| v as u16), // Rule #1 for type u16?
+            exemptfee: c.exemptfee.clone(), // Rule #1 for type f32?
         }
     }
 }
