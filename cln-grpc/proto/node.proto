@@ -28,6 +28,7 @@ service Node {
 	rpc ListDatastore(ListdatastoreRequest) returns (ListdatastoreResponse) {}
 	rpc ListInvoices(ListinvoicesRequest) returns (ListinvoicesResponse) {}
 	rpc SendOnion(SendonionRequest) returns (SendonionResponse) {}
+	rpc ListSendPays(ListsendpaysRequest) returns (ListsendpaysResponse) {}
 }
 
 message GetinfoRequest {
@@ -638,4 +639,42 @@ message SendonionFirst_hop {
 	bytes id = 1;
 	Amount amount_msat = 2;
 	uint32 delay = 3;
+}
+
+message ListsendpaysRequest {
+	// ListSendPays.status
+	enum ListsendpaysStatus {
+		PENDING = 0;
+		COMPLETE = 1;
+		FAILED = 2;
+	}
+	optional string bolt11 = 1;
+	optional bytes payment_hash = 2;
+	optional ListsendpaysStatus status = 3;
+}
+
+message ListsendpaysResponse {
+	repeated ListsendpaysPayments payments = 1;
+}
+
+message ListsendpaysPayments {
+	// ListSendPays.payments[].status
+	enum ListsendpaysPaymentsStatus {
+		PENDING = 0;
+		FAILED = 1;
+		COMPLETE = 2;
+	}
+	uint64 id = 1;
+	optional uint64 groupid = 2;
+	bytes payment_hash = 3;
+	ListsendpaysPaymentsStatus status = 4;
+	optional Amount amount_msat = 5;
+	optional bytes destination = 6;
+	uint64 created_at = 7;
+	Amount amount_sent_msat = 8;
+	optional string label = 9;
+	optional string bolt11 = 10;
+	optional string bolt12 = 11;
+	optional bytes payment_preimage = 12;
+	optional bytes erroronion = 13;
 }

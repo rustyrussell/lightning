@@ -626,4 +626,34 @@ async fn send_onion(
 
 }
 
+async fn list_send_pays(
+    &self,
+    request: tonic::Request<pb::ListsendpaysRequest>,
+) -> Result<tonic::Response<pb::ListsendpaysResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::ListsendpaysRequest = (&req).into();
+    debug!("Client asked for getinfo");
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::ListSendPays(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method ListSendPays: {:?}", e)))?;
+    match result {
+        Response::ListSendPays(r) => Ok(
+            tonic::Response::new((&r).into())
+        ),
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call ListSendPays",
+                r
+            )
+        )),
+    }
+
+}
+
 }

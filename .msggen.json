@@ -96,6 +96,16 @@
             "SKIPPED": 0,
             "UNUSUAL": 2
         },
+        "ListsendpaysPaymentsStatus": {
+            "complete": 2,
+            "failed": 1,
+            "pending": 0
+        },
+        "ListsendpaysStatus": {
+            "complete": 1,
+            "failed": 2,
+            "pending": 0
+        },
         "SendonionStatus": {
             "complete": 1,
             "pending": 0
@@ -476,6 +486,29 @@
         },
         "ListpeersResponse": {
             "ListPeers.peers[]": 1
+        },
+        "ListsendpaysPayments": {
+            "ListSendPays.payments[].amount_msat": 5,
+            "ListSendPays.payments[].amount_sent_msat": 8,
+            "ListSendPays.payments[].bolt11": 10,
+            "ListSendPays.payments[].bolt12": 11,
+            "ListSendPays.payments[].created_at": 7,
+            "ListSendPays.payments[].destination": 6,
+            "ListSendPays.payments[].erroronion": 13,
+            "ListSendPays.payments[].groupid": 2,
+            "ListSendPays.payments[].id": 1,
+            "ListSendPays.payments[].label": 9,
+            "ListSendPays.payments[].payment_hash": 3,
+            "ListSendPays.payments[].payment_preimage": 12,
+            "ListSendPays.payments[].status": 4
+        },
+        "ListsendpaysRequest": {
+            "ListSendPays.bolt11": 1,
+            "ListSendPays.payment_hash": 2,
+            "ListSendPays.status": 3
+        },
+        "ListsendpaysResponse": {
+            "ListSendPays.payments[]": 1
         },
         "SendonionFirst_hop": {
             "SendOnion.first_hop.amount_msat": 2,

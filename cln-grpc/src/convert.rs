@@ -494,6 +494,36 @@ impl From<&responses::SendonionResponse> for pb::SendonionResponse {
 }
 
 #[allow(unused_variables)]
+impl From<&responses::ListsendpaysPayments> for pb::ListsendpaysPayments {
+    fn from(c: &responses::ListsendpaysPayments) -> Self {
+        Self {
+            id: c.id.clone(),
+            groupid: c.groupid.clone(),
+            payment_hash: hex::decode(&c.payment_hash).unwrap(),
+            status: c.status as i32,
+            amount_msat: c.amount_msat.map(|f| f.into()),
+            destination: c.destination.as_ref().map(|v| hex::decode(&v).unwrap()),
+            created_at: c.created_at.clone(),
+            amount_sent_msat: Some(c.amount_sent_msat.into()),
+            label: c.label.clone(),
+            bolt11: c.bolt11.clone(),
+            bolt12: c.bolt12.clone(),
+            payment_preimage: c.payment_preimage.as_ref().map(|v| hex::decode(&v).unwrap()),
+            erroronion: c.erroronion.as_ref().map(|v| hex::decode(&v).unwrap()),
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&responses::ListsendpaysResponse> for pb::ListsendpaysResponse {
+    fn from(c: &responses::ListsendpaysResponse) -> Self {
+        Self {
+            payments: c.payments.iter().map(|i| i.into()).collect(),
+        }
+    }
+}
+
+#[allow(unused_variables)]
 impl From<&pb::GetinfoRequest> for requests::GetinfoRequest {
     fn from(c: &pb::GetinfoRequest) -> Self {
         Self {
@@ -727,6 +757,17 @@ impl From<&pb::SendonionRequest> for requests::SendonionRequest {
     fn from(c: &pb::SendonionRequest) -> Self {
         Self {
             onion: hex::encode(&c.onion), // Rule #1 for type hex
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::ListsendpaysRequest> for requests::ListsendpaysRequest {
+    fn from(c: &pb::ListsendpaysRequest) -> Self {
+        Self {
+            bolt11: c.bolt11.clone(), // Rule #1 for type string?
+            payment_hash: c.payment_hash.clone().map(|v| hex::encode(v)), // Rule #1 for type hex?
+            status: c.status.map(|v| v.try_into().unwrap()),
         }
     }
 }

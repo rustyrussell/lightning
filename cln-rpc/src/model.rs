@@ -36,6 +36,7 @@ pub enum Request {
 	ListDatastore(requests::ListdatastoreRequest),
 	ListInvoices(requests::ListinvoicesRequest),
 	SendOnion(requests::SendonionRequest),
+	ListSendPays(requests::ListsendpaysRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -62,6 +63,7 @@ pub enum Response {
 	ListDatastore(responses::ListdatastoreResponse),
 	ListInvoices(responses::ListinvoicesResponse),
 	SendOnion(responses::SendonionResponse),
+	ListSendPays(responses::ListsendpaysResponse),
 }
 
 pub mod requests {
@@ -332,6 +334,34 @@ pub mod requests {
 	pub struct SendonionRequest {
 	    #[serde(alias = "onion")]
 	    pub onion: String,
+	}
+
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum ListsendpaysStatus {
+	    PENDING,
+	    COMPLETE,
+	    FAILED,
+	}
+
+	impl TryFrom<i32> for ListsendpaysStatus {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<ListsendpaysStatus, anyhow::Error> {
+	        match c {
+	    0 => Ok(ListsendpaysStatus::PENDING),
+	    1 => Ok(ListsendpaysStatus::COMPLETE),
+	    2 => Ok(ListsendpaysStatus::FAILED),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum ListsendpaysStatus", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListsendpaysRequest {
+	    #[serde(alias = "bolt11", skip_serializing_if = "Option::is_none")]
+	    pub bolt11: Option<String>,
+	    #[serde(alias = "payment_hash", skip_serializing_if = "Option::is_none")]
+	    pub payment_hash: Option<String>,
+	    pub status: Option<ListsendpaysStatus>,
 	}
 
 }
@@ -1346,6 +1376,63 @@ pub mod responses {
 	    pub payment_preimage: Option<String>,
 	    #[serde(alias = "message", skip_serializing_if = "Option::is_none")]
 	    pub message: Option<String>,
+	}
+
+	/// status of the payment
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum ListsendpaysPaymentsStatus {
+	    PENDING,
+	    FAILED,
+	    COMPLETE,
+	}
+
+	impl TryFrom<i32> for ListsendpaysPaymentsStatus {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<ListsendpaysPaymentsStatus, anyhow::Error> {
+	        match c {
+	    0 => Ok(ListsendpaysPaymentsStatus::PENDING),
+	    1 => Ok(ListsendpaysPaymentsStatus::FAILED),
+	    2 => Ok(ListsendpaysPaymentsStatus::COMPLETE),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum ListsendpaysPaymentsStatus", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListsendpaysPayments {
+	    #[serde(alias = "id")]
+	    pub id: u64,
+	    #[serde(alias = "groupid", skip_serializing_if = "Option::is_none")]
+	    pub groupid: Option<u64>,
+	    #[serde(alias = "payment_hash")]
+	    pub payment_hash: String,
+	    // Path `ListSendPays.payments[].status`
+	    #[serde(rename = "status")]
+	    pub status: ListsendpaysPaymentsStatus,
+	    #[serde(alias = "amount_msat", skip_serializing_if = "Option::is_none")]
+	    pub amount_msat: Option<Amount>,
+	    #[serde(alias = "destination", skip_serializing_if = "Option::is_none")]
+	    pub destination: Option<String>,
+	    #[serde(alias = "created_at")]
+	    pub created_at: u64,
+	    #[serde(alias = "amount_sent_msat")]
+	    pub amount_sent_msat: Amount,
+	    #[serde(alias = "label", skip_serializing_if = "Option::is_none")]
+	    pub label: Option<String>,
+	    #[serde(alias = "bolt11", skip_serializing_if = "Option::is_none")]
+	    pub bolt11: Option<String>,
+	    #[serde(alias = "bolt12", skip_serializing_if = "Option::is_none")]
+	    pub bolt12: Option<String>,
+	    #[serde(alias = "payment_preimage", skip_serializing_if = "Option::is_none")]
+	    pub payment_preimage: Option<String>,
+	    #[serde(alias = "erroronion", skip_serializing_if = "Option::is_none")]
+	    pub erroronion: Option<String>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListsendpaysResponse {
+	    #[serde(alias = "payments")]
+	    pub payments: Vec<ListsendpaysPayments>,
 	}
 
 }
