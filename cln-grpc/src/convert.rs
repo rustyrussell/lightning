@@ -688,6 +688,16 @@ impl From<&responses::WaitsendpayResponse> for pb::WaitsendpayResponse {
 }
 
 #[allow(unused_variables)]
+impl From<&responses::NewaddrResponse> for pb::NewaddrResponse {
+    fn from(c: &responses::NewaddrResponse) -> Self {
+        Self {
+            bech32: c.bech32.clone(), // Rule #2 for type string?
+            p2sh_segwit: c.p2sh_segwit.clone(), // Rule #2 for type string?
+        }
+    }
+}
+
+#[allow(unused_variables)]
 impl From<&pb::GetinfoRequest> for requests::GetinfoRequest {
     fn from(c: &pb::GetinfoRequest) -> Self {
         Self {
@@ -995,6 +1005,15 @@ impl From<&pb::WaitsendpayRequest> for requests::WaitsendpayRequest {
             payment_hash: hex::encode(&c.payment_hash), // Rule #1 for type hex
             partid: c.partid.map(|v| v as u16), // Rule #1 for type u16?
             timeout: c.timeout.clone(), // Rule #1 for type u32?
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::NewaddrRequest> for requests::NewaddrRequest {
+    fn from(c: &pb::NewaddrRequest) -> Self {
+        Self {
+            addresstype: c.addresstype.map(|v| v.try_into().unwrap()),
         }
     }
 }

@@ -836,4 +836,34 @@ async fn wait_send_pay(
 
 }
 
+async fn new_addr(
+    &self,
+    request: tonic::Request<pb::NewaddrRequest>,
+) -> Result<tonic::Response<pb::NewaddrResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::NewaddrRequest = (&req).into();
+    debug!("Client asked for getinfo");
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::NewAddr(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method NewAddr: {:?}", e)))?;
+    match result {
+        Response::NewAddr(r) => Ok(
+            tonic::Response::new((&r).into())
+        ),
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call NewAddr",
+                r
+            )
+        )),
+    }
+
+}
+
 }

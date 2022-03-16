@@ -43,6 +43,7 @@ pub enum Request {
 	WaitAnyInvoice(requests::WaitanyinvoiceRequest),
 	WaitInvoice(requests::WaitinvoiceRequest),
 	WaitSendPay(requests::WaitsendpayRequest),
+	NewAddr(requests::NewaddrRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -76,6 +77,7 @@ pub enum Response {
 	WaitAnyInvoice(responses::WaitanyinvoiceResponse),
 	WaitInvoice(responses::WaitinvoiceResponse),
 	WaitSendPay(responses::WaitsendpayResponse),
+	NewAddr(responses::NewaddrResponse),
 }
 
 pub mod requests {
@@ -428,6 +430,28 @@ pub mod requests {
 	    pub partid: Option<u16>,
 	    #[serde(alias = "timeout", skip_serializing_if = "Option::is_none")]
 	    pub timeout: Option<u32>,
+	}
+
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum NewaddrAddresstype {
+	    BECH32,
+	    P2SH_SEGWIT,
+	}
+
+	impl TryFrom<i32> for NewaddrAddresstype {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<NewaddrAddresstype, anyhow::Error> {
+	        match c {
+	    0 => Ok(NewaddrAddresstype::BECH32),
+	    1 => Ok(NewaddrAddresstype::P2SH_SEGWIT),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum NewaddrAddresstype", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct NewaddrRequest {
+	    pub addresstype: Option<NewaddrAddresstype>,
 	}
 
 }
@@ -1868,6 +1892,14 @@ pub mod responses {
 	    pub bolt12: Option<String>,
 	    #[serde(alias = "payment_preimage", skip_serializing_if = "Option::is_none")]
 	    pub payment_preimage: Option<String>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct NewaddrResponse {
+	    #[serde(alias = "bech32", skip_serializing_if = "Option::is_none")]
+	    pub bech32: Option<String>,
+	    #[serde(alias = "p2sh-segwit", skip_serializing_if = "Option::is_none")]
+	    pub p2sh_segwit: Option<String>,
 	}
 
 }

@@ -140,6 +140,10 @@
             "theirs": 0,
             "withdraw": 2
         },
+        "NewaddrAddresstype": {
+            "bech32": 0,
+            "p2sh-segwit": 1
+        },
         "PayStatus": {
             "complete": 0,
             "failed": 2,
@@ -607,6 +611,13 @@
             "ListTransactions.transactions[].outputs[].msat": 2,
             "ListTransactions.transactions[].outputs[].scriptPubKey": 3,
             "ListTransactions.transactions[].outputs[].type": 4
+        },
+        "NewaddrRequest": {
+            "NewAddr.addresstype": 1
+        },
+        "NewaddrResponse": {
+            "NewAddr.bech32": 1,
+            "NewAddr.p2sh-segwit": 2
         },
         "PayRequest": {
             "Pay.bolt11": 1,
