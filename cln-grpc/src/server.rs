@@ -866,4 +866,34 @@ async fn new_addr(
 
 }
 
+async fn withdraw(
+    &self,
+    request: tonic::Request<pb::WithdrawRequest>,
+) -> Result<tonic::Response<pb::WithdrawResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::WithdrawRequest = (&req).into();
+    debug!("Client asked for getinfo");
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::Withdraw(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method Withdraw: {:?}", e)))?;
+    match result {
+        Response::Withdraw(r) => Ok(
+            tonic::Response::new((&r).into())
+        ),
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call Withdraw",
+                r
+            )
+        )),
+    }
+
+}
+
 }

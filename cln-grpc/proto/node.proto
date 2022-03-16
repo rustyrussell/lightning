@@ -36,6 +36,7 @@ service Node {
 	rpc WaitInvoice(WaitinvoiceRequest) returns (WaitinvoiceResponse) {}
 	rpc WaitSendPay(WaitsendpayRequest) returns (WaitsendpayResponse) {}
 	rpc NewAddr(NewaddrRequest) returns (NewaddrResponse) {}
+	rpc Withdraw(WithdrawRequest) returns (WithdrawResponse) {}
 }
 
 message GetinfoRequest {
@@ -897,4 +898,17 @@ message NewaddrRequest {
 message NewaddrResponse {
 	optional string bech32 = 1;
 	optional string p2sh_segwit = 2;
+}
+
+message WithdrawRequest {
+	bytes destination = 1;
+	optional Amount satoshi = 2;
+	optional uint32 minconf = 3;
+	repeated Utxo utxos = 4;
+}
+
+message WithdrawResponse {
+	bytes tx = 1;
+	bytes txid = 2;
+	string psbt = 3;
 }

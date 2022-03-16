@@ -44,6 +44,7 @@ pub enum Request {
 	WaitInvoice(requests::WaitinvoiceRequest),
 	WaitSendPay(requests::WaitsendpayRequest),
 	NewAddr(requests::NewaddrRequest),
+	Withdraw(requests::WithdrawRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -78,6 +79,7 @@ pub enum Response {
 	WaitInvoice(responses::WaitinvoiceResponse),
 	WaitSendPay(responses::WaitsendpayResponse),
 	NewAddr(responses::NewaddrResponse),
+	Withdraw(responses::WithdrawResponse),
 }
 
 pub mod requests {
@@ -452,6 +454,18 @@ pub mod requests {
 	#[derive(Clone, Debug, Deserialize, Serialize)]
 	pub struct NewaddrRequest {
 	    pub addresstype: Option<NewaddrAddresstype>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct WithdrawRequest {
+	    #[serde(alias = "destination")]
+	    pub destination: String,
+	    #[serde(alias = "satoshi", skip_serializing_if = "Option::is_none")]
+	    pub satoshi: Option<Amount>,
+	    #[serde(alias = "minconf", skip_serializing_if = "Option::is_none")]
+	    pub minconf: Option<u16>,
+	    #[serde(alias = "utxos")]
+	    pub utxos: Vec<Utxo>,
 	}
 
 }
@@ -1900,6 +1914,16 @@ pub mod responses {
 	    pub bech32: Option<String>,
 	    #[serde(alias = "p2sh-segwit", skip_serializing_if = "Option::is_none")]
 	    pub p2sh_segwit: Option<String>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct WithdrawResponse {
+	    #[serde(alias = "tx")]
+	    pub tx: String,
+	    #[serde(alias = "txid")]
+	    pub txid: String,
+	    #[serde(alias = "psbt")]
+	    pub psbt: String,
 	}
 
 }

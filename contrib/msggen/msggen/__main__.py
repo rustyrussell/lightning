@@ -68,6 +68,7 @@ def load_jsonrpc_service():
         "WaitInvoice",
         "WaitSendPay",
         "NewAddr",
+        "Withdraw",
         # "decodepay",
         # "decode",
         # "delpay",
@@ -84,7 +85,6 @@ def load_jsonrpc_service():
         # "getlog",
         # "getroute",
         # "getsharedsecret",
-        # "help",
         # "keysend",
         # "listconfigs",
         # "listforwards",
@@ -92,7 +92,6 @@ def load_jsonrpc_service():
         # "listpays",
         # "multifundchannel",
         # "multiwithdraw",
-        # "notifications",
         # "offerout",
         # "offer",
         # "openchannel_abort",
@@ -116,11 +115,12 @@ def load_jsonrpc_service():
         # "txsend",
         # "unreserveinputs",
         # "waitblockheight",
-        # "withdraw",
         # "ListConfigs",
         # "check",  # No point in mapping this one
         # "Stop",  # Breaks a core assumption (root is an object) can't map unless we change this
         # "UtxoPsbt",  # Breaks since the utxos array has dynamic keys which we can't map as is
+        # "notifications",  # No point in mapping this
+        # "help",
     ]
     methods = [load_jsonrpc_method(name) for name in method_names]
     service = Service(name="Node", methods=methods)

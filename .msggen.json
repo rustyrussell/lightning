@@ -748,6 +748,17 @@
             "WaitSendPay.payment_hash": 3,
             "WaitSendPay.payment_preimage": 13,
             "WaitSendPay.status": 4
+        },
+        "WithdrawRequest": {
+            "Withdraw.destination": 1,
+            "Withdraw.minconf": 3,
+            "Withdraw.satoshi": 2,
+            "Withdraw.utxos[]": 4
+        },
+        "WithdrawResponse": {
+            "Withdraw.psbt": 3,
+            "Withdraw.tx": 1,
+            "Withdraw.txid": 2
         }
     }
 }

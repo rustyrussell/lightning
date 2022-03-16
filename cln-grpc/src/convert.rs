@@ -698,6 +698,17 @@ impl From<&responses::NewaddrResponse> for pb::NewaddrResponse {
 }
 
 #[allow(unused_variables)]
+impl From<&responses::WithdrawResponse> for pb::WithdrawResponse {
+    fn from(c: &responses::WithdrawResponse) -> Self {
+        Self {
+            tx: hex::decode(&c.tx).unwrap(), // Rule #2 for type hex
+            txid: hex::decode(&c.txid).unwrap(), // Rule #2 for type txid
+            psbt: c.psbt.clone(), // Rule #2 for type string
+        }
+    }
+}
+
+#[allow(unused_variables)]
 impl From<&pb::GetinfoRequest> for requests::GetinfoRequest {
     fn from(c: &pb::GetinfoRequest) -> Self {
         Self {
@@ -1014,6 +1025,18 @@ impl From<&pb::NewaddrRequest> for requests::NewaddrRequest {
     fn from(c: &pb::NewaddrRequest) -> Self {
         Self {
             addresstype: c.addresstype.map(|v| v.try_into().unwrap()),
+        }
+    }
+}
+
+#[allow(unused_variables)]
+impl From<&pb::WithdrawRequest> for requests::WithdrawRequest {
+    fn from(c: &pb::WithdrawRequest) -> Self {
+        Self {
+            destination: hex::encode(&c.destination), // Rule #1 for type pubkey
+            satoshi: c.satoshi.as_ref().map(|a| a.into()), // Rule #1 for type msat?
+            minconf: c.minconf.map(|v| v as u16), // Rule #1 for type u16?
+            utxos: c.utxos.iter().map(|s| s.into()).collect(),
         }
     }
 }
