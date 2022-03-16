@@ -656,4 +656,34 @@ async fn list_send_pays(
 
 }
 
+async fn list_transactions(
+    &self,
+    request: tonic::Request<pb::ListtransactionsRequest>,
+) -> Result<tonic::Response<pb::ListtransactionsResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::ListtransactionsRequest = (&req).into();
+    debug!("Client asked for getinfo");
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::ListTransactions(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method ListTransactions: {:?}", e)))?;
+    match result {
+        Response::ListTransactions(r) => Ok(
+            tonic::Response::new((&r).into())
+        ),
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call ListTransactions",
+                r
+            )
+        )),
+    }
+
+}
+
 }

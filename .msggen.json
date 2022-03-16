@@ -106,6 +106,32 @@
             "failed": 2,
             "pending": 0
         },
+        "ListtransactionsTransactionsInputsType": {
+            "channel_funding": 3,
+            "channel_htlc_success": 7,
+            "channel_htlc_timeout": 8,
+            "channel_mutual_close": 4,
+            "channel_penalty": 9,
+            "channel_sweep": 6,
+            "channel_unilateral_cheat": 10,
+            "channel_unilateral_close": 5,
+            "deposit": 1,
+            "theirs": 0,
+            "withdraw": 2
+        },
+        "ListtransactionsTransactionsOutputsType": {
+            "channel_funding": 3,
+            "channel_htlc_success": 7,
+            "channel_htlc_timeout": 8,
+            "channel_mutual_close": 4,
+            "channel_penalty": 9,
+            "channel_sweep": 6,
+            "channel_unilateral_cheat": 10,
+            "channel_unilateral_close": 5,
+            "deposit": 1,
+            "theirs": 0,
+            "withdraw": 2
+        },
         "SendonionStatus": {
             "complete": 1,
             "pending": 0
@@ -509,6 +535,35 @@
         },
         "ListsendpaysResponse": {
             "ListSendPays.payments[]": 1
+        },
+        "ListtransactionsResponse": {
+            "ListTransactions.transactions[]": 1
+        },
+        "ListtransactionsTransactions": {
+            "ListTransactions.transactions[].blockheight": 3,
+            "ListTransactions.transactions[].channel": 6,
+            "ListTransactions.transactions[].hash": 1,
+            "ListTransactions.transactions[].inputs[]": 9,
+            "ListTransactions.transactions[].locktime": 7,
+            "ListTransactions.transactions[].outputs[]": 10,
+            "ListTransactions.transactions[].rawtx": 2,
+            "ListTransactions.transactions[].txindex": 4,
+            "ListTransactions.transactions[].type[]": 5,
+            "ListTransactions.transactions[].version": 8
+        },
+        "ListtransactionsTransactionsInputs": {
+            "ListTransactions.transactions[].inputs[].channel": 5,
+            "ListTransactions.transactions[].inputs[].index": 2,
+            "ListTransactions.transactions[].inputs[].sequence": 3,
+            "ListTransactions.transactions[].inputs[].txid": 1,
+            "ListTransactions.transactions[].inputs[].type": 4
+        },
+        "ListtransactionsTransactionsOutputs": {
+            "ListTransactions.transactions[].outputs[].channel": 5,
+            "ListTransactions.transactions[].outputs[].index": 1,
+            "ListTransactions.transactions[].outputs[].msat": 2,
+            "ListTransactions.transactions[].outputs[].scriptPubKey": 3,
+            "ListTransactions.transactions[].outputs[].type": 4
         },
         "SendonionFirst_hop": {
             "SendOnion.first_hop.amount_msat": 2,

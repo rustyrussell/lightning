@@ -37,6 +37,7 @@ pub enum Request {
 	ListInvoices(requests::ListinvoicesRequest),
 	SendOnion(requests::SendonionRequest),
 	ListSendPays(requests::ListsendpaysRequest),
+	ListTransactions(requests::ListtransactionsRequest),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -64,6 +65,7 @@ pub enum Response {
 	ListInvoices(responses::ListinvoicesResponse),
 	SendOnion(responses::SendonionResponse),
 	ListSendPays(responses::ListsendpaysResponse),
+	ListTransactions(responses::ListtransactionsResponse),
 }
 
 pub mod requests {
@@ -362,6 +364,10 @@ pub mod requests {
 	    #[serde(alias = "payment_hash", skip_serializing_if = "Option::is_none")]
 	    pub payment_hash: Option<String>,
 	    pub status: Option<ListsendpaysStatus>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListtransactionsRequest {
 	}
 
 }
@@ -1433,6 +1439,132 @@ pub mod responses {
 	pub struct ListsendpaysResponse {
 	    #[serde(alias = "payments")]
 	    pub payments: Vec<ListsendpaysPayments>,
+	}
+
+	/// the purpose of this input (*EXPERIMENTAL_FEATURES* only)
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum ListtransactionsTransactionsInputsType {
+	    THEIRS,
+	    DEPOSIT,
+	    WITHDRAW,
+	    CHANNEL_FUNDING,
+	    CHANNEL_MUTUAL_CLOSE,
+	    CHANNEL_UNILATERAL_CLOSE,
+	    CHANNEL_SWEEP,
+	    CHANNEL_HTLC_SUCCESS,
+	    CHANNEL_HTLC_TIMEOUT,
+	    CHANNEL_PENALTY,
+	    CHANNEL_UNILATERAL_CHEAT,
+	}
+
+	impl TryFrom<i32> for ListtransactionsTransactionsInputsType {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<ListtransactionsTransactionsInputsType, anyhow::Error> {
+	        match c {
+	    0 => Ok(ListtransactionsTransactionsInputsType::THEIRS),
+	    1 => Ok(ListtransactionsTransactionsInputsType::DEPOSIT),
+	    2 => Ok(ListtransactionsTransactionsInputsType::WITHDRAW),
+	    3 => Ok(ListtransactionsTransactionsInputsType::CHANNEL_FUNDING),
+	    4 => Ok(ListtransactionsTransactionsInputsType::CHANNEL_MUTUAL_CLOSE),
+	    5 => Ok(ListtransactionsTransactionsInputsType::CHANNEL_UNILATERAL_CLOSE),
+	    6 => Ok(ListtransactionsTransactionsInputsType::CHANNEL_SWEEP),
+	    7 => Ok(ListtransactionsTransactionsInputsType::CHANNEL_HTLC_SUCCESS),
+	    8 => Ok(ListtransactionsTransactionsInputsType::CHANNEL_HTLC_TIMEOUT),
+	    9 => Ok(ListtransactionsTransactionsInputsType::CHANNEL_PENALTY),
+	    10 => Ok(ListtransactionsTransactionsInputsType::CHANNEL_UNILATERAL_CHEAT),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum ListtransactionsTransactionsInputsType", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListtransactionsTransactionsInputs {
+	    #[serde(alias = "txid")]
+	    pub txid: String,
+	    #[serde(alias = "index")]
+	    pub index: u32,
+	    #[serde(alias = "sequence")]
+	    pub sequence: u32,
+	    pub item_type: Option<ListtransactionsTransactionsInputsType>,
+	    #[serde(alias = "channel", skip_serializing_if = "Option::is_none")]
+	    pub channel: Option<String>,
+	}
+
+	/// the purpose of this output (*EXPERIMENTAL_FEATURES* only)
+	#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+	#[serde(rename_all = "lowercase")]
+	pub enum ListtransactionsTransactionsOutputsType {
+	    THEIRS,
+	    DEPOSIT,
+	    WITHDRAW,
+	    CHANNEL_FUNDING,
+	    CHANNEL_MUTUAL_CLOSE,
+	    CHANNEL_UNILATERAL_CLOSE,
+	    CHANNEL_SWEEP,
+	    CHANNEL_HTLC_SUCCESS,
+	    CHANNEL_HTLC_TIMEOUT,
+	    CHANNEL_PENALTY,
+	    CHANNEL_UNILATERAL_CHEAT,
+	}
+
+	impl TryFrom<i32> for ListtransactionsTransactionsOutputsType {
+	    type Error = anyhow::Error;
+	    fn try_from(c: i32) -> Result<ListtransactionsTransactionsOutputsType, anyhow::Error> {
+	        match c {
+	    0 => Ok(ListtransactionsTransactionsOutputsType::THEIRS),
+	    1 => Ok(ListtransactionsTransactionsOutputsType::DEPOSIT),
+	    2 => Ok(ListtransactionsTransactionsOutputsType::WITHDRAW),
+	    3 => Ok(ListtransactionsTransactionsOutputsType::CHANNEL_FUNDING),
+	    4 => Ok(ListtransactionsTransactionsOutputsType::CHANNEL_MUTUAL_CLOSE),
+	    5 => Ok(ListtransactionsTransactionsOutputsType::CHANNEL_UNILATERAL_CLOSE),
+	    6 => Ok(ListtransactionsTransactionsOutputsType::CHANNEL_SWEEP),
+	    7 => Ok(ListtransactionsTransactionsOutputsType::CHANNEL_HTLC_SUCCESS),
+	    8 => Ok(ListtransactionsTransactionsOutputsType::CHANNEL_HTLC_TIMEOUT),
+	    9 => Ok(ListtransactionsTransactionsOutputsType::CHANNEL_PENALTY),
+	    10 => Ok(ListtransactionsTransactionsOutputsType::CHANNEL_UNILATERAL_CHEAT),
+	            o => Err(anyhow::anyhow!("Unknown variant {} for enum ListtransactionsTransactionsOutputsType", o)),
+	        }
+	    }
+	}
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListtransactionsTransactionsOutputs {
+	    #[serde(alias = "index")]
+	    pub index: u32,
+	    #[serde(alias = "msat")]
+	    pub msat: Amount,
+	    #[serde(alias = "scriptPubKey")]
+	    pub script_pub_key: String,
+	    pub item_type: Option<ListtransactionsTransactionsOutputsType>,
+	    #[serde(alias = "channel", skip_serializing_if = "Option::is_none")]
+	    pub channel: Option<String>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListtransactionsTransactions {
+	    #[serde(alias = "hash")]
+	    pub hash: String,
+	    #[serde(alias = "rawtx")]
+	    pub rawtx: String,
+	    #[serde(alias = "blockheight")]
+	    pub blockheight: u32,
+	    #[serde(alias = "txindex")]
+	    pub txindex: u32,
+	    #[serde(alias = "channel", skip_serializing_if = "Option::is_none")]
+	    pub channel: Option<String>,
+	    #[serde(alias = "locktime")]
+	    pub locktime: u32,
+	    #[serde(alias = "version")]
+	    pub version: u32,
+	    #[serde(alias = "inputs")]
+	    pub inputs: Vec<ListtransactionsTransactionsInputs>,
+	    #[serde(alias = "outputs")]
+	    pub outputs: Vec<ListtransactionsTransactionsOutputs>,
+	}
+
+	#[derive(Clone, Debug, Deserialize, Serialize)]
+	pub struct ListtransactionsResponse {
+	    #[serde(alias = "transactions")]
+	    pub transactions: Vec<ListtransactionsTransactions>,
 	}
 
 }
