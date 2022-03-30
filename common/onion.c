@@ -329,6 +329,12 @@ struct onion_payload *onion_decode(const tal_t *ctx,
 		*p->total_msat
 			= amount_msat(tlv->payment_data->total_msat);
 	}
+	if (tlv->payment_metadata)
+		p->payment_metadata
+			= tal_dup_talarr(p, u8, tlv->payment_metadata);
+	else
+		p->payment_metadata = NULL;
+
 	p->tlv = tal_steal(p, tlv);
 	return p;
 
