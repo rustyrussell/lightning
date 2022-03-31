@@ -713,7 +713,7 @@ static void connect_failed(struct daemon *daemon,
 	 * again, with the wait_seconds as a hint of how long before
 	 * asking. */
 	msg = towire_connectd_connect_failed(NULL, id, errcode, errmsg,
-					       wait_seconds, addrhint);
+					     wait_seconds, addrhint, daemon->max_connect_id);
 	daemon_conn_send(daemon->master, take(msg));
 
 	status_peer_debug(id, "Failed connected out: %s", errmsg);
@@ -1881,11 +1881,16 @@ static void connect_to_peer(struct daemon *daemon, const u8 *msg)
 	u32 seconds_waited;
 	struct wireaddr_internal *addrhint;
 	struct wireaddr *addrs;
+	u64 connect_id;
 
 	if (!fromwire_connectd_connect_to_peer(tmpctx, msg,
 					       &id, &seconds_waited,
-					       &addrs, &addrhint))
+					       &addrs, &addrhint,
+					       &connect_id))
 		master_badmsg(WIRE_CONNECTD_CONNECT_TO_PEER, msg);
+
+	if (connect_id > daemon->max_connect_id)
+		daemon->max_connect_id = connect_id;
 
 	try_connect_peer(daemon, &id, seconds_waited, addrs, addrhint);
 }
@@ -2114,6 +2119,7 @@ int main(int argc, char *argv[])
 	list_head_init(&daemon->connecting);
 	timers_init(&daemon->timers, time_mono());
 	daemon->gossip_store_fd = -1;
+	daemon->max_connect_id = 0;
 
 	/* stdin == control */
 	daemon->master = daemon_conn_new(daemon, STDIN_FILENO, recv_req, NULL,

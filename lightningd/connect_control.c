@@ -28,6 +28,7 @@ struct connect {
 	struct list_node list;
 	struct node_id id;
 	struct command *cmd;
+	u64 connect_id;
 };
 
 static void destroy_connect(struct connect *c)
@@ -37,24 +38,29 @@ static void destroy_connect(struct connect *c)
 
 static struct connect *new_connect(struct lightningd *ld,
 				   const struct node_id *id,
+				   u64 connect_id,
 				   struct command *cmd)
 {
 	struct connect *c = tal(cmd, struct connect);
 	c->id = *id;
 	c->cmd = cmd;
+	c->connect_id = connect_id;
 	list_add_tail(&ld->connects, &c->list);
 	tal_add_destructor(c, destroy_connect);
 	return c;
 }
 
-/* Finds first command which matches. */
+/* Finds first command which matches, as long as request was <= max_connect_id */
 static struct connect *find_connect(struct lightningd *ld,
-				    const struct node_id *id)
+				    const struct node_id *id,
+				    const u64 *max_connect_id)
 {
 	struct connect *i;
 
 	list_for_each(&ld->connects, i, list) {
-		if (node_id_eq(&i->id, id))
+		if (!node_id_eq(&i->id, id))
+			continue;
+		if (!max_connect_id || i->connect_id <= *max_connect_id)
 			return i;
 	}
 	return NULL;
@@ -74,11 +80,11 @@ static struct command_result *connect_cmd_succeed(struct command *cmd,
 }
 
 /* FIXME: Reorder! */
-static void try_connect(const tal_t *ctx,
-			struct lightningd *ld,
-			const struct node_id *id,
-			u32 seconds_delay,
-			const struct wireaddr_internal *addrhint);
+static u64 try_connect(const tal_t *ctx,
+		       struct lightningd *ld,
+		       const struct node_id *id,
+		       u32 seconds_delay,
+		       const struct wireaddr_internal *addrhint);
 
 static struct command_result *json_connect(struct command *cmd,
 					   const char *buffer,
@@ -94,6 +100,7 @@ static struct command_result *json_connect(struct command *cmd,
 	const char *name;
 	struct wireaddr_internal *addr;
 	const char *err_msg;
+	u64 connect_id;
 
 	if (!param(cmd, buffer, params,
 		   p_req("id", param_tok, (const jsmntok_t **) &idtok),
@@ -156,10 +163,10 @@ static struct command_result *json_connect(struct command *cmd,
 	} else
 		addr = NULL;
 
-	try_connect(cmd, cmd->ld, &id, 0, addr);
+	connect_id = try_connect(cmd, cmd->ld, &id, 0, addr);
 
 	/* Leave this here for peer_connected or connect_failed. */
-	new_connect(cmd->ld, &id, cmd);
+	new_connect(cmd->ld, &id, connect_id, cmd);
 	return command_still_pending(cmd);
 }
 
@@ -179,6 +186,7 @@ struct delayed_reconnect {
 	struct node_id id;
 	u32 seconds_delayed;
 	struct wireaddr_internal *addrhint;
+	u64 connect_id;
 };
 
 static void gossipd_got_addrs(struct subd *subd,
@@ -197,7 +205,8 @@ static void gossipd_got_addrs(struct subd *subd,
 						     &d->id,
 						     d->seconds_delayed,
 						     addrs,
-						     d->addrhint);
+						     d->addrhint,
+						     d->connect_id);
 	subd_send_msg(d->ld->connectd, take(connectmsg));
 	tal_free(d);
 }
@@ -211,11 +220,11 @@ static void do_connect(struct delayed_reconnect *d)
 }
 
 /* peer may be NULL here */
-static void try_connect(const tal_t *ctx,
-			struct lightningd *ld,
-			const struct node_id *id,
-			u32 seconds_delay,
-			const struct wireaddr_internal *addrhint)
+static u64 try_connect(const tal_t *ctx,
+		       struct lightningd *ld,
+		       const struct node_id *id,
+		       u32 seconds_delay,
+		       const struct wireaddr_internal *addrhint)
 {
 	struct delayed_reconnect *d;
 	struct peer *peer;
@@ -225,10 +234,12 @@ static void try_connect(const tal_t *ctx,
 	d->id = *id;
 	d->seconds_delayed = seconds_delay;
 	d->addrhint = tal_dup_or_null(d, struct wireaddr_internal, addrhint);
+	/* So we know when connectd has processed this (happens in order!) */
+	d->connect_id = ld->connectd_id_counter++;
 
 	if (!seconds_delay) {
 		do_connect(d);
-		return;
+		return d->connect_id;
 	}
 
 	log_peer_debug(ld->log, id, "Will try reconnect in %u seconds",
@@ -254,6 +265,7 @@ static void try_connect(const tal_t *ctx,
 			     timerel_add(time_from_sec(seconds_delay),
 					 time_from_usec(pseudorand(1000000))),
 			     do_connect, d));
+	return d->connect_id;
 }
 
 void try_reconnect(const tal_t *ctx,
@@ -280,14 +292,16 @@ static void connect_failed(struct lightningd *ld, const u8 *msg)
 	u32 seconds_to_delay;
 	struct wireaddr_internal *addrhint;
 	struct peer *peer;
+	u64 max_connect_id;
 
 	if (!fromwire_connectd_connect_failed(tmpctx, msg, &id, &errcode, &errmsg,
-						&seconds_to_delay, &addrhint))
+					      &seconds_to_delay, &addrhint,
+					      &max_connect_id))
 		fatal("Connect gave bad CONNECTD_CONNECT_FAILED message %s",
 		      tal_hex(msg, msg));
 
 	/* We can have multiple connect commands: fail them all */
-	while ((c = find_connect(ld, &id)) != NULL) {
+	while ((c = find_connect(ld, &id, &max_connect_id)) != NULL) {
 		/* They delete themselves from list */
 		was_pending(command_fail(c->cmd, errcode, "%s", errmsg));
 	}
@@ -307,7 +321,7 @@ void connect_succeeded(struct lightningd *ld, const struct peer *peer,
 	struct connect *c;
 
 	/* We can have multiple connect commands: fail them all */
-	while ((c = find_connect(ld, &peer->id)) != NULL) {
+	while ((c = find_connect(ld, &peer->id, NULL)) != NULL) {
 		/* They delete themselves from list */
 		connect_cmd_succeed(c->cmd, peer, incoming, addr);
 	}

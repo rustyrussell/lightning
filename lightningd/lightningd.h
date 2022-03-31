@@ -217,6 +217,9 @@ struct lightningd {
 	 * FEERATE_PENALTY). */
 	u32 *force_feerates;
 
+	/* Counter for connectd "connect" command acknowledgement */
+	u64 connectd_id_counter;
+
 #if DEVELOPER
 	/* If we want to debug a subdaemon/plugin. */
 	const char *dev_debug_subprocess;

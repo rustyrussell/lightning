@@ -55,6 +55,7 @@ msgdata,connectd_connect_to_peer,seconds_waited,u32,
 msgdata,connectd_connect_to_peer,len,u32,
 msgdata,connectd_connect_to_peer,addrs,wireaddr,len
 msgdata,connectd_connect_to_peer,addrhint,?wireaddr_internal,
+msgdata,connectd_connect_to_peer,connect_id,u64,
 
 # Connectd->master: connect failed.
 msgtype,connectd_connect_failed,2020
@@ -63,6 +64,7 @@ msgdata,connectd_connect_failed,failcode,errcode_t,
 msgdata,connectd_connect_failed,failreason,wirestring,
 msgdata,connectd_connect_failed,seconds_to_delay,u32,
 msgdata,connectd_connect_failed,addrhint,?wireaddr_internal,
+msgdata,connectd_connect_failed,last_id,u64,
 
 # Connectd -> master: we got a peer.
 msgtype,connectd_peer_connected,2002

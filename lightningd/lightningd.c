@@ -297,6 +297,13 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	 * case this is a pointer to an enum feerate-indexed array of values */
 	ld->force_feerates = NULL;
 
+	/*~ We keep a counter as we send commands to connectd: as it tells us
+	 * about failed connections, we can get confused when a user (or, more
+	 * likely, our testsuite) sends a connect command just as an automatic
+	 * connect retry is failing.  This means we can tell if connectd has
+	 * processed a particular connect command (it echos it back). */
+	ld->connectd_id_counter = 0;
+
 	return ld;
 }
 

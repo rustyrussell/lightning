@@ -188,6 +188,9 @@ struct daemon {
 	int gossip_store_fd;
 	size_t gossip_store_end;
 
+	/* Counter for how many connect commands we've processed. */
+	u64 max_connect_id;
+
 #if DEVELOPER
 	/* Hack to speed up gossip timer */
 	bool dev_fast_gossip;
