@@ -29,6 +29,17 @@ bool printwire_u16(const char *fieldname, const u8 **cursor, size_t *plen)
 	return true;
 }
 
+bool printwire_s16(const char *fieldname, const u8 **cursor, size_t *plen)
+{
+	s16 v = fromwire_s16(cursor, plen);
+	if (!*cursor) {
+		printf("**TRUNCATED s16 %s**\n", fieldname);
+		return false;
+	}
+	printf("%i\n", v);
+	return true;
+}
+
 bool printwire_u32(const char *fieldname, const u8 **cursor, size_t *plen)
 {
 	u32 v = fromwire_u32(cursor, plen);

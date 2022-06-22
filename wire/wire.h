@@ -29,6 +29,7 @@ void towire_sha256(u8 **pptr, const struct sha256 *sha256);
 void towire_ripemd160(u8 **pptr, const struct ripemd160 *ripemd);
 void towire_u8(u8 **pptr, u8 v);
 void towire_u16(u8 **pptr, u16 v);
+void towire_s16(u8 **pptr, s16 v);
 void towire_u32(u8 **pptr, u32 v);
 void towire_u64(u8 **pptr, u64 v);
 void towire_tu16(u8 **pptr, u16 v);
@@ -46,6 +47,7 @@ void towire_siphash_seed(u8 **cursor, const struct siphash_seed *seed);
 
 const u8 *fromwire(const u8 **cursor, size_t *max, void *copy, size_t n);
 u8 fromwire_u8(const u8 **cursor, size_t *max);
+s16 fromwire_s16(const u8 **cursor, size_t *max);
 u16 fromwire_u16(const u8 **cursor, size_t *max);
 u32 fromwire_u32(const u8 **cursor, size_t *max);
 u64 fromwire_u64(const u8 **cursor, size_t *max);

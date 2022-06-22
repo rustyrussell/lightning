@@ -25,6 +25,12 @@ void towire_u16(u8 **pptr, u16 v)
 	towire(pptr, &l, sizeof(l));
 }
 
+void towire_s16(u8 **pptr, s16 v)
+{
+	be16 l = cpu_to_be16(v);
+	towire(pptr, &l, sizeof(l));
+}
+
 void towire_u32(u8 **pptr, u32 v)
 {
 	be32 l = cpu_to_be32(v);

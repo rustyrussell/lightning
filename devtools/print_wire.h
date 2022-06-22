@@ -17,6 +17,7 @@ typedef u64 bigsize;
 struct wireaddr;
 
 bool printwire_u8(const char *fieldname, const u8 **cursor, size_t *plen);
+bool printwire_s16(const char *fieldname, const u8 **cursor, size_t *plen);
 bool printwire_u16(const char *fieldname, const u8 **cursor, size_t *plen);
 bool printwire_u32(const char *fieldname, const u8 **cursor, size_t *plen);
 bool printwire_u64(const char *fieldname, const u8 **cursor, size_t *plen);

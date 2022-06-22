@@ -68,6 +68,15 @@ u16 fromwire_u16(const u8 **cursor, size_t *max)
 	return be16_to_cpu(ret);
 }
 
+s16 fromwire_s16(const u8 **cursor, size_t *max)
+{
+	be16 ret;
+
+	if (!fromwire(cursor, max, &ret, sizeof(ret)))
+		return 0;
+	return be16_to_cpu(ret);
+}
+
 u32 fromwire_u32(const u8 **cursor, size_t *max)
 {
 	be32 ret;

@@ -185,6 +185,7 @@ class FieldSet(object):
 class Type(FieldSet):
     assignables = [
         'u8',
+        's16',
         'u16',
         'u32',
         'u64',
@@ -201,6 +202,7 @@ class Type(FieldSet):
 
     typedefs = [
         'u8',
+        's16',
         'u16',
         'u32',
         'u64',
