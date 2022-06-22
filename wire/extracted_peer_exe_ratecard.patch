@@ -1,0 +1,17 @@
+diff --git a/wire/peer_wire.csv b/wire/peer_wire.csv
+index 497d43b52..5d9da1730 100644
+--- a/wire/peer_wire.csv
++++ b/wire/peer_wire.csv
+@@ -289,6 +283,12 @@ msgdata,channel_update,htlc_minimum_msat,u64,
+ msgdata,channel_update,fee_base_msat,u32,
+ msgdata,channel_update,fee_proportional_millionths,u32,
+ msgdata,channel_update,htlc_maximum_msat,u64,,option_channel_htlc_max
++msgdata,channel_update,tlvs,channel_update_tlvs,
++tlvtype,channel_update_tlvs,ratecard,1
++tlvdata,channel_update_tlvs,ratecard,fee_basis_0_25,s16,
++tlvdata,channel_update_tlvs,ratecard,fee_basis_26_50,s16,
++tlvdata,channel_update_tlvs,ratecard,fee_basis_51_75,s16,
++tlvdata,channel_update_tlvs,ratecard,fee_basis_76_100,s16,
+ msgtype,query_short_channel_ids,261,gossip_queries
+ msgdata,query_short_channel_ids,chain_hash,chain_hash,
+ msgdata,query_short_channel_ids,len,u16,

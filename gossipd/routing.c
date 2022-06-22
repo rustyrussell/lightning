@@ -1208,11 +1208,33 @@ bool routing_add_channel_update(struct routing_state *rstate,
 	struct unupdated_channel *uc;
 	u8 direction;
 	struct amount_sat sat;
-
+#if EXPERIMENTAL_FEATURES
+	struct tlv_channel_update_tlvs *tlvs;
+#endif
 	/* Make sure we own msg, even if we don't save it. */
 	if (taken(update))
 		tal_steal(tmpctx, update);
 
+#if EXPERIMENTAL_FEATURES
+	if (!fromwire_channel_update(update, update, &signature, &chain_hash,
+				     &short_channel_id, &timestamp,
+				     &message_flags, &channel_flags,
+				     &expiry, &htlc_minimum, &fee_base_msat,
+				     &fee_proportional_millionths,
+				     &tlvs))
+		return false;
+	/* If it's flagged as containing the optional field, reparse for
+	 * the optional field */
+	if ((message_flags & ROUTING_OPT_HTLC_MAX_MSAT) &&
+			!fromwire_channel_update_option_channel_htlc_max(
+				update, update, &signature, &chain_hash,
+				&short_channel_id, &timestamp,
+				&message_flags, &channel_flags,
+				&expiry, &htlc_minimum, &fee_base_msat,
+				&fee_proportional_millionths,
+				&htlc_maximum, &tlvs))
+		return false;
+#else
 	if (!fromwire_channel_update(update, &signature, &chain_hash,
 				     &short_channel_id, &timestamp,
 				     &message_flags, &channel_flags,
@@ -1230,6 +1252,7 @@ bool routing_add_channel_update(struct routing_state *rstate,
 				&fee_proportional_millionths,
 				&htlc_maximum))
 		return false;
+#endif
 
 	direction = channel_flags & 0x1;
 	chan = get_channel(rstate, &short_channel_id);
