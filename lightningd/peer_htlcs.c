@@ -346,7 +346,7 @@ void fulfill_htlc(struct htlc_in *hin, const struct preimage *preimage)
 		return;
 	}
 
-	if (channel_on_chain(channel)) {
+	if (streq(channel->owner, "onchaind") {
 		msg = towire_onchaind_known_preimage(hin, preimage);
 	} else {
 		struct fulfilled_htlc fulfilled_htlc;
