@@ -293,7 +293,6 @@ static struct wally_psbt *psbt_using_utxos(const tal_t *ctx,
 				  this_nsequence, scriptSig,
 				  NULL, redeemscript);
 
-		psbt_input_set_wit_utxo(psbt, i, scriptPubkey, utxos[i]->amount);
 		if (is_elements(chainparams)) {
 			struct amount_asset asset;
 			/* FIXME: persist asset tags */
@@ -304,6 +303,7 @@ static struct wally_psbt *psbt_using_utxos(const tal_t *ctx,
 						      psbt->num_inputs - 1,
 						      &asset);
 		}
+		psbt_input_set_wit_utxo(psbt, i, scriptPubkey, utxos[i]->amount);
 
 		/* FIXME: as of 17 sept 2020, elementsd is *at most* at par
 		 * with v0.18.0 of bitcoind, which doesn't support setting

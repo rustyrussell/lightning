@@ -38,23 +38,31 @@ static struct wally_psbt *init_psbt(const tal_t *ctx, size_t num_inputs, size_t 
 struct wally_psbt *create_psbt(const tal_t *ctx, size_t num_inputs, size_t num_outputs, u32 locktime)
 {
 	int wally_err;
-	struct wally_tx *wtx;
 	struct wally_psbt *psbt;
-
-	tal_wally_start();
-	if (wally_tx_init_alloc(WALLY_TX_VERSION_2, locktime, num_inputs, num_outputs, &wtx) != WALLY_OK)
-		abort();
-	/* wtx is freed below */
-	tal_wally_end(NULL);
 
 	psbt = init_psbt(ctx, num_inputs, num_outputs);
 
-	tal_wally_start();
-	wally_err = wally_psbt_set_global_tx(psbt, wtx);
-	assert(wally_err == WALLY_OK);
-	tal_wally_end(psbt);
+	/* v2 doesn't have a global tx */
+	if (psbt->version == WALLY_PSBT_VERSION_2) {
+		wally_err = wally_psbt_set_fallback_locktime(psbt, locktime);
+		assert(wally_err == WALLY_OK);
+	} else {
+		struct wally_tx *wtx;
 
-	wally_tx_free(wtx);
+		tal_wally_start();
+		if (wally_tx_init_alloc(WALLY_TX_VERSION_2, locktime,
+					num_inputs, num_outputs, &wtx) != WALLY_OK)
+			abort();
+		/* wtx is freed below */
+		tal_wally_end(NULL);
+
+		tal_wally_start();
+		wally_err = wally_psbt_set_global_tx(psbt, wtx);
+		assert(wally_err == WALLY_OK);
+		tal_wally_end(psbt);
+
+		wally_tx_free(wtx);
+	}
 	return psbt;
 }
 
@@ -356,15 +364,21 @@ void psbt_input_set_witscript(struct wally_psbt *psbt, size_t in, const u8 *wscr
 	tal_wally_end(psbt);
 }
 
+static bool utxo_has_explicit_value(const struct wally_tx_output *utxo)
+{
+    return utxo && utxo->value && utxo->value_len && utxo->value[0] == 1u;
+}
+
 void psbt_elements_input_set_asset(struct wally_psbt *psbt, size_t in,
 				   struct amount_asset *asset)
 {
 	tal_wally_start();
-
-	if (asset->value > 0)
+	if (asset->value > 0) {
+		assert(!utxo_has_explicit_value(psbt->inputs[in].witness_utxo));
 		if (wally_psbt_set_input_amount(psbt, in,
 						asset->value) != WALLY_OK)
 			abort();
+	}
 
 	/* PSET expects an asset tag without the prefix */
 	if (wally_psbt_input_set_asset(&psbt->inputs[in],
