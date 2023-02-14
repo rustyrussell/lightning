@@ -696,13 +696,6 @@ void gossip_store_mark_cupdate_zombie(struct gossip_store *gs,
 	mark_zombie(gs, bcast, WIRE_CHANNEL_UPDATE);
 }
 
-/* Marks the length field of a node_announcement with the zombie flag bit */
-void gossip_store_mark_nannounce_zombie(struct gossip_store *gs,
-					struct broadcastable *bcast)
-{
-	mark_zombie(gs, bcast, WIRE_NODE_ANNOUNCEMENT);
-}
-
 const u8 *gossip_store_get(const tal_t *ctx,
 			   struct gossip_store *gs,
 			   u64 offset)
@@ -886,6 +879,13 @@ u32 gossip_store_load(struct routing_state *rstate, struct gossip_store *gs)
 			stats[1]++;
 			break;
 		case WIRE_NODE_ANNOUNCEMENT:
+			/* In early v23.02 rcs we had zombie node announcements,
+			 * so throw them away here. */
+			if (be16_to_cpu(hdr.flags) & GOSSIP_STORE_ZOMBIE_BIT) {
+				status_unusual("gossip_store: removing zombie"
+					       " node_announcement from v23.02 rcs");
+				break;
+			}
 			if (!routing_add_node_announcement(rstate,
 							   take(msg), gs->len,
 							   NULL, NULL, spam)) {
