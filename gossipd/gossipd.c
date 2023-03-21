@@ -422,15 +422,19 @@ static void dump_our_gossip(struct daemon *daemon, struct peer *peer)
 		return;
 
 	for (chan = first_chan(me, &i); chan; chan = next_chan(me, &i)) {
-		int dir;
+		int dir = half_chan_idx(me, chan);
 
-		if (!is_chan_public(chan))
-			continue;
+		if (!is_chan_public(chan)) {
+			/* Don't leak private channels, unless it's with you! */
+			if (chan->nodes[!dir] != peer)
+				continue;
+			/* There's no announce for this, of course! */
+		} else {
+			/* Send announce */
+			queue_peer_from_store(peer, &chan->bcast);
+		}
 
-		/* Send announce */
-		queue_peer_from_store(peer, &chan->bcast);
 		/* Send update if we have one */
-		dir = half_chan_idx(me, chan);
 		if (is_halfchan_defined(&chan->half[dir]))
 			queue_peer_from_store(peer, &chan->half[dir].bcast);
 	}
