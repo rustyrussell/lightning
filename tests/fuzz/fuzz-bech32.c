@@ -19,8 +19,11 @@ void run(const uint8_t *data, size_t size)
 	int wit_version;
 	bech32_encoding benc;
 
+	if (size < 1)
+		return;
+
 	/* Buffer size is defined in each function's doc comment. */
-	bech32_str = malloc(size + strlen(hrp_inv) + 8);
+	bech32_str = malloc(size-1 + strlen(hrp_inv) + 8);
 	benc = data[0] ? BECH32_ENCODING_BECH32 : BECH32_ENCODING_BECH32M;
 	/* FIXME: needs a dictionary / a startup seed corpus to pass this more
 	 * frequently. */
