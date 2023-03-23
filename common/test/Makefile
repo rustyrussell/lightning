@@ -4,6 +4,8 @@ ifeq ($(EXPERIMENTAL_FEATURES),1)
 COMMON_TEST_SRC += $(wildcard common/test/exp-run-*.c)
 endif
 
+FUZZ_TARGETS_SRC += $(wildcard common/test/fuzz-*.c)
+
 COMMON_TEST_OBJS := $(COMMON_TEST_SRC:.c=.o)
 COMMON_TEST_PROGRAMS := $(COMMON_TEST_OBJS:.o=)
 

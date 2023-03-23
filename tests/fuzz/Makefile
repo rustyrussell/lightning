@@ -2,8 +2,8 @@ LIBFUZZ_SRC := tests/fuzz/libfuzz.c
 LIBFUZZ_HEADERS := $(LIBFUZZ_SRC:.c=.h)
 LIBFUZZ_OBJS := $(LIBFUZZ_SRC:.c=.o)
 
-
-FUZZ_TARGETS_SRC := $(wildcard tests/fuzz/fuzz-*.c)
+FUZZDIR_TARGETS_SRC := $(wildcard tests/fuzz/fuzz-*.c)
+FUZZ_TARGETS_SRC += $(FUZZDIR_TARGETS_SRC)
 FUZZ_TARGETS_OBJS := $(FUZZ_TARGETS_SRC:.c=.o)
 FUZZ_TARGETS_BIN := $(FUZZ_TARGETS_SRC:.c=)
 
@@ -58,7 +58,11 @@ FUZZ_COMMON_OBJS := \
 	wire/wire_sync.o
 
 $(FUZZ_TARGETS_OBJS): $(COMMON_HEADERS) $(WIRE_HEADERS) $(COMMON_SRC)
-$(FUZZ_TARGETS_BIN): $(LIBFUZZ_OBJS) $(FUZZ_COMMON_OBJS) $(BITCOIN_OBJS)
+$(FUZZ_TARGETS_BIN): $(LIBFUZZ_OBJS)
+
+# We link these for tests here: other dirs must specify their own
+# extra objects themselves.
+$(FUZZDIR_TARGETS_SRC:.c=): $(FUZZ_COMMON_OBJS) $(BITCOIN_OBJS)
 
 ALL_C_SOURCES += $(FUZZ_TARGETS_SRC) $(LIBFUZZ_SRC)
 ALL_FUZZ_TARGETS += $(FUZZ_TARGETS_BIN)
