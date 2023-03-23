@@ -471,7 +471,7 @@ struct amount_sat psbt_output_get_amount(const struct wally_psbt *psbt,
 	return amount_asset_to_sat(&asset);
 }
 
-static void add(u8 **key, const void *mem, size_t len)
+static void add_mem(u8 **key, const void *mem, size_t len)
 {
 	size_t oldlen = tal_count(*key);
 	tal_resize(key, oldlen + len);
@@ -480,7 +480,7 @@ static void add(u8 **key, const void *mem, size_t len)
 
 static void add_type(u8 **key, const u8 num)
 {
-	add(key, &num, 1);
+	add_mem(key, &num, 1);
 }
 
 static void add_varint(u8 **key, size_t val)
@@ -488,7 +488,7 @@ static void add_varint(u8 **key, size_t val)
 	u8 vt[VARINT_MAX_LEN];
 	size_t vtlen;
 	vtlen = varint_put(vt, val);
-	add(key, vt, vtlen);
+	add_mem(key, vt, vtlen);
 }
 
 #define LIGHTNING_PROPRIETARY_PREFIX "lightning"
@@ -507,11 +507,11 @@ u8 *psbt_make_key(const tal_t *ctx, u8 key_subtype, const u8 *key_data)
 	u8 *key = tal_arr(ctx, u8, 0);
 	add_type(&key, PSBT_PROPRIETARY_TYPE);
 	add_varint(&key, strlen(LIGHTNING_PROPRIETARY_PREFIX));
-	add(&key, LIGHTNING_PROPRIETARY_PREFIX,
-	    strlen(LIGHTNING_PROPRIETARY_PREFIX));
+	add_mem(&key, LIGHTNING_PROPRIETARY_PREFIX,
+		strlen(LIGHTNING_PROPRIETARY_PREFIX));
 	add_type(&key, key_subtype);
 	if (key_data)
-		add(&key, key_data, tal_bytelen(key_data));
+		add_mem(&key, key_data, tal_bytelen(key_data));
 	return key;
 }
 

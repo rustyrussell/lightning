@@ -1,6 +1,6 @@
 #include "config.h"
 
-#include <common/descriptor_checksum.h>
+#include <common/descriptor_checksum.c>
 #include <tests/fuzz/libfuzz.h>
 
 void init(int *argc, char ***argv)

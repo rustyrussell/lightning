@@ -1,8 +1,8 @@
 #include "config.h"
 #include <assert.h>
 
-#include <common/base32.h>
-#include <common/base64.h>
+#include <common/base32.c>
+#include <common/base64.c>
 #include <tests/fuzz/libfuzz.h>
 
 void init(int *argc, char ***argv)

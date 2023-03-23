@@ -1,14 +1,24 @@
 #include "config.h"
 #include <assert.h>
 
-#include <bitcoin/chainparams.h>
-#include <bitcoin/pubkey.h>
-#include <bitcoin/script.h>
-#include <common/close_tx.h>
+#include <bitcoin/base58.c>
+#include <bitcoin/chainparams.c>
+#include <bitcoin/psbt.c>
+#include <bitcoin/pubkey.c>
+#include <bitcoin/script.c>
+#include <bitcoin/shadouble.c>
+#include <bitcoin/signature.c>
+#include <bitcoin/tx.c>
+#include <bitcoin/varint.c>
+#include <common/amount.c>
+#include <common/close_tx.c>
+#include <common/permute_tx.c>
+#include <common/psbt_keypath.c>
 #include <common/setup.h>
 #include <common/utils.h>
 #include <tests/fuzz/libfuzz.h>
-#include <wire/wire.h>
+#include <wire/fromwire.c>
+#include <wire/towire.c>
 
 void init(int *argc, char ***argv)
 {

@@ -7,62 +7,13 @@ FUZZ_TARGETS_SRC += $(FUZZDIR_TARGETS_SRC)
 FUZZ_TARGETS_OBJS := $(FUZZ_TARGETS_SRC:.c=.o)
 FUZZ_TARGETS_BIN := $(FUZZ_TARGETS_SRC:.c=)
 
-FUZZ_COMMON_OBJS := \
-	common/amount.o					\
-	common/addr.o					\
+FUZZ_COMMON_OBJS :=					\
 	common/autodata.o				\
-	common/base32.o					\
-	common/base64.o					\
-	common/bech32.o					\
-	common/bip32.o					\
-	common/bigsize.o				\
-	common/blockheight_states.o			\
-	common/channel_config.o				\
-	common/close_tx.o				\
-	common/configdir.o				\
-	common/channel_id.o				\
-	common/channel_type.o				\
-	common/daemon.o					\
-	common/daemon_conn.o				\
-	common/derive_basepoints.o			\
-	common/descriptor_checksum.o			\
-	common/features.o				\
-	common/fee_states.o				\
-	common/hsm_encryption.o				\
-	common/htlc_state.o				\
-	common/permute_tx.o				\
-	common/initial_channel.o			\
-	common/initial_commit_tx.o			\
-	common/key_derive.o				\
-	common/keyset.o					\
-	common/msg_queue.o				\
-	common/memleak.o				\
-	common/node_id.o				\
-	common/psbt_keypath.o				\
-	common/wireaddr.o				\
 	common/setup.o					\
-	common/status.o					\
-	common/status_wire.o				\
-	common/status_wiregen.o				\
-	common/type_to_string.o				\
-	common/utils.o					\
-	common/version.o				\
-	wire/fromwire.o					\
-	wire/onion_wiregen.o				\
-	wire/peer_wire.o				\
-	wire/peer$(EXP)_wiregen.o			\
-	wire/channel_type_wiregen.o			\
-	wire/tlvstream.o				\
-	wire/towire.o					\
-	wire/wire_io.o					\
-	wire/wire_sync.o
+	common/utils.o
 
 $(FUZZ_TARGETS_OBJS): $(COMMON_HEADERS) $(WIRE_HEADERS) $(COMMON_SRC)
-$(FUZZ_TARGETS_BIN): $(LIBFUZZ_OBJS)
-
-# We link these for tests here: other dirs must specify their own
-# extra objects themselves.
-$(FUZZDIR_TARGETS_SRC:.c=): $(FUZZ_COMMON_OBJS) $(BITCOIN_OBJS)
+$(FUZZ_TARGETS_BIN): $(LIBFUZZ_OBJS) $(FUZZ_COMMON_OBJS)
 
 ALL_C_SOURCES += $(FUZZ_TARGETS_SRC) $(LIBFUZZ_SRC)
 ALL_FUZZ_TARGETS += $(FUZZ_TARGETS_BIN)

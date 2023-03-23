@@ -1,8 +1,10 @@
 #include "config.h"
-#include <assert.h>
 
-#include <common/amount.h>
+#include <assert.h>
+#include <common/amount.c>
 #include <tests/fuzz/libfuzz.h>
+#include <wire/fromwire.c>
+#include <wire/towire.c>
 
 void init(int *argc, char ***argv)
 {

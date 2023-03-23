@@ -1,8 +1,10 @@
 #include "config.h"
 
-#include <common/bip32.h>
+#include <common/bip32.c>
 #include <tests/fuzz/libfuzz.h>
 #include <wally_bip32.h>
+#include <wire/fromwire.c>
+#include <wire/towire.c>
 
 void init(int *argc, char ***argv)
 {

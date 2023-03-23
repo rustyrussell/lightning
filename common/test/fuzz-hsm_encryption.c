@@ -2,7 +2,7 @@
 #include <assert.h>
 
 #include <ccan/mem/mem.h>
-#include <common/hsm_encryption.h>
+#include <common/hsm_encryption.c>
 #include <tests/fuzz/libfuzz.h>
 
 void init(int *argc, char ***argv)

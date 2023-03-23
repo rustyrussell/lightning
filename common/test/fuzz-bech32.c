@@ -1,7 +1,7 @@
 #include "config.h"
 #include <assert.h>
 
-#include <common/bech32.h>
+#include <common/bech32.c>
 #include <stdint.h>
 #include <string.h>
 #include <tests/fuzz/libfuzz.h>

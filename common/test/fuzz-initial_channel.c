@@ -1,25 +1,63 @@
 #include "config.h"
 
 #include <assert.h>
-#include <bitcoin/chainparams.h>
-#include <bitcoin/pubkey.h>
-#include <bitcoin/script.h>
-#include <bitcoin/tx.h>
+#include <bitcoin/base58.c>
+#include <bitcoin/block.c>
+#include <bitcoin/chainparams.c>
+#include <bitcoin/preimage.c>
+#include <bitcoin/privkey.c>
+#include <bitcoin/psbt.c>
+#include <bitcoin/pubkey.c>
+#include <bitcoin/script.c>
+#include <bitcoin/shadouble.c>
+#include <bitcoin/short_channel_id.c>
+#include <bitcoin/signature.c>
+#include <bitcoin/tx.c>
+#include <bitcoin/varint.c>
 #include <ccan/tal/tal.h>
-#include <common/amount.h>
-#include <common/blockheight_states.h>
-#include <common/channel_type.h>
-#include <common/fee_states.h>
-#include <common/initial_channel.h>
+#include <common/amount.c>
+#include <common/bigsize.c>
+#include <common/blockheight_states.c>
+#include <common/channel_config.c>
+#include <common/channel_id.c>
+#include <common/channel_type.c>
+#include <common/daemon.c>
+#include <common/daemon_conn.c>
+#include <common/derive_basepoints.c>
+#include <common/features.c>
+#include <common/fee_states.c>
+#include <common/htlc_state.c>
+#include <common/initial_channel.c>
+#include <common/initial_commit_tx.c>
+#include <common/key_derive.c>
+#include <common/keyset.c>
+#include <common/memleak.c>
+#include <common/msg_queue.c>
+#include <common/node_id.c>
+#include <common/permute_tx.c>
 #include <common/setup.h>
-#include <common/status.h>
+#include <common/status.c>
+#include <common/status_wire.c>
+#include <common/status_wiregen.c>
+#include <common/type_to_string.c>
 #include <common/utils.h>
+#include <common/version.c>
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <tests/fuzz/libfuzz.h>
-#include <wire/wire.h>
+#include <wire/fromwire.c>
+#include <wire/peer_wire.c>
+#if EXPERIMENTAL_FEATURES
+ #include <wire/peer_exp_wiregen.c>
+#else
+ #include <wire/peer_wiregen.c>
+#endif
+#include <wire/tlvstream.c>
+#include <wire/towire.c>
+#include <wire/wire_io.c>
+#include <wire/wire_sync.c>
 
 void init(int *argc, char ***argv)
 {

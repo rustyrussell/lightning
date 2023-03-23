@@ -1,9 +1,22 @@
 #include "config.h"
 
-#include <common/addr.h>
+#include <bitcoin/base58.c>
+#include <bitcoin/chainparams.c>
+#include <bitcoin/psbt.c>
+#include <bitcoin/pubkey.c>
+#include <bitcoin/script.c>
+#include <bitcoin/shadouble.c>
+#include <bitcoin/signature.c>
+#include <bitcoin/tx.c>
+#include <bitcoin/varint.c>
+#include <common/addr.c>
+#include <common/amount.c>
+#include <common/bech32.c>
 #include <common/setup.h>
 #include <common/utils.h>
 #include <tests/fuzz/libfuzz.h>
+#include <wire/fromwire.c>
+#include <wire/towire.c>
 
 void init(int *argc, char ***argv)
 {
