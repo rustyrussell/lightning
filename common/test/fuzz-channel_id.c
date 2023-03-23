@@ -6,13 +6,13 @@
 #include <bitcoin/pubkey.c>
 #include <bitcoin/script.c>
 #include <bitcoin/shadouble.c>
-#include <bitcoin/signature.c>
 #include <bitcoin/tx.c>
 #include <bitcoin/varint.c>
 
 #include <common/amount.c>
 #include <common/channel_id.c>
 #include <tests/fuzz/libfuzz.h>
+#include <tests/fuzz/libfuzz-signature.c>
 #include <wire/fromwire.c>
 #include <wire/towire.c>
 

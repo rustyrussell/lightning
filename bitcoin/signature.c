@@ -179,6 +179,7 @@ void sign_tx_input(const struct bitcoin_tx *tx,
 	sign_hash(privkey, &hash, &sig->s);
 }
 
+#ifndef FUZZING_REPLACE_SIGCHECK
 bool check_signed_hash(const struct sha256_double *hash,
 		       const secp256k1_ecdsa_signature *signature,
 		       const struct pubkey *key)
@@ -198,6 +199,7 @@ bool check_signed_hash(const struct sha256_double *hash,
 				     hash->sha.u.u8, &key->pubkey);
 	return ret == 1;
 }
+#endif /* !FUZZING_REPLACE_SIGCHECK */
 
 bool check_tx_sig(const struct bitcoin_tx *tx, size_t input_num,
 		  const u8 *redeemscript,
@@ -416,7 +418,7 @@ void bip340_sighash_init(struct sha256_ctx *sctx,
 	sha256_update(sctx, &taghash, sizeof(taghash));
 }
 
-
+#ifndef FUZZING_REPLACE_SIGCHECK
 bool check_schnorr_sig(const struct sha256 *hash,
 		       const secp256k1_pubkey *pubkey,
 		       const struct bip340sig *sig)
@@ -440,3 +442,4 @@ bool check_schnorr_sig(const struct sha256 *hash,
  					   sizeof(hash->u.u8),
 					   &xonly_pubkey) == 1;
 }
+#endif /* !FUZZING_REPLACE_SIGCHECK */

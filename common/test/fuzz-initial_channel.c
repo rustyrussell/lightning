@@ -11,7 +11,6 @@
 #include <bitcoin/script.c>
 #include <bitcoin/shadouble.c>
 #include <bitcoin/short_channel_id.c>
-#include <bitcoin/signature.c>
 #include <bitcoin/tx.c>
 #include <bitcoin/varint.c>
 #include <ccan/tal/tal.h>
@@ -47,6 +46,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <tests/fuzz/libfuzz.h>
+#include <tests/fuzz/libfuzz-signature.c>
 #include <wire/fromwire.c>
 #include <wire/peer_wire.c>
 #if EXPERIMENTAL_FEATURES
