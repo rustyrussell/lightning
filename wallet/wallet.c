@@ -3116,7 +3116,7 @@ void wallet_payment_store(struct wallet *wallet,
 		    "  paydescription"
 		    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);"));
 
-	db_bind_int(stmt, 0, payment->status);
+	db_bind_int(stmt, 0, wallet_payment_status_in_db(payment->status));
 	db_bind_sha256(stmt, 1, &payment->payment_hash);
 
 	if (payment->destination != NULL)
@@ -3200,6 +3200,7 @@ u64 wallet_payment_get_groupid(struct wallet *wallet,
 
 void wallet_payment_delete(struct wallet *wallet,
 			   const struct sha256 *payment_hash,
+			   enum wallet_payment_status status,
 			   const u64 *groupid,
 			   const u64 *partid)
 {
@@ -3209,17 +3210,20 @@ void wallet_payment_delete(struct wallet *wallet,
 		stmt = db_prepare_v2(wallet->db,
 				     SQL("DELETE FROM payments"
 					 " WHERE payment_hash = ?"
+					 "   AND status = ?"
 					 "   AND groupid = ?"
 					 "   AND partid = ?"));
-		db_bind_u64(stmt, 1, *groupid);
-		db_bind_u64(stmt, 2, *partid);
+		db_bind_u64(stmt, 2, *groupid);
+		db_bind_u64(stmt, 3, *partid);
 	} else {
 		assert(!partid);
 		stmt = db_prepare_v2(wallet->db,
 				     SQL("DELETE FROM payments"
-					 " WHERE payment_hash = ?"));
+					 " WHERE payment_hash = ?"
+					 "   AND status = ?"));
 	}
 	db_bind_sha256(stmt, 0, payment_hash);
+	db_bind_int(stmt, 1, wallet_payment_status_in_db(status));
 	db_exec_prepared_v2(take(stmt));
 }
 
@@ -3228,7 +3232,7 @@ static struct wallet_payment *wallet_stmt2payment(const tal_t *ctx,
 {
 	struct wallet_payment *payment = tal(ctx, struct wallet_payment);
 	payment->id = db_col_u64(stmt, "id");
-	payment->status = db_col_int(stmt, "status");
+	payment->status = wallet_payment_status_in_db(db_col_int(stmt, "status"));
 
 	if (!db_col_is_null(stmt, "destination")) {
 		payment->destination = tal(payment, struct node_id);

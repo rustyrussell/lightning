@@ -1093,11 +1093,12 @@ void wallet_payment_store(struct wallet *wallet,
  * wallet_payment_delete - Remove a payment
  *
  * Removes the payment from the database by hash; groupid and partid
- * may both be NULL to delete all entries, otherwise deletes only that
- * group/partid.
+ * may both be NULL to delete all entries of this status, otherwise
+ * deletes only that group/partid if it has this status.
  */
 void wallet_payment_delete(struct wallet *wallet,
 			   const struct sha256 *payment_hash,
+			   enum wallet_payment_status status,
 			   const u64 *groupid,
 			   const u64 *partid);
 
