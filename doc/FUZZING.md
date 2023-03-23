@@ -1,7 +1,7 @@
 # Fuzz testing
 
-C-lightning currently supports coverage-guided fuzz testing using [LLVM's libfuzzer](https://www.llvm.org/docs/LibFuzzer.html)
-when built with `clang`.
+Core lightning currently supports coverage-guided fuzz testing using
+[AFL++](https://aflplus.plus/).
 
 The goal of fuzzing is to generate mutated -and often unexpected- inputs (`seed`s) to pass
 to (parts of) a program (`target`) in order to make sure the codepaths used:
@@ -10,11 +10,14 @@ to (parts of) a program (`target`) in order to make sure the codepaths used:
 The generated seeds can be stored and form a `corpus`, which we try to optimise (don't
 store two seeds that lead to the same codepath).
 
-For more info about fuzzing see [here](https://github.com/google/fuzzing/tree/master/docs),
-and for more about `libfuzzer` in particular see [here](https://www.llvm.org/docs/LibFuzzer.html).
-
 
 ## Build the fuzz targets
+
+Special unit tests starting with `fuzz-` are in several test/
+subdirectories, and will be built when configured with `--enable-fuzzing`:
+they won't build at all unless you use the AFL compiler wrapper, i.e.
+`CC=afl-
+
 
 In order to build the C-lightning binaries with code coverage you will need a recent
 [clang](http://clang.llvm.org/). The more recent the compiler version the better.

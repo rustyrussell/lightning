@@ -18,17 +18,22 @@
 #include <wire/fromwire.c>
 #include <wire/towire.c>
 
-void init(int *argc, char ***argv)
+int main(int argc, char *argv[])
 {
+	const u8 *fuzzbuf;
+
+	fuzz_setup(argv[0]);
+	/* FIXME: Randomize params. */
 	chainparams = chainparams_for_network("bitcoin");
-	common_setup("fuzzer");
-}
 
-void run(const uint8_t *data, size_t size)
-{
-	uint8_t *script_pubkey = tal_dup_arr(tmpctx, uint8_t, data, size, 0);
+	fuzzbuf = FUZZ_SETUP_BUFFER(argc, argv);
 
-	encode_scriptpubkey_to_addr(tmpctx, chainparams, script_pubkey);
-
-	clean_tmpctx();
+	while (FUZZ_LOOP) {
+		size_t fuzzsize = FUZZ_SIZE;
+		/* FIXME! Put len in encode_scriptpubkey_to_addr() fn */
+		u8 *inp = tal_dup_arr(tmpctx, u8, fuzzbuf, fuzzsize, 0);
+		encode_scriptpubkey_to_addr(tmpctx, chainparams, inp);
+		clean_tmpctx();
+	}
+	fuzz_shutdown();
 }

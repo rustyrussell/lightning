@@ -1,58 +1,50 @@
 #include "config.h"
 
-#include <assert.h>
 #include <common/amount.c>
+#include <common/setup.h>
 #include <tests/fuzz/libfuzz.h>
 #include <wire/fromwire.c>
 #include <wire/towire.c>
 
-void init(int *argc, char ***argv)
+int main(int argc, char *argv[])
 {
-}
+	const u8 *fuzzbuf = FUZZ_SETUP(argc, argv);
 
-void run(const uint8_t *data, size_t size)
-{
-	struct amount_msat msat;
-	struct amount_sat sat;
-	char *string;
-	uint8_t *buf;
-	const char *fmt_msat, *fmt_msatbtc, *fmt_sat, *fmt_satbtc;
+	while (FUZZ_LOOP) {
+		size_t fuzzsize = FUZZ_SIZE, size = fuzzsize;
+		struct amount_msat msat;
+		struct amount_sat sat;
+		uint8_t *buf;
+		const u8 *input;
+		const char *fmt_msat, *fmt_msatbtc, *fmt_sat, *fmt_satbtc;
 
+		/* We should not crash when parsing any string. */
+		parse_amount_msat(&msat, (const char *)fuzzbuf, fuzzsize);
+		parse_amount_sat(&sat, (const char *)fuzzbuf, fuzzsize);
 
-	/* We should not crash when parsing any string. */
+		/* Same with the wire primitives. */
+		input = fuzzbuf;
+		size = fuzzsize;
+		buf = tal_arr(tmpctx, uint8_t, 0);
+		msat = fromwire_amount_msat(&input, &size);
+		towire_amount_msat(&buf, msat);
+		sat = fromwire_amount_sat(&input, &size);
+		towire_amount_sat(&buf, sat);
 
-	string = to_string(NULL, data, size);
-	parse_amount_msat(&msat, string, tal_count(string));
-	parse_amount_sat(&sat, string, tal_count(string));
-	tal_free(string);
+		/* Format should inconditionally produce valid amount strings according to our
+		 * parser */
 
+		fmt_msat = fmt_amount_msat(tmpctx, msat);
+		fmt_msatbtc = fmt_amount_msat_btc(tmpctx, msat, true);
+		assert(parse_amount_msat(&msat, fmt_msat, tal_count(fmt_msat)));
+		assert(parse_amount_msat(&msat, fmt_msatbtc, tal_count(fmt_msatbtc)));
 
-	/* Same with the wire primitives. */
+		fmt_sat = fmt_amount_sat(tmpctx, sat);
+		fmt_satbtc = fmt_amount_sat_btc(tmpctx, sat, true);
+		assert(parse_amount_sat(&sat, fmt_sat, tal_count(fmt_sat)));
+		assert(parse_amount_sat(&sat, fmt_satbtc, tal_count(fmt_satbtc)));
+		clean_tmpctx();
+	}
 
-	buf = tal_arr(NULL, uint8_t, 8);
-
-	msat = fromwire_amount_msat(&data, &size);
-	towire_amount_msat(&buf, msat);
-	sat = fromwire_amount_sat(&data, &size);
-	towire_amount_sat(&buf, sat);
-
-	tal_free(buf);
-
-
-	/* Format should inconditionally produce valid amount strings according to our
-	 * parser */
-
-	fmt_msat = fmt_amount_msat(NULL, msat);
-	fmt_msatbtc = fmt_amount_msat_btc(NULL, msat, true);
-	assert(parse_amount_msat(&msat, fmt_msat, tal_count(fmt_msat)));
-	assert(parse_amount_msat(&msat, fmt_msatbtc, tal_count(fmt_msatbtc)));
-	tal_free(fmt_msat);
-	tal_free(fmt_msatbtc);
-
-	fmt_sat = fmt_amount_sat(NULL, sat);
-	fmt_satbtc = fmt_amount_sat_btc(NULL, sat, true);
-	assert(parse_amount_sat(&sat, fmt_sat, tal_count(fmt_sat)));
-	assert(parse_amount_sat(&sat, fmt_satbtc, tal_count(fmt_satbtc)));
-	tal_free(fmt_sat);
-	tal_free(fmt_satbtc);
+	fuzz_shutdown();
 }

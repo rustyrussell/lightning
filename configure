@@ -161,9 +161,6 @@ set_defaults()
 	    CSANFLAGS="$CSANFLAGS -fno-sanitize-recover=undefined"
 	fi
     fi
-    if [ "$FUZZING" != 0 ]; then
-	CSANFLAGS="$CSANFLAGS -fsanitize=fuzzer-no-link"
-    fi
     echo CSANFLAGS = $CSANFLAGS
     PYTEST=${PYTEST-$(default_pytest)}
     COPTFLAGS=${COPTFLAGS-$(default_coptflags "$DEVELOPER")}
@@ -209,7 +206,7 @@ usage()
     usage_with_default "--enable/disable-ub-sanitizer" "$UBSAN" "enable" "disable"
     echo "    Compile with undefined behaviour sanitizer"
     usage_with_default "--enable/disable-fuzzing" "$FUZZING" "enable" "disable"
-    echo "    Compile with fuzzing"
+    echo "    Compile fuzzing tests"
     usage_with_default "--enable/disable-rust" "$RUST" "enable" "disable"
     echo "    Compile with Rust support"
     exit 1
@@ -296,18 +293,6 @@ if [ "$ASAN" = "1" ]; then
 	exit 1
     fi
 fi
-
-if [ "$FUZZING" = "1" ]; then
-	case "$CC" in
-		(*"clang"*)
-			;;
-		(*)
-			echo "Fuzzing is currently only supported with clang."
-			exit 1
-			;;
-	esac
-fi
-
 
 SQLITE3_CFLAGS=""
 SQLITE3_LDLIBS="-lsqlite3"

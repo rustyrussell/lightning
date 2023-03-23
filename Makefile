@@ -369,10 +369,8 @@ check-fuzz: $(ALL_FUZZ_TARGETS:%=check-fuzz/%)
 # Can override on make line
 FUZZ_TIME=60
 
-# If it has a corpus dir, we give it that (otherwise, no arg)
-# It also spits a LOT of crap to stderr :(
 check-fuzz/%: %
-	$< -max_total_time=$(FUZZ_TIME) `ls -d $(dir $<)/corpus/$(notdir $<) 2>/dev/null` > $<.fuzz 2>&1
+	AFL_NO_UI=1 afl-fuzz -V$(FUZZ_TIME) -i $(dir $<)/corpus/$(notdir $<) -o /tmp/$(notdir $<).$$$$ -- $<
 endif # FUZZING
 
 ifneq ($(RUST),0)
@@ -639,10 +637,10 @@ libccan.a: $(CCAN_OBJS)
 	@$(call VERBOSE, "ar $@", $(AR) r $@ $(CCAN_OBJS))
 
 # All binaries require the external libs, ccan and system library versions.
-$(ALL_PROGRAMS) $(ALL_TEST_PROGRAMS) $(ALL_FUZZ_TARGETS): $(EXTERNAL_LIBS) libccan.a
+$(ALL_PROGRAMS) $(ALL_TEST_PROGRAMS): $(EXTERNAL_LIBS) libccan.a
 
 # Each test program depends on its own object.
-$(ALL_TEST_PROGRAMS) $(ALL_FUZZ_TARGETS): %: %.o
+$(ALL_TEST_PROGRAMS): %: %.o
 
 # Without this rule, the (built-in) link line contains
 # external/libwallycore.a directly, which causes a symbol clash (it
@@ -650,13 +648,6 @@ $(ALL_TEST_PROGRAMS) $(ALL_FUZZ_TARGETS): %: %.o
 # (as per EXTERNAL_LDLIBS) so we filter them out here.
 $(ALL_PROGRAMS) $(ALL_TEST_PROGRAMS):
 	@$(call VERBOSE, "ld $@", $(LINK.o) $(filter-out %.a,$^) $(LOADLIBES) $(EXTERNAL_LDLIBS) $(LDLIBS) libccan.a -o $@)
-
-# We special case the fuzzing target binaries, as they need to link against libfuzzer,
-# which brings its own main().
-FUZZ_LDFLAGS = -fsanitize=fuzzer
-$(ALL_FUZZ_TARGETS):
-	@$(call VERBOSE, "ld $@", $(LINK.o) $(filter-out %.a,$^) $(LOADLIBES) $(EXTERNAL_LDLIBS) $(LDLIBS) libccan.a $(FUZZ_LDFLAGS) -o $@)
-
 
 # Everything depends on the CCAN headers, and Makefile
 $(CCAN_OBJS) $(CDUMP_OBJS): $(CCAN_HEADERS) Makefile
@@ -680,7 +671,7 @@ update-ccan:
 
 # Now ALL_PROGRAMS is fully populated, we can expand it.
 all-programs: $(ALL_PROGRAMS)
-all-test-programs: $(ALL_TEST_PROGRAMS) $(ALL_FUZZ_TARGETS)
+all-test-programs: $(ALL_TEST_PROGRAMS)
 default-targets: $(DEFAULT_TARGETS)
 
 distclean: clean
@@ -699,7 +690,6 @@ clean: obsclean
 	$(RM) $(ALL_GEN_HEADERS) $(ALL_GEN_SOURCES)
 	$(RM) $(ALL_PROGRAMS)
 	$(RM) $(ALL_TEST_PROGRAMS)
-	$(RM) $(ALL_FUZZ_TARGETS)
 	$(RM) ccan/tools/configurator/configurator
 	$(RM) ccan/ccan/cdump/tools/cdump-enumstr.o
 	find . -name '*gcda' -delete

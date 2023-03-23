@@ -1,24 +1,69 @@
+/* Include this ONCE in all fuzz tests! */
 #ifndef LIGHTNING_TESTS_FUZZ_LIBFUZZ_H
 #define LIGHTNING_TESTS_FUZZ_LIBFUZZ_H
 
 #include "config.h"
-#include <ccan/ccan/short_types/short_types.h>
-#include <ccan/ccan/tal/tal.h>
+#include "libfuzz-fndecls.h"
+#include <assert.h>
+#include <ccan/err/err.h>
+#include <ccan/short_types/short_types.h>
+#include <ccan/tal/grab_file/grab_file.h>
+#include <ccan/tal/tal.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <unistd.h>
 
-/* Called once before running the target. Use it to setup the testing
- * environment. */
-void init(int *argc, char ***argv);
+/* Use this header like so:
+ *
+ * #include <tests/fuzz/libfuzz.h>
+ *
+ * int main(int argc, char *argv)
+ * {
+ *	 const u8 *fuzzbuf = FUZZ_SETUP(argc, argv);
+ *... any other setup.
+ *
+ *	while (FUZZ_LOOP) {
+ *		size_t fuzzsize = FUZZ_SIZE;
+ *		...
+ *		Must return to pristine state in loop (i.e. free everything!)
+ *	}
+ *	fuzz_shutdown();
+ * }
+ *
+ * This way, if run without fuzzing, it takes a single corpus on the cmdline
+ * and runs once with that.  This allows for easier debugging under gdb.
+ */
 
-/* The actual target called multiple times with mutated data. */
-void run(const uint8_t *data, size_t size);
+__AFL_FUZZ_INIT();
 
-/* Copy an array of chunks from data. */
-const uint8_t **get_chunks(const void *ctx, const uint8_t *data,
-			  size_t data_size, size_t chunk_size);
+static size_t nonfuzz_len = -1;
 
-/* Copy the data as a string. */
-char *to_string(const tal_t *ctx, const u8 *data, size_t data_size);
+static inline const u8 *nonfuzz_setup(int argc, char *argv[])
+{
+	u8 *buf = grab_file(NULL, argv[1]);
+	assert(buf);
+	nonfuzz_len = tal_bytelen(buf) - 1;
+	return buf;
+}
+
+static inline bool nonfuzz_loop(void)
+{
+	static bool once = true;
+	if (once) {
+		once = false;
+		return true;
+	}
+	return false;
+}
+
+/* Sometimes you want to do some more setup before __AFL_INIT: */
+#define FUZZ_SETUP_BUFFER(argc, argv) \
+	({ __AFL_INIT(); (argc == 2 ? nonfuzz_setup(argc, argv) : __AFL_FUZZ_TESTCASE_BUF); })
+
+#define FUZZ_SETUP(argc, argv) \
+	(fuzz_setup(argv[0]), FUZZ_SETUP_BUFFER(argc, argv))
+
+#define FUZZ_LOOP (nonfuzz_len == -1 ? nonfuzz_loop() : __AFL_LOOP(1000))
+#define FUZZ_SIZE (nonfuzz_len == -1 ? __AFL_FUZZ_TESTCASE_LEN : nonfuzz_len)
 
 #endif /* LIGHTNING_TESTS_FUZZ_LIBFUZZ_H */

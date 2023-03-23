@@ -3,18 +3,17 @@
 #include <common/descriptor_checksum.c>
 #include <tests/fuzz/libfuzz.h>
 
-void init(int *argc, char ***argv)
+int main(int argc, char *argv[])
 {
-}
+	const u8 *fuzzbuf = FUZZ_SETUP(argc, argv);
 
-void run(const uint8_t *data, size_t size)
-{
-	char *string;
-	struct descriptor_checksum checksum;
+	while (FUZZ_LOOP) {
+		size_t fuzzsize = FUZZ_SIZE;
+		struct descriptor_checksum checksum;
 
-	/* We should not crash nor overflow the checksum buffer. */
-
-	string = to_string(NULL, data, size);
-	descriptor_checksum(string, tal_count(string), &checksum);
-	tal_free(string);
+		/* We should not crash nor overflow the checksum buffer. */
+		descriptor_checksum((const char *)fuzzbuf,
+				    fuzzsize, &checksum);
+	}
+	fuzz_shutdown();
 }
