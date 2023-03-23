@@ -360,12 +360,24 @@ include tools/Makefile
 include plugins/Makefile
 include tests/plugins/Makefile
 
+# Generic fuzz testing.
 ifneq ($(FUZZING),0)
-	include tests/fuzz/Makefile
-endif
+include tests/fuzz/Makefile
+
+check-fuzz: $(ALL_FUZZ_TARGETS:%=check-fuzz/%)
+
+# Can override on make line
+FUZZ_TIME=60
+
+# If it has a corpus dir, we give it that (otherwise, no arg)
+# It also spits a LOT of crap to stderr :(
+check-fuzz/%: %
+	$< -max_total_time=$(FUZZ_TIME) `ls -d $(dir $<)/corpus/$(notdir $<) 2>/dev/null` > $<.fuzz 2>&1
+endif # FUZZING
+
 ifneq ($(RUST),0)
-	include cln-rpc/Makefile
-	include cln-grpc/Makefile
+include cln-rpc/Makefile
+include cln-grpc/Makefile
 
 GRPC_GEN = contrib/pyln-testing/pyln/testing/node_pb2.py \
 	contrib/pyln-testing/pyln/testing/node_pb2_grpc.py \
