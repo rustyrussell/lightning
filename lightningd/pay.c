@@ -1662,6 +1662,7 @@ static struct command_result *json_delpay(struct command *cmd,
 	struct sha256 *payment_hash;
 	u64 *groupid, *partid;
 	bool found;
+	const enum wallet_payment_status *found_status = NULL;
 
 	if (!param(cmd, buffer, params,
 		   p_req("payment_hash", param_sha256, &payment_hash),
@@ -1688,16 +1689,22 @@ static struct command_result *json_delpay(struct command *cmd,
 		if (partid && payments[i]->partid != *partid)
 			continue;
 
-		found = true;
 		if (payments[i]->status != *status) {
-			return command_fail(cmd, PAY_STATUS_UNEXPECTED, "Payment with hash %s has %s status but it should be %s",
-					type_to_string(tmpctx, struct sha256, payment_hash),
-					payment_status_to_string(payments[i]->status),
-					payment_status_to_string(*status));
+			found_status = &payments[i]->status;
+			continue;
 		}
+		found = true;
 	}
 
 	if (!found) {
+		/* If we found one, but wrong status, give a better error */
+		if (found_status) {
+			return command_fail(cmd, PAY_STATUS_UNEXPECTED, "Payment with hash %s has %s status but it should be %s",
+					type_to_string(tmpctx, struct sha256, payment_hash),
+					payment_status_to_string(*found_status),
+					payment_status_to_string(*status));
+		}
+
 		return command_fail(cmd, PAY_NO_SUCH_PAYMENT,
 				    "No payment for that payment_hash with that partid and groupid");
 	}
@@ -1710,6 +1717,8 @@ static struct command_result *json_delpay(struct command *cmd,
 		if (groupid && payments[i]->groupid != *groupid)
 			continue;
 		if (partid && payments[i]->partid != *partid)
+			continue;
+		if (payments[i]->status != *status)
 			continue;
 		json_object_start(response, NULL);
 		json_add_payment_fields(response, payments[i]);
