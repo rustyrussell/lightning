@@ -58,12 +58,12 @@ static inline bool nonfuzz_loop(void)
 
 /* Sometimes you want to do some more setup before __AFL_INIT: */
 #define FUZZ_SETUP_BUFFER(argc, argv) \
-	({ __AFL_INIT(); (argc == 2 ? nonfuzz_setup(argc, argv) : __AFL_FUZZ_TESTCASE_BUF); })
+	({ if (argc != 2) { __AFL_INIT(); }; (argc == 2 ? nonfuzz_setup(argc, argv) : __AFL_FUZZ_TESTCASE_BUF); })
 
 #define FUZZ_SETUP(argc, argv) \
 	(fuzz_setup(argv[0]), FUZZ_SETUP_BUFFER(argc, argv))
 
-#define FUZZ_LOOP (nonfuzz_len == -1 ? nonfuzz_loop() : __AFL_LOOP(1000))
+#define FUZZ_LOOP (nonfuzz_len == -1 ? __AFL_LOOP(1000) : nonfuzz_loop())
 #define FUZZ_SIZE (nonfuzz_len == -1 ? __AFL_FUZZ_TESTCASE_LEN : nonfuzz_len)
 
 #endif /* LIGHTNING_TESTS_FUZZ_LIBFUZZ_H */

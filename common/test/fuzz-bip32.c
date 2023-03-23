@@ -29,8 +29,11 @@ int main(int argc, char *argv[])
 
 			fromwire_ext_key(&wire_ptr, &wire_max, &xkey);
 			if (wire_ptr) {
-				wire_buff = tal_arr(tmpctx, uint8_t, BIP32_SERIALIZED_LEN);
+				wire_buff = tal_arr(tmpctx, uint8_t, 0);
 				towire_ext_key(&wire_buff, &xkey);
+				assert(memeq(wire_buff, tal_bytelen(wire_buff),
+					     xkey_chunks[i],
+					     tal_bytelen(xkey_chunks[i])));
 			}
 		}
 
@@ -41,8 +44,11 @@ int main(int argc, char *argv[])
 
 			fromwire_bip32_key_version(&wire_ptr, &wire_max, &version);
 			if (wire_ptr) {
-				wire_buff = tal_arr(tmpctx, uint8_t, 4);
+				wire_buff = tal_arr(tmpctx, uint8_t, 0);
 				towire_bip32_key_version(&wire_buff, &version);
+				assert(memeq(wire_buff, tal_bytelen(wire_buff),
+					     ver_chunks[i],
+					     tal_bytelen(ver_chunks[i])));
 			}
 		}
 		clean_tmpctx();
