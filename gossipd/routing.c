@@ -510,6 +510,7 @@ static void remove_chan_from_node(struct routing_state *rstate,
 
 	/* Last channel?  Simply delete node (and associated announce) */
 	if (num_chans == 0) {
+		u8 *deadmsg;
 		if(node->rgraph.index != node->bcast.index)
 			gossip_store_delete(rstate->gs,
 					    &node->rgraph,
@@ -517,6 +518,9 @@ static void remove_chan_from_node(struct routing_state *rstate,
 		gossip_store_delete(rstate->gs,
 				    &node->bcast,
 				    WIRE_NODE_ANNOUNCEMENT);
+		deadmsg = tal_arr(tmpctx, u8, 0);
+		towire_gossip_store_delete_node(&deadmsg, &node->id);
+		gossip_store_add(rstate->gs, deadmsg, 0, false, false, false, NULL);
 		tal_free(node);
 		return;
 	}
