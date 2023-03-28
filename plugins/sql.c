@@ -904,6 +904,19 @@ static bool extract_node_id(int gosstore_fd, size_t off, u16 type,
 	return true;
 }
 
+static bool extract_dead_node_id(int gosstore_fd, size_t off, u16 type,
+				 struct node_id *id)
+{
+	assert(type == WIRE_GOSSIP_STORE_DELETE_NODE);
+
+	/* Two bytes for the type at the start, then simply node_id */
+	off += sizeof(struct gossip_hdr) + 2;
+	if (pread(gosstore_fd, id, sizeof(*id), off) != sizeof(*id))
+		return false;
+
+	return true;
+}
+
 static struct command_result *nodes_refresh(struct command *cmd,
 					    const struct table_desc *td,
 					    struct db_query *dbq)
@@ -961,7 +974,16 @@ static struct command_result *nodes_refresh(struct command *cmd,
 			json_add_node_id(req->js, "id", &id);
 			return send_outreq(cmd->plugin, req);
 		}
-		/* FIXME: Add WIRE_GOSSIP_STORE_DELETE_NODE marker! */
+
+		if (type == WIRE_GOSSIP_STORE_DELETE_NODE) {
+			/* This can fail if entry not fully written yet. */
+			if (!extract_dead_node_id(gosstore_fd, off, type, &id)) {
+				gosstore_nodes_off = off;
+				break;
+			}
+			delete_node_from_db(cmd, &id);
+			continue;
+		}
 	}
 
 	return one_refresh_done(cmd, dbq);
