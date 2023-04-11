@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_PLUGINS_RENEPAY_FLOW_H
 #define LIGHTNING_PLUGINS_RENEPAY_FLOW_H
 #include "config.h"
+#include <bitcoin/short_channel_id.h>
 #include <ccan/htable/htable_type.h>
 #include <common/amount.h>
 

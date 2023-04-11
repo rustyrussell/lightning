@@ -1,5 +1,5 @@
-PLUGIN_RENEPAY_SRC := plugins/renepay/pay.c plugins/renepay/flow.c plugins/renepay/not_mcf.c
-PLUGIN_RENEPAY_HDRS := plugins/renepay/flow.h plugins/renepay/mcf.h
+PLUGIN_RENEPAY_SRC := plugins/renepay/pay.c plugins/renepay/pay_flow.c plugins/renepay/flow.c plugins/renepay/not_mcf.c
+PLUGIN_RENEPAY_HDRS := plugins/renepay/pay.h plugins/renepay/pay_flow.h plugins/renepay/flow.h plugins/renepay/mcf.h
 PLUGIN_RENEPAY_OBJS := $(PLUGIN_RENEPAY_SRC:.c=.o)
 
 # Make sure these depend on everything.

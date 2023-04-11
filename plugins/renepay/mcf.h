@@ -2,6 +2,8 @@
 #define LIGHTNING_PLUGINS_RENEPAY_MCF_H
 #include <ccan/bitmap/bitmap.h>
 
+struct chan_extra_map;
+
 /**
  * minflow - API for min cost flow function(s).
  * @ctx: context to allocate returned flows from
