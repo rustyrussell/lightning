@@ -67,28 +67,39 @@ static void destroy_chan_extra(struct chan_extra *ce,
 }
 
 /* Returns either NULL, or an entry from the hash */
-struct chan_extra_half *get_chan_extra_half(const struct gossmap *gossmap,
-					    struct chan_extra_map *chan_extra_map,
-					    const struct gossmap_chan *chan,
-					    int dir)
+struct chan_extra_half *
+get_chan_extra_half_by_scid(struct chan_extra_map *chan_extra_map,
+			    const struct short_channel_id scid,
+			    int dir)
 {
 	struct chan_extra *ce;
 
-	ce = chan_extra_map_get(chan_extra_map, gossmap_chan_scid(gossmap, chan));
+	ce = chan_extra_map_get(chan_extra_map, scid);
 	if (!ce)
 		return NULL;
 	return &ce->half[dir];
 }
 
-struct chan_extra_half *new_chan_extra_half(const struct gossmap *gossmap,
-					    struct chan_extra_map *chan_extra_map,
-					    const struct gossmap_chan *chan,
+/* Helper if we have a gossmap_chan */
+struct chan_extra_half *
+get_chan_extra_half_by_chan(const struct gossmap *gossmap,
+			    struct chan_extra_map *chan_extra_map,
+			    const struct gossmap_chan *chan,
+			    int dir)
+{
+	return get_chan_extra_half_by_scid(chan_extra_map,
+					   gossmap_chan_scid(gossmap, chan),
+					   dir);
+}
+
+struct chan_extra_half *new_chan_extra_half(struct chan_extra_map *chan_extra_map,
+					    const struct short_channel_id scid,
 					    int dir,
 					    struct amount_msat capacity)
 {
 	struct chan_extra *ce = tal(chan_extra_map, struct chan_extra);
 
-	ce->scid = gossmap_chan_scid(gossmap, chan);
+	ce->scid = scid;
 	for (size_t i = 0; i <= 1; i++) {
 		ce->half[i].num_htlcs = 0;
 		ce->half[i].htlc_total = AMOUNT_MSAT(0);
@@ -106,9 +117,10 @@ void remove_completed_flow(const struct gossmap *gossmap,
 			   struct flow *flow)
 {
 	for (size_t i = 0; i < tal_count(flow->path); i++) {
-		struct chan_extra_half *h = get_chan_extra_half(gossmap, chan_extra_map,
-								flow->path[i],
-								flow->dirs[i]);
+		struct chan_extra_half *h = get_chan_extra_half_by_chan(gossmap,
+							       chan_extra_map,
+							       flow->path[i],
+							       flow->dirs[i]);
 		if (!amount_msat_sub(&h->htlc_total, h->htlc_total, flow->amounts[i]))
 			abort();
 		if (h->num_htlcs == 0)
@@ -203,8 +215,8 @@ void flow_complete(struct flow *flow,
 	for (int i = tal_count(flow->path) - 1; i >= 0; i--) {
 		struct chan_extra_half *h;
 
-		h = get_chan_extra_half(gossmap, chan_extra_map,
-					flow->path[i], flow->dirs[i]);
+		h = get_chan_extra_half_by_chan(gossmap, chan_extra_map,
+						flow->path[i], flow->dirs[i]);
 		if (!h) {
 			struct amount_sat cap;
 			struct amount_msat cap_msat;
@@ -214,8 +226,10 @@ void flow_complete(struct flow *flow,
 				cap = AMOUNT_SAT(0);
 			if (!amount_sat_to_msat(&cap_msat, cap))
 				abort();
-			h = new_chan_extra_half(gossmap, chan_extra_map,
-						flow->path[i], flow->dirs[i],
+			h = new_chan_extra_half(chan_extra_map,
+						gossmap_chan_scid(gossmap,
+								  flow->path[i]),
+						flow->dirs[i],
 						cap_msat);
 		}
 

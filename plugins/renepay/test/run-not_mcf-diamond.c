@@ -128,17 +128,17 @@ int main(int argc, char *argv[])
 	chan_extra_map = tal(tmpctx, struct chan_extra_map);
 	chan_extra_map_init(chan_extra_map);
 	/* The local chans have no "capacity", so set them manually. */
-	new_chan_extra_half(gossmap, chan_extra_map,
-			    gossmap_find_chan(gossmap, &scid12), 0,
+	new_chan_extra_half(chan_extra_map,
+			    scid12, 0,
 			    AMOUNT_MSAT(1000000000));
-	new_chan_extra_half(gossmap, chan_extra_map,
-			    gossmap_find_chan(gossmap, &scid24), 0,
+	new_chan_extra_half(chan_extra_map,
+			    scid24, 0,
 			    AMOUNT_MSAT(1000000000));
-	new_chan_extra_half(gossmap, chan_extra_map,
-			    gossmap_find_chan(gossmap, &scid13), 0,
+	new_chan_extra_half(chan_extra_map,
+			    scid13, 0,
 			    AMOUNT_MSAT(500000000));
-	new_chan_extra_half(gossmap, chan_extra_map,
-			    gossmap_find_chan(gossmap, &scid34), 0,
+	new_chan_extra_half(chan_extra_map,
+			    scid34, 0,
 			    AMOUNT_MSAT(500000000));
 
 	flows = minflow(tmpctx, gossmap,

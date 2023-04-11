@@ -124,7 +124,7 @@ static double costfn(const struct pay_parameters *params,
 		     struct amount_msat flow)
 {
 	struct amount_msat min, max, prev_flow;
-	struct chan_extra_half *h = get_chan_extra_half(params->gossmap,
+	struct chan_extra_half *h = get_chan_extra_half_by_chan(params->gossmap,
 							params->chan_extra_map,
 							c, dir);
 	if (h) {
@@ -192,11 +192,6 @@ static bool run_shortest_path(struct pay_parameters *params,
 			/* We're going to traverse backwards, so we need
 			 * channel_update into this node */
 			if (!gossmap_chan_set(c, !which_half))
-				continue;
-
-			/* Must allow it through. */
-			if (amount_msat_greater_fp16(flow,
-						     c->half[!which_half].htlc_max))
 				continue;
 
 			neighbor = gossmap_nth_node(params->gossmap,

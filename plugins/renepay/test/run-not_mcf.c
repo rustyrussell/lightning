@@ -378,7 +378,7 @@ int main(int argc, char *argv[])
 	remove_completed_flow(gossmap, chan_extra_map, flows[0]);
 
 	/* The local chans have no "capacity", so set it manually. */
-	new_chan_extra_half(gossmap, chan_extra_map, local_chan, 0,
+	new_chan_extra_half(chan_extra_map, scid13, 0,
 			    AMOUNT_MSAT(400000000));
 
 	flows = minflow(tmpctx, gossmap,

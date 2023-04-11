@@ -47,15 +47,18 @@ HTABLE_DEFINE_TYPE(struct chan_extra,
 		   chan_extra_map);
 
 /* Helpers for chan_extra_map */
-struct chan_extra_half *get_chan_extra_half(const struct gossmap *gossmap,
-					    struct chan_extra_map *chan_extra_map,
-					    const struct gossmap_chan *chan,
-					    int dir);
+struct chan_extra_half *get_chan_extra_half_by_scid(struct chan_extra_map *chan_extra_map,
+						    const struct short_channel_id scid,
+						    int dir);
+
+struct chan_extra_half *get_chan_extra_half_by_chan(const struct gossmap *gossmap,
+						    struct chan_extra_map *chan_extra_map,
+						    const struct gossmap_chan *chan,
+						    int dir);
 
 /* tal_free() this removes it from chan_extra_map */
-struct chan_extra_half *new_chan_extra_half(const struct gossmap *gossmap,
-					    struct chan_extra_map *chan_extra_map,
-					    const struct gossmap_chan *chan,
+struct chan_extra_half *new_chan_extra_half(struct chan_extra_map *chan_extra_map,
+					    const struct short_channel_id scid,
 					    int dir,
 					    struct amount_msat capacity);
 
