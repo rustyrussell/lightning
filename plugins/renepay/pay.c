@@ -838,7 +838,8 @@ static struct command_result *try_paying(struct command *cmd,
 
 	/* We let this return an unlikely path, as it's better to try once
 	 * than simply refuse.  Plus, models are not truth! */
-	pay_flows = get_payflows(p, remaining, feebudget, first_time);
+	pay_flows = get_payflows(p, remaining, feebudget, first_time,
+				 amount_msat_eq(p->total_delivering, AMOUNT_MSAT(0)));
 	if (!pay_flows)
 		return command_fail(cmd, PAY_ROUTE_NOT_FOUND,
 				    "Failed to find a route for %s with budget %s",
@@ -952,6 +953,12 @@ static struct command_result *json_pay(struct command *cmd,
 #endif
 		   NULL))
 		return command_param_failed();
+
+#if DEVELOPER
+	p->use_shadow = *use_shadow;
+#else
+	p->use_shadow = true;
+#endif
 
 	p->local_gossmods = gossmap_localmods_new(p);
 	p->delay_feefactor = *riskfactor_millionths / 1000000.0;

@@ -1,5 +1,6 @@
 /* Routines to get suitable pay_flow array from pay constraints */
 #include <common/gossmap.h>
+#include <common/pseudorand.h>
 #include <common/type_to_string.h>
 #include <common/utils.h>
 #include <errno.h>
@@ -8,22 +9,210 @@
 #include <plugins/renepay/pay.h>
 #include <plugins/renepay/pay_flow.h>
 
+/* BOLT #7:
+ *
+ * If a route is computed by simply routing to the intended recipient and summing
+ * the `cltv_expiry_delta`s, then it's possible for intermediate nodes to guess
+ * their position in the route. Knowing the CLTV of the HTLC, the surrounding
+ * network topology, and the `cltv_expiry_delta`s gives an attacker a way to guess
+ * the intended recipient. Therefore, it's highly desirable to add a random offset
+ * to the CLTV that the intended recipient will receive, which bumps all CLTVs
+ * along the route.
+ *
+ * In order to create a plausible offset, the origin node MAY start a limited
+ * random walk on the graph, starting from the intended recipient and summing the
+ * `cltv_expiry_delta`s, and use the resulting sum as the offset.
+ * This effectively creates a _shadow route extension_ to the actual route and
+ * provides better protection against this attack vector than simply picking a
+ * random offset would.
+ */
+
+/* There's little benefit in doing this per-flow, since you can
+ * correlate flows so trivially, but it's good practice for when we
+ * have PTLCs and that's not true. */
+
+#define MAX_SHADOW_LEN 3
+
+/* Returns ctlv, and fills in *shadow_fee, based on extending the path */
+static u32 shadow_one_flow(const struct gossmap *gossmap,
+			   const struct flow *f,
+			   struct amount_msat *shadow_fee)
+{
+	size_t numpath = tal_count(f->amounts);
+	struct amount_msat amount = f->amounts[numpath-1];
+	struct gossmap_node *n;
+	size_t hop;
+	struct gossmap_chan *chans[MAX_SHADOW_LEN];
+	int dirs[MAX_SHADOW_LEN];
+	u32 shadow_delay = 0;
+
+	/* Start at end of path */
+	n = gossmap_nth_node(gossmap, f->path[numpath-1], !f->dirs[numpath-1]);
+
+	/* We only create shadow for extra CLTV delays, *not* for
+	 * amounts.  This is because with MPP our amounts are random
+	 * looking already. */
+	for (hop = 0; hop < MAX_SHADOW_LEN && pseudorand(1); hop++) {
+		/* Try for a believable channel up to 10 times, then stop */
+		for (size_t i = 0; i < 10; i++) {
+			struct amount_sat cap;
+			chans[hop] = gossmap_nth_chan(gossmap, n, pseudorand(n->num_chans),
+						      &dirs[hop]);
+			if (!gossmap_chan_set(chans[hop], dirs[hop])
+			    || !gossmap_chan_get_capacity(gossmap, chans[hop], &cap)
+			    /* This test is approximate, since amount would differ */
+			    || amount_msat_less_sat(amount, cap)) {
+				chans[hop] = NULL;
+				continue;
+			}
+		}
+		if (!chans[hop])
+			break;
+
+		shadow_delay += chans[hop]->half[dirs[hop]].delay;
+		n = gossmap_nth_node(gossmap, chans[hop], !dirs[hop]);
+	}
+
+	/* If we were actually trying to get amount to end of shadow,
+	 * what would we be paying to the "intermediary" node (real dest) */
+	for (int i = (int)hop - 1; i >= 0; i--)
+		if (!amount_msat_add_fee(&amount,
+					 chans[i]->half[dirs[i]].base_fee,
+					 chans[i]->half[dirs[i]].proportional_fee))
+			/* Ignore: treats impossible event as zero fee. */
+			;
+
+	/* Shouldn't happen either */
+	if (amount_msat_sub(shadow_fee, amount, f->amounts[numpath-1]))
+		plugin_err(pay_plugin->plugin,
+			   "Failed to calc shadow fee: %s - %s",
+			   type_to_string(tmpctx, struct amount_msat, &amount),
+			   type_to_string(tmpctx, struct amount_msat,
+					  &f->amounts[numpath-1]));
+
+	return shadow_delay;
+}
+
+static bool add_to_amounts(const struct gossmap *gossmap,
+			   struct flow *f,
+			   struct amount_msat maxspend,
+			   struct amount_msat additional)
+{
+	struct amount_msat *amounts;
+	size_t num = tal_count(f->amounts);
+
+	/* Recalculate amounts backwards */
+	amounts = tal_arr(tmpctx, struct amount_msat, num);
+	if (!amount_msat_add(&amounts[num-1], f->amounts[num-1], additional))
+		return false;
+
+	for (int i = num-2; i >= 0; i--) {
+		amounts[i] = amounts[i+1];
+		if (!amount_msat_add_fee(&amounts[i],
+					 flow_edge(f, i)->base_fee,
+					 flow_edge(f, i)->proportional_fee))
+			return false;
+	}
+
+	/* Do we now exceed budget? */
+	if (amount_msat_greater(amounts[0], maxspend))
+		return false;
+
+	/* OK, replace amounts */
+	tal_free(f->amounts);
+	f->amounts = tal_steal(f, amounts);
+	return true;
+}
+
+static u64 flow_delay(const struct flow *flow)
+{
+	u64 delay = 0;
+	for (size_t i = 0; i < tal_count(flow->path); i++)
+		delay += flow->path[i]->half[flow->dirs[i]].delay;
+	return delay;
+}
+
+/* This enhances f->amounts, and returns per-flow cltvs */
+static u32 *shadow_additions(const tal_t *ctx,
+			     const struct gossmap *gossmap,
+			     struct payment *p,
+			     struct flow **flows,
+			     bool is_entire_payment)
+{
+	u32 *final_cltvs;
+
+	/* Set these up now in case we decide to do nothing */
+	final_cltvs = tal_arr(ctx, u32, tal_count(flows));
+	for (size_t i = 0; i < tal_count(flows); i++)
+		final_cltvs[i] = p->final_cltv;
+
+	/* DEVELOPER can disable this */
+	if (!p->use_shadow)
+		return final_cltvs;
+
+	for (size_t i = 0; i < tal_count(flows); i++) {
+		u32 shadow_delay;
+		struct amount_msat shadow_fee;
+
+		shadow_delay = shadow_one_flow(gossmap, flows[i],
+					       &shadow_fee);
+		if (flow_delay(flows[i]) + shadow_delay > p->maxdelay) {
+			paynote(p, "No shadow for flow %zu/%zu:"
+				" delay would add %u to %"PRIu64", exceeding max delay.",
+				i, tal_count(flows),
+				shadow_delay,
+				flow_delay(flows[i]));
+			continue;
+		}
+
+		/* We don't need to add fee amounts to obfuscate most payments
+		 * when we're using MPP, since we randomly split amounts.  But
+		 * if this really is the entire thing, we want to, since
+		 * people use round numbers of msats in invoices. */
+		if (is_entire_payment && tal_count(flows) == 1) {
+			if (!add_to_amounts(gossmap, flows[i], p->maxspend,
+					    shadow_fee)) {
+				paynote(p, "No shadow fee for flow %zu/%zu:"
+					" fee would add %s to %s, exceeding budget %s.",
+					i, tal_count(flows),
+					type_to_string(tmpctx, struct amount_msat,
+						       &shadow_fee),
+					type_to_string(tmpctx, struct amount_msat,
+						       &flows[i]->amounts[0]),
+					type_to_string(tmpctx, struct amount_msat,
+						       &p->maxspend));
+			} else {
+				paynote(p, "No MPP, so added %s shadow fee",
+					type_to_string(tmpctx, struct amount_msat,
+						       &shadow_fee));
+			}
+		}
+
+		final_cltvs[i] += shadow_delay;
+		paynote(p, "Shadow route on flow %zu/%zu added %u block delay. now %u",
+			i, tal_count(flows), shadow_delay, final_cltvs[i]);
+	}
+
+	return final_cltvs;
+}
+
 /* Calculates delays and converts to scids.  Frees flows.  Caller is responsible
  * for removing resultings flows from the chan_extra_map. */
 static struct pay_flow **flows_to_pay_flows(struct payment *payment,
 					    struct gossmap *gossmap,
 					    struct flow **flows STEALS,
-					    u32 final_cltv,
+					    const u32 *final_cltvs,
 					    u64 *next_partid)
 {
 	struct pay_flow **pay_flows
 		= tal_arr(payment, struct pay_flow *, tal_count(flows));
 
 	for (size_t i = 0; i < tal_count(flows); i++) {
-		const struct flow *f = flows[i];
+		struct flow *f = flows[i];
 		struct pay_flow *pf = tal(pay_flows, struct pay_flow);
-		size_t plen = tal_count(f->path);
+		size_t plen;
 
+		plen = tal_count(f->path);
 		pay_flows[i] = pf;
 		pf->payment = payment;
 		pf->partid = (*next_partid)++;
@@ -40,7 +229,7 @@ static struct pay_flow **flows_to_pay_flows(struct payment *payment,
 
 		/* Calculate cumulative delays (backwards) */
 		pf->cltv_delays = tal_arr(pf, u32, plen);
-		pf->cltv_delays[plen-1] = final_cltv;
+		pf->cltv_delays[plen-1] = final_cltvs[i];
 		for (int j = (int)plen-2; j >= 0; j--) {
 			pf->cltv_delays[j] = pf->cltv_delays[j+1]
 				+ f->path[j]->half[f->dirs[j]].delay;
@@ -95,14 +284,6 @@ static struct amount_msat flows_fee(struct flow **flows)
 		amount_msat_accumulate(&fee, this_fee);
 	}
 	return fee;
-}
-
-static u64 flow_delay(const struct flow *flow)
-{
-	u64 delay = 0;
-	for (size_t i = 0; i < tal_count(flow->path); i++)
-		delay += flow->path[i]->half[flow->dirs[i]].delay;
-	return delay;
 }
 
 static u64 flows_worst_delay(struct flow **flows)
@@ -184,7 +365,8 @@ static void remove_flows(const struct gossmap *gossmap,
 struct pay_flow **get_payflows(struct payment *p,
 			       struct amount_msat amount,
 			       struct amount_msat feebudget,
-			       bool unlikely_ok)
+			       bool unlikely_ok,
+			       bool is_entire_payment)
 {
 	double frugality = 1.0;
 	bool was_too_expensive = false;
@@ -215,6 +397,7 @@ struct pay_flow **get_payflows(struct payment *p,
 		struct amount_msat fee;
 		u64 delay;
 		bool too_unlikely, too_expensive, too_delayed;
+		const u32 *final_cltvs;
 
 		/* Note!  This actually puts flows in chan_extra_map, so
 		 * flows must be removed if not used! */
@@ -310,10 +493,15 @@ struct pay_flow **get_payflows(struct payment *p,
 					    disabled))
 			goto retry;
 
+		/* This can adjust amounts and final cltv for each flow,
+		 * to make it look like it's going elsewhere */
+		final_cltvs = shadow_additions(tmpctx, pay_plugin->gossmap,
+					       p, flows, is_entire_payment);
+
 		/* OK, we are happy with these flows: convert to
 		 * pay_flows to outlive the current gossmap. */
 		pay_flows = flows_to_pay_flows(p, pay_plugin->gossmap,
-					       flows, p->final_cltv,
+					       flows, final_cltvs,
 					       &p->next_partid);
 		break;
 

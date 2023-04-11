@@ -91,10 +91,8 @@ struct payment {
 	/* Timers. */
 	struct plugin_timer *rexmit_timer;
 
-#if DEVELOPER
-	/* Disable the use of shadow route ? */
-	double use_shadow;
-#endif
+	/* DEVELOPER allows disabling shadow route */
+	bool use_shadow;
 };
 
 void paynote(struct payment *p, const char *fmt, ...)

@@ -25,6 +25,7 @@ struct pay_flow {
 struct pay_flow **get_payflows(struct payment *p,
 			       struct amount_msat amount,
 			       struct amount_msat feebudget,
-			       bool unlikely_ok);
+			       bool unlikely_ok,
+			       bool is_entire_payment);
 
 #endif /* LIGHTNING_PLUGINS_RENEPAY_PAY_FLOW_H */
