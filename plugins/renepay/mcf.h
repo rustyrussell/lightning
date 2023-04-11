@@ -6,7 +6,7 @@
  * @gossmap: the gossip map
  * @source: the source to start from
  * @target: the target to pay
- * @capacities: the capacity estimates, of gossmap_max_chan_idx() size.
+ * @chan_extra_map: hashtable of extra per-channel information
  * @amount: the amount we want to reach @target
  * @frugality: how important fees are compared to certainty (0.1 = certain, 10 = fees)
  * @delay_feefactor: how important delays are compared to fees
@@ -23,7 +23,7 @@ struct flow **minflow(const tal_t *ctx,
 		      struct gossmap *gossmap,
 		      const struct gossmap_node *source,
 		      const struct gossmap_node *target,
-		      const struct capacity_range *capacities,
+		      struct chan_extra_map *chan_extra_map,
 		      struct amount_msat amount,
 		      double frugality,
 		      double delay_feefactor);

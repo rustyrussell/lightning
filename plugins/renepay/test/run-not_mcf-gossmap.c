@@ -86,6 +86,7 @@ int main(int argc, char *argv[])
 	struct node_id srcid, dstid;
 	struct gossmap_node *src, *dst;
 	struct amount_msat amount;
+	struct chan_extra_map *chan_extra_map;
 	bool verbose = false;
 
 	common_setup(argv[0]);
@@ -113,8 +114,11 @@ int main(int argc, char *argv[])
 	amount = amount_msat(atol(argv[4]));
 	assert(!amount_msat_eq(amount, AMOUNT_MSAT(0)));
 
+	chan_extra_map = tal(tmpctx, struct chan_extra_map);
+	chan_extra_map_init(chan_extra_map);
+
 	flows = minflow(tmpctx, gossmap, src, dst,
-			flow_capacity_init(tmpctx, gossmap),
+			chan_extra_map,
 			amount,
 			atof(argv[5]),
 			1);

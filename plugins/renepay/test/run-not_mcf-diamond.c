@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
 	struct flow **flows;
 	struct short_channel_id scid12, scid13, scid24, scid34;
 	struct gossmap_localmods *mods;
-	struct capacity_range *capacities;
+	struct chan_extra_map *chan_extra_map;
 
 	common_setup(argv[0]);
 
@@ -125,22 +125,26 @@ int main(int argc, char *argv[])
 					0));
 
 	gossmap_apply_localmods(gossmap, mods);
-
+	chan_extra_map = tal(tmpctx, struct chan_extra_map);
+	chan_extra_map_init(chan_extra_map);
 	/* The local chans have no "capacity", so set them manually. */
-	capacities = flow_capacity_init(tmpctx, gossmap);
-	capacities[gossmap_chan_idx(gossmap, gossmap_find_chan(gossmap, &scid12))].max
-		= AMOUNT_MSAT(1000000000);
-	capacities[gossmap_chan_idx(gossmap, gossmap_find_chan(gossmap, &scid24))].max
-		= AMOUNT_MSAT(1000000000);
-	capacities[gossmap_chan_idx(gossmap, gossmap_find_chan(gossmap, &scid13))].max
-		= AMOUNT_MSAT(500000000);
-	capacities[gossmap_chan_idx(gossmap, gossmap_find_chan(gossmap, &scid34))].max
-		= AMOUNT_MSAT(500000000);
+	new_chan_extra_half(gossmap, chan_extra_map,
+			    gossmap_find_chan(gossmap, &scid12), 0,
+			    AMOUNT_MSAT(1000000000));
+	new_chan_extra_half(gossmap, chan_extra_map,
+			    gossmap_find_chan(gossmap, &scid24), 0,
+			    AMOUNT_MSAT(1000000000));
+	new_chan_extra_half(gossmap, chan_extra_map,
+			    gossmap_find_chan(gossmap, &scid13), 0,
+			    AMOUNT_MSAT(500000000));
+	new_chan_extra_half(gossmap, chan_extra_map,
+			    gossmap_find_chan(gossmap, &scid34), 0,
+			    AMOUNT_MSAT(500000000));
 
 	flows = minflow(tmpctx, gossmap,
 			gossmap_find_node(gossmap, &l1),
 			gossmap_find_node(gossmap, &l4),
-			capacities,
+			chan_extra_map,
 			/* Half the capacity */
 			AMOUNT_MSAT(500000000),
 			0.2,

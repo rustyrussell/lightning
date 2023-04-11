@@ -1,15 +1,63 @@
 #ifndef LIGHTNING_PLUGINS_RENEPAY_FLOW_H
 #define LIGHTNING_PLUGINS_RENEPAY_FLOW_H
+#include "config.h"
+#include <ccan/htable/htable_type.h>
 #include <common/amount.h>
 
-/* This is the known range of capacities, indexed by gossmap_chan_idx.
- *
- * Note that we should track this independently in both directions, but we
- * don't: we rarely consider both directions of a channel in a single payment.
- */
-struct capacity_range {
-	struct amount_msat min, max;
+/* Any implementation needs to keep some data on channels which are
+ * in-use (or about which we have extra information).  We use a hash
+ * table here, since most channels are not in use. */
+struct chan_extra {
+	struct short_channel_id scid;
+
+	struct chan_extra_half {
+		/* How many htlcs we've directed through it */
+		size_t num_htlcs;
+
+		/* The total size of those HTLCs */
+		struct amount_msat htlc_total;
+
+		/* The known minimum / maximum capacity (if nothing known, 0/capacity */
+		struct amount_msat known_min, known_max;
+	} half[2];
 };
+
+static inline const struct short_channel_id
+chan_extra_scid(const struct chan_extra *cd)
+{
+	return cd->scid;
+}
+
+static inline size_t hash_scid(const struct short_channel_id scid)
+{
+	/* scids cost money to generate, so simple hash works here */
+	return (scid.u64 >> 32)
+		^ (scid.u64 >> 16)
+		^ scid.u64;
+}
+
+static inline bool chan_extra_eq_scid(const struct chan_extra *cd,
+				      const struct short_channel_id scid)
+{
+	return short_channel_id_eq(&scid, &cd->scid);
+}
+
+HTABLE_DEFINE_TYPE(struct chan_extra,
+		   chan_extra_scid, hash_scid, chan_extra_eq_scid,
+		   chan_extra_map);
+
+/* Helpers for chan_extra_map */
+struct chan_extra_half *get_chan_extra_half(const struct gossmap *gossmap,
+					    struct chan_extra_map *chan_extra_map,
+					    const struct gossmap_chan *chan,
+					    int dir);
+
+/* tal_free() this removes it from chan_extra_map */
+struct chan_extra_half *new_chan_extra_half(const struct gossmap *gossmap,
+					    struct chan_extra_map *chan_extra_map,
+					    const struct gossmap_chan *chan,
+					    int dir,
+					    struct amount_msat capacity);
 
 /* An actual partial flow. */
 struct flow {
@@ -17,15 +65,11 @@ struct flow {
 	const struct gossmap_chan **path;
 	/* The directions to traverse. */
 	int *dirs;
-	/* Amounts for this flow (fees mean this shrinks). */
+	/* Amounts for this flow (fees mean this shrinks across path). */
 	struct amount_msat *amounts;
 	/* Probability of success (0-1) */
 	double success_prob;
 };
-
-/* Create a capacity range for this graph */
-struct capacity_range *flow_capacity_init(const tal_t *ctx,
-					  struct gossmap *gossmap);
 
 /* Helper to access the half chan at flow index idx */
 const struct half_chan *flow_edge(const struct flow *flow, size_t idx);
@@ -39,8 +83,7 @@ bool flow_path_eq(const struct gossmap_chan **path1,
 /* Add this to the completed flow. */
 void flow_add(struct flow *flow,
 	      const struct gossmap *gossmap,
-	      const struct capacity_range *capacities,
-	      struct amount_msat *current_flows,
+	      struct chan_extra_map *chan_extra_map,
 	      struct amount_msat additional);
 
 /* A big number, meaning "don't bother" (not infinite, since you may add) */
@@ -50,7 +93,8 @@ void flow_add(struct flow *flow,
  * given we already have a flow of prev_flow. */
 double flow_edge_cost(const struct gossmap *gossmap,
 		      const struct gossmap_chan *c, int dir,
-		      const struct capacity_range *chan_cap,
+		      const struct amount_msat known_min,
+		      const struct amount_msat known_max,
 		      struct amount_msat prev_flow,
 		      struct amount_msat f,
 		      double mu,
@@ -58,12 +102,16 @@ double flow_edge_cost(const struct gossmap *gossmap,
 		      double delay_riskfactor);
 
 /* Function to fill in amounts and success_prob for flow, and add to
- * current_flows[] */
+ * chan_extra_map */
 void flow_complete(struct flow *flow,
 		   const struct gossmap *gossmap,
-		   const struct capacity_range *capacities,
-		   struct amount_msat *current_flows,
+		   struct chan_extra_map *chan_extra_map,
 		   struct amount_msat delivered);
+
+/* Once flow is completed, this can remove it from the extra_map */
+void remove_completed_flow(const struct gossmap *gossmap,
+			   struct chan_extra_map *chan_extra_map,
+			   struct flow *flow);
 
 /*
  * mu (μ) is used as follows in the cost function:

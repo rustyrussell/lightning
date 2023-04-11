@@ -56,11 +56,8 @@ struct pay_parameters {
 	const struct gossmap_node **heap;
 	size_t heapsize;
 
-	/* The residual capacities of each channel (msat).  This is lies, of
-	 * course, since using capacity up in one dir *increases* it
-	 * in the other.  But this case is rare in practice */
-	const struct capacity_range *capacities;
-	struct amount_msat *chan_flow_amounts;
+	/* Extra information we intuited about the channels */
+	struct chan_extra_map *chan_extra_map;
 };
 
 /* Required global for gheap less_comparer */
@@ -123,12 +120,34 @@ static double costfn(const struct pay_parameters *params,
 		     const struct gossmap_chan *c, int dir,
 		     struct amount_msat flow)
 {
-	size_t chan_idx = gossmap_chan_idx(params->gossmap, c);
+	struct amount_msat min, max, prev_flow;
+	struct chan_extra_half *h = get_chan_extra_half(params->gossmap,
+							params->chan_extra_map,
+							c, dir);
+	if (h) {
+		SUPERVERBOSE("costfn found extra %p: cap %s-%s, flow %s\n",
+			     h,
+			     type_to_string(tmpctx, struct amount_msat, &h->known_min),
+			     type_to_string(tmpctx, struct amount_msat, &h->known_max),
+			     type_to_string(tmpctx, struct amount_msat, &h->htlc_total));
+		min = h->known_min;
+		max = h->known_max;
+		prev_flow = h->htlc_total;
+	} else {
+		/* We know nothing, use 0 - capacity */
+		struct amount_sat cap;
+
+		min = AMOUNT_MSAT(0);
+		if (!gossmap_chan_get_capacity(params->gossmap, c, &cap))
+			cap = AMOUNT_SAT(0);
+		if (!amount_sat_to_msat(&max, cap))
+			abort();
+		prev_flow = AMOUNT_MSAT(0);
+	}
 
 	return flow_edge_cost(params->gossmap,
 			      c, dir,
-			      &params->capacities[chan_idx],
-			      params->chan_flow_amounts[chan_idx],
+			      min, max, prev_flow,
 			      flow,
 			      params->mu,
 			      params->basefee_penalty,
@@ -264,7 +283,6 @@ static void print_path(const char *desc,
 	SUPERVERBOSE("%s: ", desc);
 
 	for (size_t i = 0; i < tal_count(path); i++) {
-		size_t chan_idx = gossmap_chan_idx(params->gossmap, path[i]);
 		struct short_channel_id scid
 			= gossmap_chan_scid(params->gossmap, path[i]);
 		double cost;
@@ -272,14 +290,12 @@ static void print_path(const char *desc,
 		print_enable = false;
 		cost = costfn(params, path[i], dirs[i], amt);
 		print_enable = true;
-		SUPERVERBOSE("%s%s/%i(set=%i/%i,%s/%s,htlc_max=%"PRIu64"/rev:%"PRIu64",fee=%u+%u,cost=%f) ",
+		SUPERVERBOSE("%s%s/%i(set=%i/%i,htlc_max=%"PRIu64"/rev:%"PRIu64",fee=%u+%u,cost=%f) ",
 			     i ? "->" : "",
 			     type_to_string(tmpctx, struct short_channel_id, &scid),
 			     dirs[i],
 			     gossmap_chan_set(path[i], 0),
 			     gossmap_chan_set(path[i], 1),
-			     type_to_string(tmpctx, struct amount_msat, &params->chan_flow_amounts[chan_idx]),
-			     type_to_string(tmpctx, struct amount_msat, &params->capacities[chan_idx].max),
 			     fp16_to_u64(path[i]->half[dirs[i]].htlc_max),
 			     fp16_to_u64(path[i]->half[!dirs[i]].htlc_max),
 			     path[i]->half[dirs[i]].base_fee,
@@ -351,7 +367,7 @@ minflow(const tal_t *ctx,
 	struct gossmap *gossmap,
 	const struct gossmap_node *source,
 	const struct gossmap_node *target,
-	const struct capacity_range *capacities,
+	struct chan_extra_map *chan_extra_map,
 	struct amount_msat amount,
 	double frugality,
 	double delay_feefactor)
@@ -388,10 +404,7 @@ minflow(const tal_t *ctx,
 	params->heap = tal_arr(params, const struct gossmap_node *,
 			       gossmap_num_nodes(gossmap));
 
-	ASSERT(tal_count(capacities) == gossmap_max_chan_idx(gossmap));
-	params->capacities = capacities;
-	params->chan_flow_amounts = tal_arrz(params, struct amount_msat,
-					     gossmap_max_chan_idx(gossmap));
+	params->chan_extra_map = chan_extra_map;
 	global_params = params;
 
 	/* Now gather the flows: we randomize step a little, but aim for 50. */
@@ -428,8 +441,7 @@ minflow(const tal_t *ctx,
 
 			before = flow->amounts[tal_count(flow->amounts)-1];
 			print_flow("Duplicate flow before", params, flow);
-			flow_add(flow, params->gossmap,
-				 params->capacities, params->chan_flow_amounts,
+			flow_add(flow, params->gossmap, params->chan_extra_map,
 				 this_amount);
 			print_flow("Duplicate flow after", params, flow);
 			after = flow->amounts[tal_count(flow->amounts)-1];
@@ -441,7 +453,7 @@ minflow(const tal_t *ctx,
 			flow->path = tal_steal(flow, path);
 			flow->dirs = tal_steal(flow, dirs);
 			flow_complete(flow, params->gossmap,
-				      params->capacities, params->chan_flow_amounts,
+				      params->chan_extra_map,
 				      this_amount);
 			print_flow("New flow", params, flow);
 			flows[num_flows++] = flow;
