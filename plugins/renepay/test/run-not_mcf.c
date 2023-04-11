@@ -306,7 +306,7 @@ int main(int argc, char *argv[])
 			flow_capacity_init(tmpctx, gossmap),
 			/* Half the capacity */
 			AMOUNT_MSAT(500000000),
-			0.0000001,
+			1,
 			1);
 	print_flows("Flow via single path l1->l2->l3", gossmap, flows);
 
@@ -359,10 +359,10 @@ int main(int argc, char *argv[])
 			capacities,
 			/* This will go first via 1-2-3, then 1->3. */
 			AMOUNT_MSAT(500000000),
-			0.0000001,
+			0.1,
 			1);
 
-	print_flows("Flow via two paths, normal mu", gossmap, flows);
+	print_flows("Flow via two paths, low mu", gossmap, flows);
 
 	ASSERT(tal_count(flows) == 2);
 	ASSERT(tal_count(flows[0]->path) == 2);
@@ -400,7 +400,7 @@ int main(int argc, char *argv[])
 			 capacities,
 			 /* This will go 400000000 via 1->3, rest via 1-2-3. */
 			 AMOUNT_MSAT(500000000),
-			 0.001,
+			 10,
 			 1);
 	print_flows("Flow via two paths, high mu", gossmap, flows2);
 	ASSERT(tal_count(flows2) == 2);

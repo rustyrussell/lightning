@@ -323,7 +323,7 @@ minflow(const tal_t *ctx,
 	const struct gossmap_node *target,
 	const struct capacity_range *capacities,
 	struct amount_msat amount,
-	double mu,
+	double frugality,
 	double delay_feefactor)
 {
 	struct pay_parameters *params = tal(tmpctx, struct pay_parameters);
@@ -337,7 +337,7 @@ minflow(const tal_t *ctx,
 	params->dij = tal_arr(params, struct dijkstra,
 			      gossmap_max_node_idx(gossmap));
 
-	params->mu = mu;
+	params->mu = derive_mu(gossmap, amount, frugality);
 	params->delay_feefactor = delay_feefactor;
 
 	/* If we assume we split into 5 parts, adjust ppm on basefee to

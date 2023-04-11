@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
 			capacities,
 			/* Half the capacity */
 			AMOUNT_MSAT(500000000),
-			0.00001,
+			0.2,
 			1);
 
 	print_flows("Simple minflow", gossmap, flows);

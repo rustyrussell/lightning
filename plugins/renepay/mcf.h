@@ -8,7 +8,7 @@
  * @target: the target to pay
  * @capacities: the capacity estimates, of gossmap_max_chan_idx() size.
  * @amount: the amount we want to reach @target
- * @mu: how important fees are compared to certainty.
+ * @frugality: how important fees are compared to certainty (0.1 = certain, 10 = fees)
  * @delay_feefactor: how important delays are compared to fees
  *
  * @delay_feefactor converts 1 block delay into msat, as if it were an additional
@@ -25,6 +25,6 @@ struct flow **minflow(const tal_t *ctx,
 		      const struct gossmap_node *target,
 		      const struct capacity_range *capacities,
 		      struct amount_msat amount,
-		      double mu,
+		      double frugality,
 		      double delay_feefactor);
 #endif /* LIGHTNING_PLUGINS_RENEPAY_MCF_H */

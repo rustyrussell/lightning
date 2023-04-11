@@ -95,7 +95,7 @@ int main(int argc, char *argv[])
 	opt_parse(&argc, argv, opt_log_stderr_exit);
 
 	if (argc != 6)
-		errx(1, "Usage: %s <gossmap> <srcnode> <dstnode> <amount> <feecert>", argv[0]);
+		errx(1, "Usage: %s <gossmap> <srcnode> <dstnode> <amount> <frugality>", argv[0]);
 
 	gossmap = gossmap_load(tmpctx, argv[1], NULL);
 	assert(gossmap);
