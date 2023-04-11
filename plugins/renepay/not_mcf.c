@@ -306,15 +306,44 @@ static void print_flow(const char *desc,
 		     type_to_string(tmpctx, struct amount_msat, &fee));
 }
 
-static struct flow *find_matching_flow(struct flow **flows, size_t num_flows,
-				       const struct gossmap_chan **path,
-				       int *dirs)
+static double flow_cost(struct pay_parameters *params,
+			const struct gossmap_chan **path,
+			const int *dirs,
+			struct amount_msat amount)
 {
+	double cost = 0;
+
+	for (size_t i = 0; i < tal_count(path); i++)
+		cost += costfn(params, path[i], dirs[i], amount);
+	return cost;
+}
+
+static struct flow *find_similar_flow(struct pay_parameters *params,
+				      struct flow **flows, size_t num_flows,
+				      const struct gossmap_chan **path,
+				      const int *dirs,
+				      struct amount_msat amount)
+{
+	double best_cost;
+	struct flow *best;
+
+	/* First search for exact equal */
 	for (size_t i = 0; i < num_flows; i++) {
 		if (flow_path_eq(flows[i]->path, flows[i]->dirs, path, dirs))
 			return flows[i];
 	}
-	return NULL;
+
+	/* OK, see if one of the existing paths is similar cost. */
+	best_cost = flow_cost(params, path, dirs, amount) * 1.10;
+	best = NULL;
+	for (size_t i = 0; i < num_flows; i++) {
+		double cost = flow_cost(params, flows[i]->path, flows[i]->dirs, amount);
+		if (cost < best_cost) {
+			best = flows[i];
+			best_cost = cost;
+		}
+	}
+	return best;
 }
 
 struct flow **
@@ -393,7 +422,7 @@ minflow(const tal_t *ctx,
 			return tal_free(flows);
 
 		/* Maybe add to existing. */
-		flow = find_matching_flow(flows, num_flows, path, dirs);
+		flow = find_similar_flow(params, flows, num_flows, path, dirs, this_amount);
 		if (flow) {
 			struct amount_msat before, after, tot;
 
