@@ -243,4 +243,5 @@ ifneq ($(RUST),0)
 DEFAULT_TARGETS += $(CLN_PLUGIN_EXAMPLES) plugins/cln-grpc
 endif
 
+include plugins/renepay/Makefile
 include plugins/test/Makefile
