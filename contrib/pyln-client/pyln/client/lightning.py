@@ -1143,21 +1143,21 @@ class LightningRpc(UnixDomainSocketRpc):
         # Deprecated usage
         if msatoshi:
             amount_msat = msatoshi
+        assert maxfeepercent is None
+        assert exemptfee is None
+        assert exclude is None
         payload = {
-            "bolt11": bolt11,
+            "invstring": bolt11,
             "amount_msat": amount_msat,
             "label": label,
             "riskfactor": riskfactor,
-            "maxfeepercent": maxfeepercent,
             "retry_for": retry_for,
             "maxdelay": maxdelay,
-            "exemptfee": exemptfee,
             "localinvreqid": localinvreqid,
-            "exclude": exclude,
             "maxfee": maxfee,
             "description": description,
         }
-        return self.call("pay", payload)
+        return self.call("renepay", payload)
 
     def openchannel_init(self, node_id, channel_amount, psbt, feerate=None, funding_feerate=None, announce=True, close_to=None, request_amt=None, *args, **kwargs):
         """Initiate an openchannel with a peer """
