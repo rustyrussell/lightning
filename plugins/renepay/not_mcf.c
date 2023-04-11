@@ -14,6 +14,7 @@
 #include "config.h"
 #include <ccan/cast/cast.h>
 #include <common/gossmap.h>
+#include <common/pseudorand.h>
 #include <gheap.h>
 #include <plugins/renepay/flow.h>
 #include <plugins/renepay/mcf.h>
@@ -328,7 +329,6 @@ minflow(const tal_t *ctx,
 {
 	struct pay_parameters *params = tal(tmpctx, struct pay_parameters);
 	struct flow **flows;
-	const size_t max_num_flows = 1000;
 	const struct amount_msat min_flow = AMOUNT_MSAT(5000);
 	struct amount_msat step, remaining;
 	size_t num_flows;
@@ -365,19 +365,24 @@ minflow(const tal_t *ctx,
 					     gossmap_max_chan_idx(gossmap));
 	global_params = params;
 
-	/* Now gather the flows */
-	flows = tal_arr(ctx, struct flow *, max_num_flows);
-	step = amount_msat_div(amount, max_num_flows);
+	/* Now gather the flows: we randomize step a little, but aim for 50. */
+	flows = tal_arr(ctx, struct flow *, 100);
+	step = amount_msat_div(amount, 50);
 	if (amount_msat_less(step, min_flow))
 		step = min_flow;
 
 	remaining = amount;
 	num_flows = 0;
 	while (amount_msat_greater(remaining, AMOUNT_MSAT(0))) {
-		struct amount_msat this_amount = step;
+		struct amount_msat this_amount;
 		const struct gossmap_chan **path;
 		int *dirs;
 		struct flow *flow;
+
+		/* Randomize amount a little */
+		if (!amount_msat_scale(&this_amount, step,
+				       0.8 + 0.4 * pseudorand_double()))
+			abort();
 
 		if (amount_msat_greater(this_amount, remaining))
 			this_amount = remaining;
@@ -390,11 +395,18 @@ minflow(const tal_t *ctx,
 		/* Maybe add to existing. */
 		flow = find_matching_flow(flows, num_flows, path, dirs);
 		if (flow) {
+			struct amount_msat before, after, tot;
+
+			before = flow->amounts[tal_count(flow->amounts)-1];
 			print_flow("Duplicate flow before", params, flow);
 			flow_add(flow, params->gossmap,
 				 params->capacities, params->chan_flow_amounts,
 				 this_amount);
 			print_flow("Duplicate flow after", params, flow);
+			after = flow->amounts[tal_count(flow->amounts)-1];
+			if (!amount_msat_sub(&tot, after, before))
+				abort();
+			ASSERT(amount_msat_eq(tot, this_amount));
 		} else {
 			flow = tal(flows, struct flow);
 			flow->path = tal_steal(flow, path);
@@ -404,6 +416,8 @@ minflow(const tal_t *ctx,
 				      this_amount);
 			print_flow("New flow", params, flow);
 			flows[num_flows++] = flow;
+			ASSERT(amount_msat_eq(flow->amounts[tal_count(flow->amounts)-1],
+					      this_amount));
 		}
 		if (!amount_msat_sub(&remaining, remaining, this_amount))
 			abort();
