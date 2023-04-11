@@ -118,7 +118,7 @@ int main(int argc, char *argv[])
 	chan_extra_map_init(chan_extra_map);
 
 	flows = minflow(tmpctx, gossmap, src, dst,
-			chan_extra_map,
+			chan_extra_map, NULL,
 			amount,
 			atof(argv[5]),
 			1);

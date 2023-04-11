@@ -12,6 +12,7 @@
 /* Without this, gheap is *really* slow!  Comment out for debugging. */
 #define NDEBUG
 #include "config.h"
+#include <ccan/bitmap/bitmap.h>
 #include <ccan/cast/cast.h>
 #include <common/gossmap.h>
 #include <common/pseudorand.h>
@@ -50,6 +51,8 @@ struct pay_parameters {
 	double delay_feefactor;
 	/* Penalty factor for having a basefee (adds to ppm). */
 	double basefee_penalty;
+	/* Optional bitarray of disabled chans. */
+	const bitmap *disabled;
 
 	/* The working heap */
 	struct gheap_ctx gheap_ctx;
@@ -202,6 +205,14 @@ static bool run_shortest_path(struct pay_parameters *params,
 			d = get_dijkstra(params, neighbor);
 			/* Ignore if already visited. */
 			if (d->cost != FLOW_INF_COST && !d->heapptr)
+				continue;
+
+			/* They can explicitly disable some channels for this
+			 * run */
+			if (params->disabled
+			    && bitmap_test_bit(params->disabled,
+					       gossmap_chan_idx(params->gossmap,
+								c)))
 				continue;
 
 			/* Get edge cost (will be FLOW_INF_COST in
@@ -368,6 +379,7 @@ minflow(const tal_t *ctx,
 	const struct gossmap_node *source,
 	const struct gossmap_node *target,
 	struct chan_extra_map *chan_extra_map,
+	const bitmap *disabled,
 	struct amount_msat amount,
 	double frugality,
 	double delay_feefactor)
@@ -384,6 +396,9 @@ minflow(const tal_t *ctx,
 
 	params->mu = derive_mu(gossmap, amount, frugality);
 	params->delay_feefactor = delay_feefactor;
+	params->disabled = disabled;
+	ASSERT(!disabled
+	       || tal_bytelen(disabled) == bitmap_sizeof(gossmap_max_chan_idx(gossmap)));
 
 	/* If we assume we split into 5 parts, adjust ppm on basefee to
 	 * make be correct at amt / 5.  Thus 1 basefee is worth 1 ppm at

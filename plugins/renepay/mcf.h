@@ -7,6 +7,7 @@
  * @source: the source to start from
  * @target: the target to pay
  * @chan_extra_map: hashtable of extra per-channel information
+ * @disabled: NULL, or a bitmap by channel index of channels not to use.
  * @amount: the amount we want to reach @target
  * @frugality: how important fees are compared to certainty (0.1 = certain, 10 = fees)
  * @delay_feefactor: how important delays are compared to fees
@@ -24,6 +25,7 @@ struct flow **minflow(const tal_t *ctx,
 		      const struct gossmap_node *source,
 		      const struct gossmap_node *target,
 		      struct chan_extra_map *chan_extra_map,
+		      const bitmap *disabled,
 		      struct amount_msat amount,
 		      double frugality,
 		      double delay_feefactor);

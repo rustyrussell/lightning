@@ -306,7 +306,7 @@ int main(int argc, char *argv[])
 	flows = minflow(tmpctx, gossmap,
 			gossmap_find_node(gossmap, &l1),
 			gossmap_find_node(gossmap, &l3),
-			chan_extra_map,
+			chan_extra_map, NULL,
 			/* Half the capacity */
 			AMOUNT_MSAT(500000000),
 			1,
@@ -384,7 +384,7 @@ int main(int argc, char *argv[])
 	flows = minflow(tmpctx, gossmap,
 			gossmap_find_node(gossmap, &l1),
 			gossmap_find_node(gossmap, &l3),
-			chan_extra_map,
+			chan_extra_map, NULL,
 			/* This will go first via 1-2-3, then 1->3. */
 			AMOUNT_MSAT(500000000),
 			0.1,
@@ -431,7 +431,7 @@ int main(int argc, char *argv[])
 	flows2 = minflow(tmpctx, gossmap,
 			 gossmap_find_node(gossmap, &l1),
 			 gossmap_find_node(gossmap, &l3),
-			 chan_extra_map,
+			 chan_extra_map, NULL,
 			 /* This will go 400000000 via 1->3, rest via 1-2-3. */
 			 AMOUNT_MSAT(500000000),
 			 10,

@@ -144,7 +144,7 @@ int main(int argc, char *argv[])
 	flows = minflow(tmpctx, gossmap,
 			gossmap_find_node(gossmap, &l1),
 			gossmap_find_node(gossmap, &l4),
-			chan_extra_map,
+			chan_extra_map, NULL,
 			/* Half the capacity */
 			AMOUNT_MSAT(500000000),
 			0.2,
