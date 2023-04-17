@@ -85,7 +85,8 @@ static const char *init(struct plugin *p,
 	list_head_init(&pay_plugin->payments);
 	chan_extra_map_init(&pay_plugin->chan_extra_map);
 
-	pay_plugin->gossmap = gossmap_load(NULL,
+	// TODO(eduardo) is it ok to use NULL or pay_plugin as `ctx`?
+	pay_plugin->gossmap = gossmap_load(pay_plugin,
 					   GOSSIP_STORE_FILENAME,
 					   &num_channel_updates_rejected);
 	if (!pay_plugin->gossmap)
