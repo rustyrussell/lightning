@@ -10,6 +10,7 @@ static const size_t ARC_ADDITIONAL_BITS = PARTS_BITS + 2;
 
 static const s64 INFINITE = 9e18;
 static const u32 INVALID_INDEX=0xffffffff;
+static const s64 COST_FACTOR=10000;
 			
 /* Let's try this encoding of arcs:
  * Each channel `c` has two possible directions identified by a bit 
@@ -89,9 +90,15 @@ struct pay_parameters {
 	// `init_residual_network`.
 	const bitmap *disabled;
 	
-	u32 *arc_tail_node, *arc_head_node;
-	u32 *arc_adjacency_next_arc;
 	
+	u32 *arc_head_node; 
+	// notice that a tail node is not needed, 
+	// because the tail of arc is the head of dual(arc)
+	
+	// probability cost associated to an arc
+	s64 *arc_prob_cost;
+	
+	u32 *arc_adjacency_next_arc;
 	u32 *node_adjacency_first_arc;	
 };
 
@@ -115,7 +122,7 @@ static inline u32 arc_dual(const struct pay_parameters * params UNUSED,
 static inline u32 arc_tail(const struct pay_parameters *params,
                            const u32 arc)
 {
-	return params->arc_tail_node[arc];
+	return params->arc_head_node[ arc_dual(params,arc) ];
 }
 /* Helper function. 
  * Given an arc idx, return the node that this arc is pointing to in the residual network. */
@@ -154,7 +161,7 @@ static inline u32 node_adjacency_next(const struct pay_parameters *params,
 /* Helper function.
  * Given an arc index, we should be able to deduce the channel id, and part that
  * corresponds to this arc. */
-static u32 arc_to_channel_idx(const u32 arc,
+static inline u32 arc_to_channel_idx(const u32 arc,
                               int *half_ptr,
 			      int *part_ptr,
 			      int *dual_ptr)
@@ -167,7 +174,7 @@ static u32 arc_to_channel_idx(const u32 arc,
 
 /* Helper function.
  * Given a channel index, we should be able to deduce the arc id. */
-static u32 channel_idx_to_arc(const u32 chan_idx,
+static inline u32 channel_idx_to_arc(const u32 chan_idx,
                               int half,
 			      int part,
 			      int dual)
@@ -176,6 +183,48 @@ static u32 channel_idx_to_arc(const u32 chan_idx,
 	dual &= 1;
 	part &= (CHANNEL_PARTS-1);
 	return (chan_idx << ARC_ADDITIONAL_BITS)|(half<<(1+PARTS_BITS))|(part<<1)|(dual);
+}
+
+/* Split a directed channel into parts with linear cost function. */
+static int linearize_channel(
+		const struct pay_parameters *params,
+		const struct gossmap_chan *c,
+		const int dir,
+		s64 *capacity,
+		s64 *cost)
+{
+	// TODO
+}
+
+/* Get the fee cost associated to this directed channel. 
+ * Cost is expressed as PPM of the payment. */
+static s64 compute_fee_cost(
+		const struct pay_parameters *params,
+		const struct gossmap_chan *c,
+		const int dir)
+{
+	s64 pfee = c->half[dir].proportional_fee,
+	    bfee = c->half[dir].base_fee;
+	
+	// Base fee to proportional fee. We want
+	// 	cost_eff(x) >= cost_real(x)
+	// 	x * (p + b*a) >= x * p + b*1000
+	// where the effective proportional cost is `(p+b*a)`, `a` is factor we
+	// need to choose. Then
+	// 	x >= 1000/a
+	// therefore if `a`=1, our effective cost is good only after 1000 sats,
+	// otherwise the cost is underestimated. If we want to make it valid
+	// from 1 sat, then a=1000, but that means that setting a base fee of
+	// 1msat will be consider like having a proportional cost of 1000ppm,
+	// which is a lot. Some middle ground can be obtained with numbers in
+	// between, but in general `a` does not make sense above 1000.
+	
+	// In this case having a base fee of 1 is equivalent of having a
+	// proportional fee of 10 ppm.
+	return pfee + bfee * 10;
+	
+	// TODO(eduardo) How to convert the base fee properly into an effective
+	// proportional fee?
 }
 
 static void init_residual_network(struct pay_parameters *params,
@@ -193,13 +242,13 @@ static void init_residual_network(struct pay_parameters *params,
 	for(size_t i=0;i<tal_count(network->cost);++i)
 		network->cost[i]=INFINITE;
 	
-	params->arc_tail_node = tal_arr(params,u32,max_num_arcs);
-	for(size_t i=0;i<tal_count(params->arc_tail_node);++i)
-		params->arc_tail_node[i]=INVALID_INDEX;
-	
 	params->arc_head_node = tal_arr(params,u32,max_num_arcs);
 	for(size_t i=0;i<tal_count(params->arc_head_node);++i)
 		params->arc_head_node[i]=INVALID_INDEX;
+	
+	params->arc_prob_cost = tal_arr(params,s64,max_num_arcs);
+	for(size_t i=0;i<tal_count(params->arc_prob_cost);++i)
+		params->arc_prob_cost[i]=INFINITE;
 		
 	params->arc_adjacency_next_arc = tal_arr(params,u32,max_num_arcs);
 	for(size_t i=0;i<tal_count(params->arc_adjacency_next_arc);++i)
@@ -234,13 +283,20 @@ static void init_residual_network(struct pay_parameters *params,
 			
 			ASSERT(node_id!=next_id);
 			
+			// `cost` is the word normally used to denote cost per
+			// unit of flow in the context of MCF.
+			s64 prob_cost[CHANNEL_PARTS], capacity[CHANNEL_PARTS];
+			
+			// split this channel direction to obtain the arcs
+			// that are outgoing to `node`
+			linearize_channel(params,c,!half,capacity,prob_cost);
+			
 			// let's subscribe the 4 parts of the channel direction
 			// (c,!half), the dual of these guys will be subscribed
 			// when the `i` hits the `next` node.
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
 				u32 arc = channel_idx_to_arc(chan_id,!half,k,0);
-				arc_tail_node[arc] = node_id;
 				arc_head_node[arc] = next_id;
 				
 				// Is this is the first arc?
@@ -256,16 +312,20 @@ static void init_residual_network(struct pay_parameters *params,
 				
 				prev_arc = arc;
 				
-				// TODO: set costs and capacity
-				// use (c,!half)
+				network->cap[arc] = capacity[k];
+				params->arc_prob_cost[arc] = prob_cost[k];
+				params->fee_cost[arc] = compute_fee_cost(params,c,!half);
 			}
+			
+			// split the opposite direction to obtain the dual arcs
+			// that are outgoing to `node`
+			linearize_channel(params,c,half,capacity,prob_cost);
 			
 			// let's subscribe the 4 parts of the channel direction
 			// (c,half) in dual representation
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
 				u32 arc = channel_idx_to_arc(chan_id,half,k,1);
-				arc_tail_node[arc] = node_id;
 				arc_head_node[arc] = next_id;
 				
 				// Is this is the first arc?
@@ -281,8 +341,9 @@ static void init_residual_network(struct pay_parameters *params,
 				
 				prev_arc = arc;
 				
-				// TODO: set costs and capacity
-				// use (u,half)
+				network->cap[arc] = 0;
+				params->arc_prob_cost[arc] = -prob_cost[k];
+				params->fee_cost[arc] = -compute_fee_cost(params,c,!half);
 			}
 		}
 	}
@@ -359,7 +420,7 @@ static s64 get_augmenting_flow(const struct pay_parameters *params,
 		
 		// we are traversing in the opposite direction to the flow,
 		// hence the next node is at the head of the `dual` arc.
-		cur = arc_destination(params,dual);
+		cur = arc_head(params,dual);
 	}
 	
 	ASSERT(flow<INFINITE && flow>0);
@@ -387,7 +448,7 @@ static void augment_flow(const struct pay_parameters *params,
 		
 		// we are traversing in the opposite direction to the flow,
 		// hence the next node is at the head of the `dual` arc.
-		cur = arc_destination(params,dual);
+		cur = arc_head(params,dual);
 	}
 }
 
@@ -439,6 +500,92 @@ static int find_feasible_flow(const struct pay_parameters *params,
 	return status;
 }
 
+/* TODO(eduardo): How to combine probability cost and fee cost?
+ * This is tricky, because we say that a fee cost is high when the ratio of fee
+ * and actual payment is high, typically 1000ppm or more. 
+ * On the other hand a probability cost is high if the probability of success is
+ * very low; since cost = - log prob, we have
+ * 	prob | cost
+ * 	-----------
+ * 	0.01 | 4.6
+ * 	0.02 | 3.9
+ * 	0.05 | 3.0
+ * 	0.10 | 2.3
+ * 	0.20 | 1.6
+ * 	0.50 | 0.69
+ * 	0.80 | 0.22
+ * 	0.90 | 0.10
+ * 	0.95 | 0.05
+ * 	0.98 | 0.02
+ * 	0.99 | 0.01
+ * 	
+ * $ cost \approx 1-P $ when $ P > 0.9 $.
+ * 
+ * Interesting to see:
+ * How much do we pay for reliability?
+ * Cost_fee(most reliable solution) - Cost_fee(cheapest solution)
+ * 
+ * Interesting to see:
+ * Is the most reliable path much more reliable than the cheapest?
+ * Prob(reliable)/Prob(cheapest) = Exp(Cost_prob(cheapest)-Cost_prob(reliable))
+ * 
+ * When combining probability cost and fee cost, we need to understand that this
+ * is like comparing apples to oranges. 
+ * Probability cost is, for small values, equal to the probability of failure;
+ * and we say this cost is acceptable if c(x) = 0.01 (1% probability of failure).
+ * On the other hand fee cost is the money we pay for payment delivery and our
+ * acceptance criteria depends on how much we want to send; so for instance a
+ * fee cost is acceptable if c(x) = 100 T (we pay 100 ppm of T), 
+ * where T is the total value we want to pay.
+ * These numbers can be tuned; but the lesson is we evaluate probability cost on
+ * its absolute value and fee cost relative to T. 
+ * 
+ * Notice also that the fee cost per unit flow is an integer number,
+ * representing ppm (parts per million). On the other hand the first linear
+ * arc with non zero prob. cost on a directed channel has a cost per unit flow
+ * of around 1.3/(b-a), depending on the linearization partition (I prefer the
+ * first partition to contain 50% of the (b-a) range, i.e. up to the point where
+ * the probability of forwarding the flow reaches 50%), in essence this prob.
+ * cost per unit of flow is a real number and we want to use algorithms (for
+ * example cost scaling) that assume that cost is integer. 
+ * 
+ * How to solve both problems? 
+ * Well, we know that we must combine both prob. cost and fee cost linearly and
+ * we like the fact that fee cost is an integer. We can multiply the prob. cost
+ * times a factor such that the prob. cost becomes becomes equivalent to the fee
+ * cost, and approximate it to the nearest integer number in the process.
+ * For instance, define a new prob. cost $ c_prob(x) = - 10^4 T log(P(x))$,
+ * then when $1-P(x) \approx 1%$, i.e. the probability of failure is around 1%
+ * is perceived as if we pay 100 ppm of the total payment T. 
+ * 
+ * Is this enough to make integer prob. cost per unit flow?
+ * Let's see: 
+ * 	-> consider an arc with $(b-a) >> 10^4 T$, recall for the first
+ * 	partition $ c_prob(x) = x 1.3/(b-a) 10^4 T $, hence this arc has cost
+ * 	per unit flow 0. Which is reasonable because T is very small and can be
+ * 	sent through this arc without any issues.
+ * 	
+ * 	-> if $(b-a) \approx 10^4 T$ we obtain $c_prob(x) = x$ which is
+ * 	equivalent to say we just pay 1 ppm for flows on this arc, which is non
+ * 	zero but very small, and it is reasonable because $(b-a)$ is $10^4$
+ * 	times bigger than T.
+ * 	
+ * 	-> if $(b-a)/2 \approx T$ then we start to enter a danger zone because
+ * 	it is very likely that T cannot go through this arc with capacity $(b-a)/2$,
+ * 	non-surprisingly the monetary cost associated to this case is
+ * 	$c_prob(x) \approx 5000 x $, which is like 5000 ppm.
+ * 	
+ * 	-> for $(b-a)/2 < T$ we are paying an ever increasing price in ppm of T
+ * 	per unit flow sent through this arc. The MCF algorithm will try keep
+ * 	this fake monetary cost as low as possible.
+ * 
+ * Summary: we combine use as prob. cost the function $c_prob(x) = -10^4 T log(P(x))$,
+ * and in this scheme we can approximate to integer numbers the cost per unit
+ * flow, and 1% prob. of failure is equivalent to pay 100 ppm of the total
+ * payment T. Then we can combine the fee cost $c_fee(x)$ and $c_prob(x)$ with
+ * a factor mu ~ [0,1]. Instead of hard-coding the 10^4 factor, we use the
+ * variable COST_FACTOR.
+ * */
 
 struct flow **optimal_payment_flow(
                       const tal_t *ctx,
