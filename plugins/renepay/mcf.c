@@ -1,10 +1,14 @@
 #include "config.h"
+#include <ccan/lqueue/lqueue.h>
 #include <plugins/renepay/mcf.h>
 #include <plugins/renepay/flow.h>
 #include <math.h>
 
 #define PARTS_BITS 2
 #define CHANNEL_PARTS (1 << PARTS_BITS)
+
+// These are the probability intervals we use to decompose a channel into linear
+// cost function arcs.
 static const double CHANNEL_PIVOTS[]={0,0.5,0.8,0.95};
 
 // how many bits for linearization parts plus 1 bit for the direction of the
@@ -15,6 +19,12 @@ static const s64 INFINITE = 9e18;
 static const u32 INVALID_INDEX=0xffffffff;
 static const s64 COST_FACTOR=10;
 static const s64 MU_MAX = 128;
+
+struct queue_data
+{
+	u32 idx;
+	struct lqueue_link ql;
+};
 			
 /* Let's try this encoding of arcs:
  * Each channel `c` has two possible directions identified by a bit 
@@ -100,8 +110,8 @@ struct pay_parameters {
 	// notice that a tail node is not needed, 
 	// because the tail of arc is the head of dual(arc)
 	
-	// probability cost associated to an arc
-	s64 *arc_prob_cost;
+	// probability and fee cost associated to an arc
+	s64 *arc_prob_cost, *arc_fee_cost;
 	
 	u32 *arc_adjacency_next_arc;
 	u32 *node_adjacency_first_arc;	
@@ -220,6 +230,7 @@ static void linearize_channel(
 	}
 }
 
+	
 /* Get the fee cost associated to this directed channel. 
  * Cost is expressed as PPM of the payment. */
 static s64 compute_fee_cost(
@@ -246,9 +257,6 @@ static s64 compute_fee_cost(
 	// In this case having a base fee of 1 is equivalent of having a
 	// proportional fee of 10 ppm.
 	return pfee + bfee * 10;
-	
-	// TODO(eduardo) How to convert the base fee properly into an effective
-	// proportional fee?
 }
 
 static void init_residual_network(struct pay_parameters *params,
@@ -299,10 +307,6 @@ static void init_residual_network(struct pay_parameters *params,
 			                                                node, j, &half);
 			const u32 chan_id = gossmap_chan_idx(params->gossmap, c);
 			
-			// TODO: question here, is the pair `(c,!half)` identified
-			// with the outgoing channel from `node` or the incoming
-			// channel?
-			
 			const struct gossmap_node *next = gossmap_nth_node(params->gossmap,
 									   c,!half);
 			const u32 next_id = gossmap_node_idx(params->gossmap,next);
@@ -315,14 +319,14 @@ static void init_residual_network(struct pay_parameters *params,
 			
 			// split this channel direction to obtain the arcs
 			// that are outgoing to `node`
-			linearize_channel(params,c,!half,capacity,prob_cost);
+			linearize_channel(params,c,half,capacity,prob_cost);
 			
 			// let's subscribe the 4 parts of the channel direction
-			// (c,!half), the dual of these guys will be subscribed
+			// (c,half), the dual of these guys will be subscribed
 			// when the `i` hits the `next` node.
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
-				u32 arc = channel_idx_to_arc(chan_id,!half,k,0);
+				u32 arc = channel_idx_to_arc(chan_id,half,k,0);
 				arc_head_node[arc] = next_id;
 				
 				// Is this is the first arc?
@@ -340,18 +344,18 @@ static void init_residual_network(struct pay_parameters *params,
 				
 				network->cap[arc] = capacity[k];
 				params->arc_prob_cost[arc] = prob_cost[k];
-				params->fee_cost[arc] = compute_fee_cost(params,c,!half);
+				params->arc_fee_cost[arc] = compute_fee_cost(params,c,half);
 			}
 			
 			// split the opposite direction to obtain the dual arcs
 			// that are outgoing to `node`
-			linearize_channel(params,c,half,capacity,prob_cost);
+			linearize_channel(params,c,!half,capacity,prob_cost);
 			
 			// let's subscribe the 4 parts of the channel direction
-			// (c,half) in dual representation
+			// (c,!half) in dual representation
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
-				u32 arc = channel_idx_to_arc(chan_id,half,k,1);
+				u32 arc = channel_idx_to_arc(chan_id,!half,k,1);
 				arc_head_node[arc] = next_id;
 				
 				// Is this is the first arc?
@@ -369,7 +373,7 @@ static void init_residual_network(struct pay_parameters *params,
 				
 				network->cap[arc] = 0;
 				params->arc_prob_cost[arc] = -prob_cost[k];
-				params->fee_cost[arc] = -compute_fee_cost(params,c,!half);
+				params->arc_fee_cost[arc] = -compute_fee_cost(params,c,!half);
 			}
 		}
 	}
@@ -381,26 +385,34 @@ static void init_residual_network(struct pay_parameters *params,
  * traversed. 
  * Returns RENEPAY_ERR_OK if the path exists. */
 static int find_admissible_path(const struct pay_parameters *params,
-			        struct residual_network *network,
+			        const struct residual_network *network,
                                 const u32 source,
 				const u32 target,
 				u32 *prev)
 {
-	int status = RENEPAY_ERR_NOFEASIBLEFLOW;
+	int ret = RENEPAY_ERR_NOFEASIBLEFLOW;
 	
-	// TODO: memset(prev) = INVALID_INDEX
+	for(size_t i=0;i<tal_count(prev);++i)
+		prev[i]=INVALID_INDEX;
 	
 	// The graph is dense, and the farthest node is just a few hops away,
 	// hence let's BFS search.
-	queue Q; // TODO
+	LQUEUE(struct queue_data,ql) myqueue = LQUEUE_INIT;
+	struct queue_data *qdata;
 	
-	// TODO: Q.push(source);
-	while // TODO: Q not empty
+	qdata = tal(tmpctx,struct queue_data);
+	qdata->idx = source;
+	lqueue_enqueue(&myqueue,qdata);
+	
+	while(!lqueue_empty(&myqueue))
 	{
-		// TODO: u32 cur = Q.front(); Q.pop();
+		qdata = lqueue_dequeue(&myqueue);
+		u32 cur = qdata->idx;
+		tal_free(qdata);
+		
 		if(cur==target)
 		{
-			status = RENEPAY_ERR_OK;
+			ret = RENEPAY_ERR_OK;
 			break;
 		}
 		
@@ -419,11 +431,14 @@ static int find_admissible_path(const struct pay_parameters *params,
 				continue;
 			
 			prev[next] = arc;
-			// TODO: Q.push(next);
+			
+			qdata = tal(tmpctx,struct queue_data);
+			qdata->idx = next;
+			lqueue_enqueue(&myqueue,qdata);
 		}
 	}
 	
-	return status;
+	return ret;
 }
 
 /* Get the max amount of flow one can send from source to target along the path
@@ -492,11 +507,10 @@ static int find_feasible_flow(const struct pay_parameters *params,
 			      const u32 target,
 			      s64 amount)
 {
-	int status = RENEPAY_ERR_OK;
+	int ret = RENEPAY_ERR_OK;
 	
 	/* path information 
 	 * prev: is the id of the arc that lead to the node. */
-	// TODO: how do we encode the arc idx?
 	u32 *prev = tal_arr(tmpctx,u32
 		            gossmap_max_node_idx(params->gossmap));
 	
@@ -506,7 +520,7 @@ static int find_feasible_flow(const struct pay_parameters *params,
 		int err = find_admissible_path(params,network,source,target,prev);
 		if(err!=RENEPAY_ERR_OK)
 		{
-			status = RENEPAY_ERR_NOFEASIBLEFLOW;
+			ret = RENEPAY_ERR_NOFEASIBLEFLOW;
 			break;
 		}
 		
@@ -523,10 +537,10 @@ static int find_feasible_flow(const struct pay_parameters *params,
 	
 	tal_free(prev);	
 	
-	return status;
+	return ret;
 }
 
-/* TODO(eduardo): How to combine probability cost and fee cost?
+/* How to combine probability cost and fee cost?
  * This is tricky, because we say that a fee cost is high when the ratio of fee
  * and actual payment is high, typically 1000ppm or more. 
  * On the other hand a probability cost is high if the probability of success is
