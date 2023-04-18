@@ -90,6 +90,7 @@ struct queue_data
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 struct pay_parameters {
+	
 	/* The gossmap we are using */
 	struct gossmap *gossmap;
 	struct gossmap_node *source;
@@ -99,12 +100,13 @@ struct pay_parameters {
 	struct chan_extra_map *chan_extra_map;
 	
 	/* Optional bitarray of disabled chans. */
-	// TODO: did you consider these?, hint: disable channels by ignoring
+	// TODO(eduardo): did you consider these?, hint: disable channels by ignoring
 	// them when constructing the adjacency list of nodes in
 	// `init_residual_network`.
 	const bitmap *disabled;
 	
-	struct amount_msat total_payment;
+	// how much we pay
+	struct amount_msat amount;
 	
 	u32 *arc_head_node; 
 	// notice that a tail node is not needed, 
@@ -134,6 +136,17 @@ static inline u32 arc_dual(const struct pay_parameters * params UNUSED,
                            const u32 arc)
 {
 	return arc ^ 1;
+}
+
+/* Helper function. 
+ * Given an arc of the network (not residual) give me the flow. */
+static inline s64 get_arc_flow(
+			const struct pay_parameters * params,
+			const struct residual_network *network,
+			const u32 arc)
+{
+	ASSERT(arc & 1 == 0); // arc is not a dual arc
+	return network->cap[ arc_dual(params,arc) ];
 }
 
 /* Helper function. 
@@ -204,6 +217,17 @@ static inline u32 channel_idx_to_arc(const u32 chan_idx,
 	return (chan_idx << ARC_ADDITIONAL_BITS)|(half<<(1+PARTS_BITS))|(part<<1)|(dual);
 }
 
+/* Helper function.
+ * Evaluate Pickhardt's probability cost function. */
+static inline double pickhardt_probability_cost(
+	double lim_low, double lim_high, double flow)
+{
+	if(flow<=lim_low)
+		return 0.;
+	ASSSERT(flow<lim_high);
+	return -log(1.-(flow-lim_low)/(lim_high-lim_low));
+}
+
 /* Split a directed channel into parts with linear cost function. */
 static void linearize_channel(
 		const struct pay_parameters *params,
@@ -226,7 +250,7 @@ static void linearize_channel(
 	for(size_t i=1;i<CHANNEL_PARTS;++i)
 	{
 		capacity[i] = params->cap_fraction[i]*(b-a);
-		cost[i] = params->cost_fraction[i]*COST_FACTOR*params->total_payment.millisatoshis;
+		cost[i] = params->cost_fraction[i]*COST_FACTOR*params->amount.millisatoshis;
 	}
 }
 
@@ -281,6 +305,10 @@ static void init_residual_network(struct pay_parameters *params,
 	params->arc_prob_cost = tal_arr(params,s64,max_num_arcs);
 	for(size_t i=0;i<tal_count(params->arc_prob_cost);++i)
 		params->arc_prob_cost[i]=INFINITE;
+	
+	params->arc_fee_cost = tal_arr(params,s64,max_num_arcs);
+	for(size_t i=0;i<tal_count(params->arc_fee_cost);++i)
+		params->arc_fee_cost[i]=INFINITE;
 		
 	params->arc_adjacency_next_arc = tal_arr(params,u32,max_num_arcs);
 	for(size_t i=0;i<tal_count(params->arc_adjacency_next_arc);++i)
@@ -539,6 +567,77 @@ static int find_feasible_flow(const struct pay_parameters *params,
 	
 	return ret;
 }
+	
+/* Starting from a feasible flow (satisfies the balance and capacity
+ * constraints), find a solution that minimizes the network->cost function. 
+ * 
+ * Cycle cancelling? */
+static void optimize_mcf(const struct pay_parameters *params,
+			 struct residual_network *network)
+{
+	// TODO
+}
+	
+/* Given a flow in the residual network, compute the probability and fee cost
+ * ppm. 
+ * Instead of using the cost function, which contains many approximations we
+ * will use a direct approach to compute in O(n+m) the fees and prob. */
+static void estimate_costs(const struct pay_parameters *params,
+                           const struct residual_network *network,
+			   double *prob_ptr,
+			   double *fee_ppm_ptr)
+{
+	double fee_microsats = 0;
+	double prob_cost = 0;
+	
+	struct gossmap_node *node = gossmap_first_node(params->gossmap);
+	const size_t num_nodes = gossmap_num_nodes(params->gossmap);
+	for(size_t i=0; i<num_nodes; ++i, node = gossmap_next_node(params->gossmap,node))
+	{
+		for(size_t j=0;j<node->num_chans;++j)
+		{
+			int dir;
+			const struct gossmap_chan *c = gossmap_nth_chan(params->gossmap,
+			                                                node, j, &dir);
+			const u32 chan_idx = gossmap_chan_idx(params->gossmap, c);
+			
+			// in sats
+			s64 chan_flow=0;
+			
+			for(size_t k=0;k<CHANNEL_PARTS;++k)
+			{
+				const u32 arc = channel_idx_to_arc(chan_idx,dir,k,0);
+				chan_flow += get_arc_flow(params,network,arc);	
+			}
+			
+			fee_microsats += chan_flow * c->half[dir].proportional_fee 
+			                  + c->half[dir].base_fee*1e3; 
+			
+			struct chan_extra_half *extra_half 
+				= get_chan_extra_half_by_chan(
+						params->gossmap,
+						params->chan_extra_map
+						c,
+						dir);  
+			
+			prob_cost += pickhardt_probability_cost(
+				extra_half->known_min.millisatoshis*1e3,
+				extra_half->known_max.millisatoshis*1e3,
+				chan_flow);
+		}
+	}
+	*prob_str = exp(-prob_cost);
+	*fee_ppm_str = fee_microsats * 1e3 / params->amount.millisatoshis;
+}
+		
+/* Given a flow in the residual network, build a set of payment flows in the
+ * gossmap that corresponds to this flow. */		
+static struct flow** get_flow_paths(const struct pay_parameters *params,
+				    const struct residual_network *network,
+				    const tal_t *ctx)
+{
+	// TODO
+}
 
 /* How to combine probability cost and fee cost?
  * This is tricky, because we say that a fee cost is high when the ratio of fee
@@ -636,9 +735,11 @@ struct flow **optimal_payment_flow(
 		      const bitmap *disabled,
 		      struct amount_msat amount,
 		      double max_fee_ppm,
+		      double min_probability,
 		      double delay_feefactor,
 		      int *errorcode)
 {
+	// TODO(eduardo) on which ctx should I allocate the MCF data?
 	struct pay_parameters *params = tal(tmpctx,struct pay_parameters);	
 	
 	params->gossmap = gossmap;
@@ -646,7 +747,7 @@ struct flow **optimal_payment_flow(
 	params->target = target;
 	params->chan_extra_map = chan_extra_map;
 	params->disabled = disabled;
-	params->total_payment = amount;
+	params->amount = amount;
 	
 	params->cap_fraction[0]=0;
 	params->cost_fraction[0]=0;
@@ -658,10 +759,7 @@ struct flow **optimal_payment_flow(
 			/params->cap_fraction[i];
 	}
 	
-	// cap_fraction[i] = pivot[i]-pivot[i-1]
-	// cost_fraction[i] = log((1-pivot[i-1])/(1-pivot[i]))/(pivot[i]-pivot[i-1])
-	
-	// TODO: handle max_fee_ppm, delay_feefactor and basefee_penalty
+	// TODO(eduardo): handle max_fee_ppm, delay_feefactor and basefee_penalty
 	// params->max_fee_ppm = max_fee_ppm;
 	// params->delay_feefactor = delay_feefactor;
 	// params->basefee_penalty = 
@@ -670,40 +768,81 @@ struct flow **optimal_payment_flow(
 	struct residual_network *network = tal(tmpctx,struct residual_network);
 	init_residual_network(params,network);
 	
-	const u32 target_id = get_node_id(params,target);
-	const u32 source_id = get_node_id(params,source);
+	const u32 target_idx = gossmap_node_idx(params->gossmap,target);
+	const u32 source_idx = gossmap_node_idx(params->gossmap,source);
 	
-	// TODO
-	// 
-	// -> network_flow = compute any feasible flow
-	// -> if network_flow cannot be computed return an error code: 
-	// 	No feasible flow
-	// 	return NULL
-	// 
-	// range for mu: mu_left = 0, mu_right=MU_MAX
-	// -> loop a binary seach for mu
-	// 	-> mu = ( mu_left + mu_right )/ 2
-	// 	-> set c(x) = (MU_MAX-1-mu)*c_prob(x) + mu*c_fee(x)
-	// 	-> network_flow = refine network_flow to minimize costs
-	// 	-> if fee ratio > max_fee_ppm:
-	// 		mu_left = mu + 1
-	// 	   else if prob < min_prob:
-	// 	   	mu_right = mu
-	// 	   else:
-	// 	   	a good flow was found, break
-	// 	-> if mu_left >= mu_right:
-	// 		cannot find a cheap and reliable route
-	// 		flow not found
-	// 		break
-	// 
-	// // if flow not found fallback to c_prob or c_fee?
-	// 		
-	// -> flow = get flow paths from network_flow
+	int err = find_feasible_flow(params,network,source_idx,target_idx,
+	                             params->amount->millisatoshis/1000);
+	
+	if(err!=RENEPAY_ERR_OK)
+	{
+		// there is no flow that satisfy the constraints, we stop here
+		goto end;
+	}
+	
+	const size_t max_num_arcs = tal_count(params->arc_prob_cost);
+	ASSERT(max_num_arcs==tal_count(params->arc_prob_cost));
+	ASSERT(max_num_arcs==tal_count(params->arc_fee_cost));
+	ASSERT(max_num_arcs==tal_count(network->cap));
+	ASSERT(max_num_arcs==tal_count(network->cost));
+	
+	// binary search for a value of `mu` that fits our fee and prob.
+	// constraints.
+	bool flow_found = false;
+	s64 mu_left = 0, mu_right = MU_MAX;
+	while(mu_left<mu_right)
+	{
+		s64 mu = (mu_left + mu_right)/2;
+		
+		for(u32 arc=0;arc<max_num_arcs;++arc)
+		{
+			const s64 pcost = params->arc_prob_cost[arc],
+			          fcost = params->arc_fee_cost[arc];
+				  
+			const s64 combined = pcost==INFINITE || fcost==INFINITE ? INFINITE :
+			                     mu*fcost + (MU_MAX-1-mu)*pcost;
+				       
+			network->cost[arc]
+				= mu==0 ? pcost : 
+				          (mu==(MU_MAX-1) ? fcost : combined);
+		}
+		
+		optimize_mcf(params,network);
+		
+		double prob_success,fee_ppm;
+		estimate_costs(params,network,&prob,&fee_ppm);
+		
+		if(fee_ppm>max_fee_ppm)
+		{
+			// too expensive
+			mu_left = mu+1;
+		}else if(prob<min_probability)
+		{
+			// too unlikely
+			mu_right = mu;
+		}else
+		{
+			// a good compromise
+			flow_found=true;
+			break;
+		}
+	}
+	
+	end:
+	
+	struct flow **flow_paths = NULL;
+
+	if(flow_found)
+	{
+		flow_paths = get_flow_paths(params,network,ctx);
+	}else
+	{
+	// TODO(eduardo) fallback to c_prob or c_fee?
+	}
 	
 	tal_free(network);
 	tal_free(params);
 	
-	// TODO
-	// return flow
+	return flow_paths;
 }
 
