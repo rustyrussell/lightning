@@ -1,8 +1,11 @@
 #include "config.h"
 #include <plugins/renepay/mcf.h>
+#include <plugins/renepay/flow.h>
+#include <math.h>
 
-static const size_t PARTS_BITS = 2;
-static const size_t CHANNEL_PARTS = 1 << PARTS_BITS;
+#define PARTS_BITS 2
+#define CHANNEL_PARTS (1 << PARTS_BITS)
+static const double CHANNEL_PIVOTS[]={0,0.5,0.8,0.95};
 
 // how many bits for linearization parts plus 1 bit for the direction of the
 // channel plus 1 bit for the dual representation.
@@ -10,7 +13,8 @@ static const size_t ARC_ADDITIONAL_BITS = PARTS_BITS + 2;
 
 static const s64 INFINITE = 9e18;
 static const u32 INVALID_INDEX=0xffffffff;
-static const s64 COST_FACTOR=10000;
+static const s64 COST_FACTOR=10;
+static const s64 MU_MAX = 128;
 			
 /* Let's try this encoding of arcs:
  * Each channel `c` has two possible directions identified by a bit 
@@ -90,6 +94,7 @@ struct pay_parameters {
 	// `init_residual_network`.
 	const bitmap *disabled;
 	
+	struct amount_msat total_payment;
 	
 	u32 *arc_head_node; 
 	// notice that a tail node is not needed, 
@@ -100,6 +105,10 @@ struct pay_parameters {
 	
 	u32 *arc_adjacency_next_arc;
 	u32 *node_adjacency_first_arc;	
+	
+	// channel linearization parameters
+	double cap_fraction[CHANNEL_PARTS], 
+	       cost_fraction[CHANNEL_PARTS];
 };
 
 struct residual_network {
@@ -186,14 +195,29 @@ static inline u32 channel_idx_to_arc(const u32 chan_idx,
 }
 
 /* Split a directed channel into parts with linear cost function. */
-static int linearize_channel(
+static void linearize_channel(
 		const struct pay_parameters *params,
 		const struct gossmap_chan *c,
 		const int dir,
 		s64 *capacity,
 		s64 *cost)
 {
-	// TODO
+	struct chan_extra_half *extra_half = get_chan_extra_half_by_chan(
+							params->gossmap,
+							params->chan_extra_map,
+							c,
+							dir);
+	
+	s64 a = extra_half->known_min.millisatoshis/1000,
+	    b = extra_half->known_max.millisatoshis/1000;
+	
+	capacity[0]=a;
+	cost[0]=0;
+	for(size_t i=1;i<CHANNEL_PARTS;++i)
+	{
+		capacity[i] = params->cap_fraction[i]*(b-a);
+		cost[i] = params->cost_fraction[i]*COST_FACTOR*params->total_payment.millisatoshis;
+	}
 }
 
 /* Get the fee cost associated to this directed channel. 
@@ -257,6 +281,8 @@ static void init_residual_network(struct pay_parameters *params,
 	params->node_adjacency_first_arc = tal_arr(params,u32,max_num_nodes);
 	for(size_t i=0;i<tal_count(params->node_adjacency_first_arc);++i)
 		params->node_adjacency_first_arc[i]=INVALID_INDEX;
+	
+	s64 capacity[CHANNEL_PARTS],prob_cost[CHANNEL_PARTS];
 	
 	struct gossmap_node *node = gossmap_first_node(params->gossmap);
 	const size_t num_nodes = gossmap_num_nodes(params->gossmap);
@@ -606,6 +632,20 @@ struct flow **optimal_payment_flow(
 	params->target = target;
 	params->chan_extra_map = chan_extra_map;
 	params->disabled = disabled;
+	params->total_payment = amount;
+	
+	params->cap_fraction[0]=0;
+	params->cost_fraction[0]=0;
+	for(size_t i =0;i<CHANNEL_PARTS;++i)
+	{
+		params->cap_fraction[i]=CHANNEL_PIVOTS[i]-CHANNEL_PIVOTS[i-1];
+		params->cost_fraction[i]=
+			log((1-CHANNEL_PIVOTS[i-1])/(1-CHANNEL_PIVOTS[i]))
+			/params->cap_fraction[i];
+	}
+	
+	// cap_fraction[i] = pivot[i]-pivot[i-1]
+	// cost_fraction[i] = log((1-pivot[i-1])/(1-pivot[i]))/(pivot[i]-pivot[i-1])
 	
 	// TODO: handle max_fee_ppm, delay_feefactor and basefee_penalty
 	// params->max_fee_ppm = max_fee_ppm;
@@ -626,14 +666,23 @@ struct flow **optimal_payment_flow(
 	// 	No feasible flow
 	// 	return NULL
 	// 
-	// -> select a default value for mu
-	// -> loop
-	// 	-> set the cost as a combination of prob. cost and fee cost
+	// range for mu: mu_left = 0, mu_right=MU_MAX
+	// -> loop a binary seach for mu
+	// 	-> mu = ( mu_left + mu_right )/ 2
+	// 	-> set c(x) = (MU_MAX-1-mu)*c_prob(x) + mu*c_fee(x)
 	// 	-> network_flow = refine network_flow to minimize costs
-	// 	-> if fee ratio < max_fee_ppm break, else increase mu
-	// 	-> if mu is beyond the limits then return an error code: 
-	// 		cannot find a cheap route
+	// 	-> if fee ratio > max_fee_ppm:
+	// 		mu_left = mu + 1
+	// 	   else if prob < min_prob:
+	// 	   	mu_right = mu
+	// 	   else:
+	// 	   	a good flow was found, break
+	// 	-> if mu_left >= mu_right:
+	// 		cannot find a cheap and reliable route
+	// 		flow not found
 	// 		break
+	// 
+	// // if flow not found fallback to c_prob or c_fee?
 	// 		
 	// -> flow = get flow paths from network_flow
 	
