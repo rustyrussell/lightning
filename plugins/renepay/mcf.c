@@ -137,6 +137,13 @@ static inline u32 arc_dual(const struct pay_parameters * params UNUSED,
 {
 	return arc ^ 1;
 }
+/* Helper function. */
+static inline bool arc_is_dual(
+		const struct pay_parameters *params UNUSED,
+		const u32 arc)
+{
+	return (arc & 1) == 1;
+}
 
 /* Helper function. 
  * Given an arc of the network (not residual) give me the flow. */
@@ -610,6 +617,9 @@ static void estimate_costs(const struct pay_parameters *params,
 				chan_flow += get_arc_flow(params,network,arc);	
 			}
 			
+			// TODO(eduardo): this is wrong, because the base fee is
+			// invoked for each HTLC, we may use a single payment
+			// channel in multiple payment flows.
 			fee_microsats += chan_flow * c->half[dir].proportional_fee 
 			                  + c->half[dir].base_fee*1e3; 
 			
@@ -629,14 +639,171 @@ static void estimate_costs(const struct pay_parameters *params,
 	*prob_str = exp(-prob_cost);
 	*fee_ppm_str = fee_microsats * 1e3 / params->amount.millisatoshis;
 }
-		
+
+// flow on directed channels
+struct chan_flow
+{
+	s64 half[2];
+};
+
+struct list_data
+{
+	struct flow_path *flow_path;
+	struct list_node list;
+};
+
 /* Given a flow in the residual network, build a set of payment flows in the
  * gossmap that corresponds to this flow. */		
-static struct flow** get_flow_paths(const struct pay_parameters *params,
+static struct flow_path **
+	get_flow_paths(const struct pay_parameters *params,
 				    const struct residual_network *network,
 				    const tal_t *ctx)
 {
-	// TODO
+	tal_t *this_ctx = tal(tmpctx,tal_t);
+	
+	const size_t max_num_chans = gossmap_max_chan_idx(params->gossmap);
+	struct chan_flow *chan_flow = tal_arr(this_ctx,struct chan_flow,max_num_chans);
+	
+	for(size_t i=0;i<max_num_chans;++i)
+		chan_flow[i].half[0]=chan_flow[i].half[1]=0;
+	
+	const size_t max_num_nodes = gossmap_max_node_idx(params->gossmap);
+	s64 *balance = tal_arr(this_ctx,s64,max_num_nodes);
+	struct gossmap_chan **prev_chan = tal_arr(this_ctx,struct gossmap_chan*,max_num_nodes);
+	int *prev_dir = tal_arr(this_ctx,int,max_num_nodes);
+	u32 *prev_idx = tal_arr(this_ctx,u32,max_num_nodes);
+	
+	for(size_t i=0;i<max_num_nodes;++i)
+	{
+		balance[i]=0;
+	}
+	
+	// Convert the arc based residual network flow into a flow in the
+	// directed channel network.
+	// Compute balance on the nodes.
+	for(u32 n = 0;n<max_num_nodes;++n)
+	{
+		for(u32 arc = node_adjacency_begin(params,cur);
+		        arc!= node_adjacency_end(params,cur);
+			arc = node_adjacency_next(params,cur,arc))
+		{
+			if(arc_is_dual(arc))
+				continue;
+			u32 m = arc_head(params,arc);
+			s64 flow = get_arc_flow(params,network,arc);
+			
+			balance[n] -= flow;
+			balance[m] += flow;
+			
+			u32 chan_idx;
+			int dir,part,dual;
+			chan_idx = arc_to_channel_idx(arc,dir,part,dual);
+			
+			chan_flow[chan_idx].half[dir] +=flow;
+		}
+			
+	}
+	
+	
+	size_t num_paths=0;
+	tal_t *list_ctx = tal(this_ctx,tal_t);
+	LIST_HEAD(path_list);
+	struct list_data *ld;
+	
+	// Select all nodes with negative balance and find a flow that reaches a
+	// positive balance node.
+	for(u32 node_idx=0;node_idx<max_num_nodes;++node_idx)
+	{
+		// this node has negative balance, flows leaves from here
+		while(balance[node_idx]<0)
+		{	
+			s64 delta=-balance[node_idx];
+			u32 final_idx;
+			
+			int length = 0;
+			prev_chan[node_idx]=NULL;
+			
+			u32 final_idx = node_idx;
+			
+			/* TODO(eduardo)
+			 * This is guaranteed to halt if there are no directed flow cycles. 
+			 * There souldn't be any. In fact if cost is strickly
+			 * positive, then flow cycles do not exist at all in the
+			 * MCF solution. But if cost is allowed to be zero for
+			 * some arcs, then we might have flow cyles in the final
+			 * solution. We must somehow ensure that the MCF
+			 * algorithm does not come up with spurious flow cycles. */
+			while(balance[final_idx]<=0)
+			{
+				const struct gossmap_node *cur
+					= gossmap_node_byidx(params->gossmap,final_idx);
+				
+				for(size_t i=0;i<cur->num_chans;++i)
+				{
+					int dir;
+					const struct gossmap_chan *c 
+						= gossmap_nth_chan(params->gossmap,
+						                   cur,i,&dir);
+					
+					const u32 c_idx = gossmap_chan_idx(params->gossmap,c);
+					
+					if(chan_flow[c_idx].half[dir]>0)
+					{
+						// follow the flow
+						const struct gossmap_node *next
+							= gossmap_nth_node(params->gossmap,
+									   c,!dir);
+						u32 next_idx = gossmap_node_idx(params->gossmap,next);
+						
+						delta=MIN(delta,chan_flow[c_idx].half[dir]);
+						
+						prev_dir[next_idx] = dir;
+						prev_chan[next_idx] = c;
+						prev_idx[next_idx] = final_idx;
+						length ++;
+						final_idx = next_idx;
+						break;
+					}
+				}
+			}
+			delta = MIN(delta,balance[final_idx]);
+			
+			struct flow_path *fp = tal(ctx,struct flow_path);
+			fp->path = tal_arr(fp,struct gossmap_chan*,length);
+			fp->dirs = tal_arr(fp,int,length);
+			fp->amount.satoshis = delta;
+			
+			balance[node_idx] += delta;
+			balance[final_idx]-= delta;
+			
+			// walk backwards, substract flow
+			for(u32 cur_idx = final_idx;cur_idx!=node_idx;cur_idx=prev_idx[node_idx])
+			{
+				length--;
+				fp->path[length]=prev_chan[cur_idx];
+				fp->dirs[length]=prev_dir[cur_idx];
+				
+				chan_flow[prev_chan[cur_idx]].half[prev_dir[cur_idx]]-=delta;
+			}
+			
+			// add fp to list
+			ld = tal(list_ctx,struct list_data);
+			ld->flow_path = fp;
+			list_add(&path_list,&ld->list);
+			num_paths++;
+		}
+	}
+	
+	// copy the list into the array we are going to return	
+	struct flow_path **flows = tal_arr(ctx,struct flow_path*,num_paths);
+	size_t pos=0;
+	list_for_each(&path_list,ld,list)
+	{
+		flows[pos++] = ld->flow_path;
+	}
+	
+	tal_free(this_ctx);
+	return flows;
 }
 
 /* How to combine probability cost and fee cost?
@@ -726,7 +893,13 @@ static struct flow** get_flow_paths(const struct pay_parameters *params,
  * variable COST_FACTOR.
  * */
 
-struct flow **optimal_payment_flow(
+
+/* eduardo: I think it should be clear that this module deals with linear
+ * flows, ie. base fees are not considered. Hence a flow along a path is
+ * described with a sequence of directed channels and one amount. 
+ * In the `pay_flow` module there are dedicated routes to compute the actual
+ * amount to be forward on each hop. */
+int optimal_payment_flow(
                       const tal_t *ctx,
 		      struct gossmap *gossmap,
 		      const struct gossmap_node *source,
@@ -737,10 +910,12 @@ struct flow **optimal_payment_flow(
 		      double max_fee_ppm,
 		      double min_probability,
 		      double delay_feefactor,
-		      int *errorcode)
+		      struct flow_paths **flow_paths)
 {
 	// TODO(eduardo) on which ctx should I allocate the MCF data?
 	struct pay_parameters *params = tal(tmpctx,struct pay_parameters);	
+	
+	int ret;
 	
 	params->gossmap = gossmap;
 	params->source = source;
@@ -777,6 +952,7 @@ struct flow **optimal_payment_flow(
 	if(err!=RENEPAY_ERR_OK)
 	{
 		// there is no flow that satisfy the constraints, we stop here
+		ret = RENEPAY_ERR_NOFEASIBLEFLOW;
 		goto end;
 	}
 	
@@ -790,6 +966,7 @@ struct flow **optimal_payment_flow(
 	// constraints.
 	bool flow_found = false;
 	s64 mu_left = 0, mu_right = MU_MAX;
+	ret=RENEPAY_ERR_NOCHEAPFLOW;
 	while(mu_left<mu_right)
 	{
 		s64 mu = (mu_left + mu_right)/2;
@@ -823,18 +1000,18 @@ struct flow **optimal_payment_flow(
 		}else
 		{
 			// a good compromise
-			flow_found=true;
+			ret=RENEPAY_ERR_OK;
 			break;
 		}
 	}
 	
 	end:
 	
-	struct flow **flow_paths = NULL;
+	*flow_paths = NULL;
 
-	if(flow_found)
+	if(ret==RENEPAY_ERR_OK)
 	{
-		flow_paths = get_flow_paths(params,network,ctx);
+		*flow_paths = get_flow_paths(params,network,ctx);
 	}else
 	{
 	// TODO(eduardo) fallback to c_prob or c_fee?
@@ -843,6 +1020,6 @@ struct flow **optimal_payment_flow(
 	tal_free(network);
 	tal_free(params);
 	
-	return flow_paths;
+	return ret;
 }
 
