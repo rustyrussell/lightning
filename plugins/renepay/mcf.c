@@ -127,6 +127,7 @@ struct residual_network {
 	/* residual capacity on arcs */
 	s64 *cap; 
 	s64 *cost;
+    s64 *potential;
 };
 				
 
@@ -305,6 +306,10 @@ static void init_residual_network(struct pay_parameters *params,
 	for(size_t i=0;i<tal_count(network->cost);++i)
 		network->cost[i]=INFINITE;
 	
+    network->potential = tal_arr(network,s64,max_num_nodes);
+    for(size_t i=0;i<tal_count(network->potential);++i)
+        network->potential[i]=0;
+    
 	params->arc_head_node = tal_arr(params,u32,max_num_arcs);
 	for(size_t i=0;i<tal_count(params->arc_head_node);++i)
 		params->arc_head_node[i]=INVALID_INDEX;
@@ -575,14 +580,155 @@ static int find_feasible_flow(const struct pay_parameters *params,
 	return ret;
 }
 	
+/* Similar to `find_admissible_path` but use Dijkstra to optimize the distance
+ * label. Stops when the target is hit. */
+static int  find_optimal_path(
+	const struct pay_parameters *params,
+	const struct residual_network* network,
+	const u32 source,
+	const u32 target,
+	s32 *prev,
+	s64 *distance)
+{
+	tal_t *this_ctx = tal(tmpctx,tal_t);
+	int ret = RENEPAY_ERR_NOFEASIBLEFLOW;
+	
+	char *visited = tal_array(this_ctx,char,tal_count(prev));
+	
+	for(size_t i=0;i<tal_count(prev);++i)
+	{	
+		prev[i]=INVALID_INDEX;
+		distance[i]=INFINITE;
+		visited[i]=0;
+	}
+	distance[source]=0;
+	
+	// TODO add source to queue
+	while(1)
+	{
+		// TODO: get best node cur from queue 
+		
+		if (visited[cur])
+			continue;
+		
+		visited[cur]=1;
+		
+		if(cur==target)
+		{
+			ret = RENEPAY_ERR_OK;
+			break;
+		}
+		
+		for(u32 arc = node_adjacency_begin(params,cur);
+		        arc!= node_adjacency_end(params,cur);
+			arc = node_adjacency_next(params,cur,arc))
+		{
+			// check if this arc is traversable
+			if(network->cap[arc] <= 0)
+				continue;
+			
+			u32 next = arc_head(params,arc);
+			
+			s64 cij = network->cost[arc] - network->potential[cur]
+			                             + network->potential[next];
+			// Dijkstra only works with non-negative weights
+			ASSERT(cij>=0);
+			if(distance[next]>distance[cur]+cij)
+			{
+				prev[next]=arc;
+				distance[next]=distance[cur]+cij;
+				// TODO: add next to queue
+			}
+		}
+	}
+	tal_free(this_ctx);	
+	return ret;
+}
+    
+/* Set zero flow in the residual network. */
+static void zero_flow(
+	const struct pay_parameters *params,
+	struct residual_network *network)
+{
+	for(u32 node=0;node<tal_count(network->potential);++node)
+	{
+		network->potential[node]=0;
+		for(u32 arc=node_adjacency_begin(params,node);
+			arc!=node_adjacency_end(params,node);
+			arc = node_adjacency_next(params,node,arc))
+		{
+			if(arc_is_dual(params,arc))continue;
+			
+			u32 dual = arc_dual(params,arc);
+			
+			network->cap[arc] += network->cap[dual];
+			network->cap[dual] = 0;
+		}
+	}
+}
+    
 /* Starting from a feasible flow (satisfies the balance and capacity
  * constraints), find a solution that minimizes the network->cost function. 
  * 
- * Cycle cancelling? */
-static void optimize_mcf(const struct pay_parameters *params,
+ * TODO(eduardo) The MCF must be called several times until we get a good
+ * compromise between fees and probabilities. Instead of re-computing the MCF at
+ * each step, we might use the previous flow result, which is not optimal in the
+ * current iteration but I might be not too far from the truth.
+ * It comes to mind to use cycle cancelling. */
+static int optimize_mcf(const struct pay_parameters *params,
 			 struct residual_network *network)
 {
-	// TODO
+	int ret = RENEPAY_ERR_OK;
+	
+	zero_flow(params,network);
+   	s64 amount = params->amount->millisatoshis/1000;
+	u32 source = gossmap_node_idx(params->gossmap,params->source),
+	    target = gossmap_node_idx(params->gossmap,params->target);
+	
+	tal_t *this_ctx = tal(tmpctx,tal_t);
+	
+	u32 *prev = tal_arr(this_ctx,u32,tal_count(network->potential));
+	s64 *distance = tal_arr(this_ctx,s64,tal_count(network->potential));
+	
+	while(amount>0)
+	{
+		int err = find_optimal_path(params,network,source,target,prev,distance);
+		if(err!=RENEPAY_ERR_OK)
+		{
+			// unexpected error
+			ret = RENEPAY_ERR_NOFEASIBLEFLOW;
+			break;
+		}
+		
+		// traverse the path and see how much flow we can send
+		s64 delta = get_augmenting_flow(params,network,source,target,prev);
+		
+		// commit that flow to the path
+		delta = MIN(amount,delta);
+		augment_flow(params,network,source,target,prev,delta);
+		
+		ASSERT(delta>0 && delta<=amount);
+		amount -= delta;
+		
+		// update potentials
+		for(u32 n=0;n<tal_count(network->potential);++n)
+		{
+			// see page 323 of Ahuja-Magnanti-Orlin
+			network->potential[n] -= MIN(distance[target],distance[n]);
+			
+			// Notice:
+			// if node i is permanently labeled we have
+			// 	d_i<=d_t 
+			// which implies
+			// 	MIN(d_i,d_t) = d_i
+			// if node i is temporarily labeled we have
+			// 	d_i>=d_t
+			// which implies
+			// 	MIN(d_i,d_t) = d_t
+		}
+	}
+	tal_free(this_ctx);
+	return ret;
 }
 	
 /* Given a flow in the residual network, compute the probability and fee cost
