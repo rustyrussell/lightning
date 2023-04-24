@@ -5,6 +5,7 @@
 #include <plugins/renepay/heap.h>
 #include <stdint.h>
 #include <math.h>
+#include <assert.h>
 
 #define PARTS_BITS 2
 #define CHANNEL_PARTS (1 << PARTS_BITS)
@@ -135,13 +136,13 @@ struct residual_network {
 
 /* Helper function. 
  * Given an arc idx, return the dual's idx in the residual network. */
-static inline u32 arc_dual(const struct pay_parameters * params UNUSED,
+static u32 arc_dual(const struct pay_parameters * params UNUSED,
                            const u32 arc)
 {
 	return arc ^ 1;
 }
 /* Helper function. */
-static inline bool arc_is_dual(
+static bool arc_is_dual(
 		const struct pay_parameters *params UNUSED,
 		const u32 arc)
 {
@@ -150,25 +151,25 @@ static inline bool arc_is_dual(
 
 /* Helper function. 
  * Given an arc of the network (not residual) give me the flow. */
-static inline s64 get_arc_flow(
+static s64 get_arc_flow(
 			const struct pay_parameters * params,
 			const struct residual_network *network,
 			const u32 arc)
 {
-	ASSERT(arc & 1 == 0); // arc is not a dual arc
+	assert(!arc_is_dual(arc));
 	return network->cap[ arc_dual(params,arc) ];
 }
 
 /* Helper function. 
  * Given an arc idx, return the node from which this arc emanates in the residual network. */
-static inline u32 arc_tail(const struct pay_parameters *params,
+static u32 arc_tail(const struct pay_parameters *params,
                            const u32 arc)
 {
 	return params->arc_head_node[ arc_dual(params,arc) ];
 }
 /* Helper function. 
  * Given an arc idx, return the node that this arc is pointing to in the residual network. */
-static inline u32 arc_head(const struct pay_parameters *params,
+static u32 arc_head(const struct pay_parameters *params,
                            const u32 arc)
 {
 	return params->arc_head_node[arc];
@@ -177,7 +178,7 @@ static inline u32 arc_head(const struct pay_parameters *params,
 /* Helper function. 
  * Given node idx `node`, return the idx of the first arc whose tail is `node`.
  * */
-static inline u32 node_adjacency_begin(const struct pay_parameters *params,
+static u32 node_adjacency_begin(const struct pay_parameters *params,
                                        const u32 node)
 {
 	return params->node_adjacency_first[node];
@@ -185,7 +186,7 @@ static inline u32 node_adjacency_begin(const struct pay_parameters *params,
 
 /* Helper function. 
  * Given node idx `node`, return the idx of one past the last arc whose tail is `node`. */
-static inline u32 node_adjacency_end(const struct pay_parameters *params UNUSED,
+static u32 node_adjacency_end(const struct pay_parameters *params UNUSED,
                                      const u32 node UNUSED)
 {
 	return INVALID_INDEX;
@@ -193,7 +194,7 @@ static inline u32 node_adjacency_end(const struct pay_parameters *params UNUSED,
 
 /* Helper function. 
  * Given node idx `node` and `arc`, returns the idx of the next arc whose tail is `node`. */
-static inline u32 node_adjacency_next(const struct pay_parameters *params,
+static u32 node_adjacency_next(const struct pay_parameters *params,
                                      const u32 node UNUSED,
 				     const u32 arc)
 {
@@ -203,7 +204,7 @@ static inline u32 node_adjacency_next(const struct pay_parameters *params,
 /* Helper function.
  * Given an arc index, we should be able to deduce the channel id, and part that
  * corresponds to this arc. */
-static inline u32 arc_to_channel_idx(const u32 arc,
+static u32 arc_to_channel_idx(const u32 arc,
                               int *half_ptr,
 			      int *part_ptr,
 			      int *dual_ptr)
@@ -216,7 +217,7 @@ static inline u32 arc_to_channel_idx(const u32 arc,
 
 /* Helper function.
  * Given a channel index, we should be able to deduce the arc id. */
-static inline u32 channel_idx_to_arc(const u32 chan_idx,
+static u32 channel_idx_to_arc(const u32 chan_idx,
                               int half,
 			      int part,
 			      int dual)
@@ -229,7 +230,7 @@ static inline u32 channel_idx_to_arc(const u32 chan_idx,
 
 /* Helper function.
  * Evaluate Pickhardt's probability cost function. */
-static inline double pickhardt_probability_cost(
+static double pickhardt_probability_cost(
 	double lim_low, double lim_high, double flow)
 {
 	if(flow<=lim_low)
@@ -353,7 +354,7 @@ static void init_residual_network(struct pay_parameters *params,
 									   c,!half);
 			const u32 next_id = gossmap_node_idx(params->gossmap,next);
 			
-			ASSERT(node_id!=next_id);
+			assert(node_id!=next_id);
 			
 			// `cost` is the word normally used to denote cost per
 			// unit of flow in the context of MCF.
@@ -506,7 +507,7 @@ static s64 get_augmenting_flow(const struct pay_parameters *params,
 		cur = arc_head(params,dual);
 	}
 	
-	ASSERT(flow<INFINITE && flow>0);
+	assert(flow<INFINITE && flow>0);
 	return flow;
 }
 
@@ -526,7 +527,7 @@ static void augment_flow(const struct pay_parameters *params,
 		const u32 dual = arc_dual(params,arc);
 		
 		network->cap[arc] -= flow;
-		ASSERT(network->cap[arc] >=0 );
+		assert(network->cap[arc] >=0 );
 		network->cap[dual] += flow;
 		
 		// we are traversing in the opposite direction to the flow,
@@ -573,7 +574,7 @@ static int find_feasible_flow(const struct pay_parameters *params,
 		delta = MIN(amount,delta);
 		augment_flow(params,network,source,target,prev,delta);
 		
-		ASSERT(delta>0 && delta<=amount);
+		assert(delta>0 && delta<=amount);
 		amount -= delta;
 	}
 	
@@ -638,7 +639,7 @@ static int  find_optimal_path(
 			s64 cij = network->cost[arc] - network->potential[cur]
 			                             + network->potential[next];
 			// Dijkstra only works with non-negative weights
-			ASSERT(cij>=0);
+			assert(cij>=0);
 			
 			if(distance[next]<=distance[cur]+cij)
 				continue;
@@ -715,7 +716,7 @@ static int optimize_mcf(const struct pay_parameters *params,
 		delta = MIN(amount,delta);
 		augment_flow(params,network,source,target,prev,delta);
 		
-		ASSERT(delta>0 && delta<=amount);
+		assert(delta>0 && delta<=amount);
 		amount -= delta;
 		
 		// update potentials
@@ -1111,10 +1112,10 @@ int optimal_payment_flow(
 	}
 	
 	const size_t max_num_arcs = tal_count(params->arc_prob_cost);
-	ASSERT(max_num_arcs==tal_count(params->arc_prob_cost));
-	ASSERT(max_num_arcs==tal_count(params->arc_fee_cost));
-	ASSERT(max_num_arcs==tal_count(network->cap));
-	ASSERT(max_num_arcs==tal_count(network->cost));
+	assert(max_num_arcs==tal_count(params->arc_prob_cost));
+	assert(max_num_arcs==tal_count(params->arc_fee_cost));
+	assert(max_num_arcs==tal_count(network->cap));
+	assert(max_num_arcs==tal_count(network->cost));
 	
 	// binary search for a value of `mu` that fits our fee and prob.
 	// constraints.
