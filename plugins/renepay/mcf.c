@@ -331,9 +331,9 @@ static void init_residual_network(struct pay_parameters *params,
 	
 	s64 capacity[CHANNEL_PARTS],prob_cost[CHANNEL_PARTS];
 	
-	struct gossmap_node *node = gossmap_first_node(params->gossmap);
-	const size_t num_nodes = gossmap_num_nodes(params->gossmap);
-	for(size_t i=0; i<num_nodes; ++i, node = gossmap_next_node(params->gossmap,node))
+	for(struct gossmap_node *node = gossmap_first_node(params->gossmap);
+	    node;
+	    node=gossmap_next_node(params->gossmap,node))
 	{
 		const u32 node_id = gossmap_node_idx(params->gossmap,node);
 		
@@ -350,7 +350,8 @@ static void init_residual_network(struct pay_parameters *params,
 									   c,!half);
 			const u32 next_id = gossmap_node_idx(params->gossmap,next);
 			
-			assert(node_id!=next_id);
+			if(node_id==next_id)
+				continue;
 			
 			// `cost` is the word normally used to denote cost per
 			// unit of flow in the context of MCF.
@@ -483,7 +484,7 @@ static int find_admissible_path(const struct pay_parameters *params,
 /* Get the max amount of flow one can send from source to target along the path
  * encoded in `prev`. */
 static s64 get_augmenting_flow(const struct pay_parameters *params,
-			       struct residual_network *network,
+			       const struct residual_network *network,
 	                       const u32 source,
 			       const u32 target,
 			       const u32 *prev)
@@ -747,9 +748,9 @@ static void estimate_costs(const struct pay_parameters *params,
 	double fee_microsats = 0;
 	double prob_cost = 0;
 	
-	struct gossmap_node *node = gossmap_first_node(params->gossmap);
-	const size_t num_nodes = gossmap_num_nodes(params->gossmap);
-	for(size_t i=0; i<num_nodes; ++i, node = gossmap_next_node(params->gossmap,node))
+	for(struct gossmap_node *node = gossmap_first_node(params->gossmap);
+	    node;
+	    node=gossmap_next_node(params->gossmap,node))
 	{
 		for(size_t j=0;j<node->num_chans;++j)
 		{
@@ -798,16 +799,17 @@ struct chan_flow
 
 struct list_data
 {
-	struct flow_path *flow_path;
 	struct list_node list;
+	struct flow_path *flow_path;
 };
 
 /* Given a flow in the residual network, build a set of payment flows in the
  * gossmap that corresponds to this flow. */		
 static struct flow_path **
-	get_flow_paths(const struct pay_parameters *params,
-				    const struct residual_network *network,
-				    const tal_t *ctx)
+	get_flow_paths(
+		const tal_t *ctx,
+		const struct pay_parameters *params,
+		const struct residual_network *network)
 {
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
@@ -1153,7 +1155,7 @@ int optimal_payment_flow(
 
 	if(ret==RENEPAY_ERR_OK)
 	{
-		*flow_paths = get_flow_paths(params,network,ctx);
+		*flow_paths = get_flow_paths(ctx,params,network);
 	}else
 	{
 	// TODO(eduardo) fallback to c_prob or c_fee?
