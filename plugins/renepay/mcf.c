@@ -89,6 +89,17 @@ struct queue_data
  * 
  * */
 
+typedef union
+{
+	struct{
+		u32 dual: 1;
+		u32 part: PARTS_BITS;
+		u32 chandir: 1;
+		u32 chanidx: (32-1-PARTS_BITS-1);
+	};
+	u32 idx;
+} arc_t;
+
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
@@ -118,8 +129,8 @@ struct pay_parameters {
 	// probability and fee cost associated to an arc
 	s64 *arc_prob_cost, *arc_fee_cost;
 	
-	u32 *arc_adjacency_next_arc;
-	u32 *node_adjacency_first_arc;	
+	arc_t *arc_adjacency_next_arc;
+	arc_t *node_adjacency_first_arc;	
 	
 	// channel linearization parameters
 	double cap_fraction[CHANNEL_PARTS], 
@@ -130,56 +141,53 @@ struct residual_network {
 	/* residual capacity on arcs */
 	s64 *cap; 
 	s64 *cost;
-    s64 *potential;
+	s64 *potential;
 };
 				
 
 /* Helper function. 
  * Given an arc idx, return the dual's idx in the residual network. */
-static u32 arc_dual(const struct pay_parameters * params UNUSED,
-                           const u32 arc)
+static arc_t arc_dual(const arc_t arc)
 {
-	return arc ^ 1;
+	arc.dual ^= 1;
+	return arc;
 }
 /* Helper function. */
-static bool arc_is_dual(
-		const struct pay_parameters *params UNUSED,
-		const u32 arc)
+static bool arc_is_dual(const arc_t arc)
 {
-	return (arc & 1) == 1;
+	return arc.dual == 1;
 }
 
 /* Helper function. 
  * Given an arc of the network (not residual) give me the flow. */
 static s64 get_arc_flow(
-			const struct pay_parameters * params,
 			const struct residual_network *network,
-			const u32 arc)
+			const arc_t arc)
 {
 	assert(!arc_is_dual(arc));
-	return network->cap[ arc_dual(params,arc) ];
+	return network->cap[ arc_dual(arc).idx ];
 }
 
 /* Helper function. 
  * Given an arc idx, return the node from which this arc emanates in the residual network. */
 static u32 arc_tail(const struct pay_parameters *params,
-                           const u32 arc)
+                    const arc_t arc)
 {
-	return params->arc_head_node[ arc_dual(params,arc) ];
+	return params->arc_head_node[ arc_dual(arc).idx ];
 }
 /* Helper function. 
  * Given an arc idx, return the node that this arc is pointing to in the residual network. */
 static u32 arc_head(const struct pay_parameters *params,
-                           const u32 arc)
+                    const arc_t arc)
 {
-	return params->arc_head_node[arc];
+	return params->arc_head_node[arc.idx];
 }
 		
 /* Helper function. 
  * Given node idx `node`, return the idx of the first arc whose tail is `node`.
  * */
 static u32 node_adjacency_begin(const struct pay_parameters *params,
-                                       const u32 node)
+                                const u32 node)
 {
 	return params->node_adjacency_first[node];
 }
@@ -187,7 +195,7 @@ static u32 node_adjacency_begin(const struct pay_parameters *params,
 /* Helper function. 
  * Given node idx `node`, return the idx of one past the last arc whose tail is `node`. */
 static u32 node_adjacency_end(const struct pay_parameters *params UNUSED,
-                                     const u32 node UNUSED)
+                              const u32 node UNUSED)
 {
 	return INVALID_INDEX;
 }
@@ -195,37 +203,26 @@ static u32 node_adjacency_end(const struct pay_parameters *params UNUSED,
 /* Helper function. 
  * Given node idx `node` and `arc`, returns the idx of the next arc whose tail is `node`. */
 static u32 node_adjacency_next(const struct pay_parameters *params,
-                                     const u32 node UNUSED,
-				     const u32 arc)
+                               const u32 node UNUSED,
+			       const arc_t arc)
 {
-	return params->adjacency_next[arc];
-}
-
-/* Helper function.
- * Given an arc index, we should be able to deduce the channel id, and part that
- * corresponds to this arc. */
-static u32 arc_to_channel_idx(const u32 arc,
-                              int *half_ptr,
-			      int *part_ptr,
-			      int *dual_ptr)
-{
-	&half_ptr = (arc >> (1+PARTS_BITS)) & 1;
-	&part_ptr = (arc >> 1) & (CHANNEL_PARTS-1);
-	&dual_ptr = arc & 1;
-	return arc>>ARC_ADDITIONAL_BITS;
+	return params->adjacency_next[arc.idx];
 }
 
 /* Helper function.
  * Given a channel index, we should be able to deduce the arc id. */
-static u32 channel_idx_to_arc(const u32 chan_idx,
-                              int half,
-			      int part,
-			      int dual)
+static arc_t channel_idx_to_arc(
+		const u32 chan_idx,
+                int half,
+		int part,
+		int dual)
 {
-	half &= 1;
-	dual &= 1;
-	part &= (CHANNEL_PARTS-1);
-	return (chan_idx << ARC_ADDITIONAL_BITS)|(half<<(1+PARTS_BITS))|(part<<1)|(dual);
+	arc_t arc;
+	arc.dual=dual;
+	arc.part=part;
+	arc.chandir=half;
+	arc.chanidx = chan_idx;
+	return arc;
 }
 
 /* Helper function.
@@ -321,13 +318,13 @@ static void init_residual_network(struct pay_parameters *params,
 	for(size_t i=0;i<tal_count(params->arc_fee_cost);++i)
 		params->arc_fee_cost[i]=INFINITE;
 		
-	params->arc_adjacency_next_arc = tal_arr(params,u32,max_num_arcs);
+	params->arc_adjacency_next_arc = tal_arr(params,arc_t,max_num_arcs);
 	for(size_t i=0;i<tal_count(params->arc_adjacency_next_arc);++i)
-		params->arc_adjacency_next_arc[i]=INVALID_INDEX;
+		params->arc_adjacency_next_arc[i].idx=INVALID_INDEX;
 	
-	params->node_adjacency_first_arc = tal_arr(params,u32,max_num_nodes);
+	params->node_adjacency_first_arc = tal_arr(params,arc_t,max_num_nodes);
 	for(size_t i=0;i<tal_count(params->node_adjacency_first_arc);++i)
-		params->node_adjacency_first_arc[i]=INVALID_INDEX;
+		params->node_adjacency_first_arc[i].idx=INVALID_INDEX;
 	
 	s64 capacity[CHANNEL_PARTS],prob_cost[CHANNEL_PARTS];
 	
@@ -337,7 +334,7 @@ static void init_residual_network(struct pay_parameters *params,
 	{
 		const u32 node_id = gossmap_node_idx(params->gossmap,node);
 		
-		u32 prev_arc = INVALID_INDEX;
+		arc_t prev_arc = (arc_t){.idx = INVALID_INDEX};
 		
 		for(size_t j=0;j<node->num_chans;++j)
 		{
@@ -366,11 +363,11 @@ static void init_residual_network(struct pay_parameters *params,
 			// when the `i` hits the `next` node.
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
-				u32 arc = channel_idx_to_arc(chan_id,half,k,0);
-				arc_head_node[arc] = next_id;
+				arc_t arc = channel_idx_to_arc(chan_id,half,k,0);
+				arc_head_node[arc.idx] = next_id;
 				
 				// Is this is the first arc?
-				if(prev_arc==INVALID_INDEX)
+				if(prev_arc.idx==INVALID_INDEX)
 				// yes, then set it at the head of the linked list
 				{
 					node_adjacency_first_arc[node_id]=arc;
@@ -382,9 +379,9 @@ static void init_residual_network(struct pay_parameters *params,
 				
 				prev_arc = arc;
 				
-				network->cap[arc] = capacity[k];
-				params->arc_prob_cost[arc] = prob_cost[k];
-				params->arc_fee_cost[arc] = compute_fee_cost(params,c,half);
+				network->cap[arc.idx] = capacity[k];
+				params->arc_prob_cost[arc.idx] = prob_cost[k];
+				params->arc_fee_cost[arc.idx] = compute_fee_cost(params,c,half);
 			}
 			
 			// split the opposite direction to obtain the dual arcs
@@ -395,8 +392,8 @@ static void init_residual_network(struct pay_parameters *params,
 			// (c,!half) in dual representation
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
-				u32 arc = channel_idx_to_arc(chan_id,!half,k,1);
-				arc_head_node[arc] = next_id;
+				arc_t arc = channel_idx_to_arc(chan_id,!half,k,1);
+				arc_head_node[arc.idx] = next_id;
 				
 				// Is this is the first arc?
 				if(prev_arc==INVALID_INDEX)
@@ -406,14 +403,14 @@ static void init_residual_network(struct pay_parameters *params,
 				} else
 				// no, then link it to the previous arc
 				{
-					arc_adjacency_next_arc[prev_arc]=arc;
+					arc_adjacency_next_arc[prev_arc.idx]=arc;
 				}
 				
 				prev_arc = arc;
 				
-				network->cap[arc] = 0;
-				params->arc_prob_cost[arc] = -prob_cost[k];
-				params->arc_fee_cost[arc] = -compute_fee_cost(params,c,!half);
+				network->cap[arc.idx] = 0;
+				params->arc_prob_cost[arc.idx] = -prob_cost[k];
+				params->arc_fee_cost[arc.idx] = -compute_fee_cost(params,c,!half);
 			}
 		}
 	}
@@ -428,12 +425,12 @@ static int find_admissible_path(const struct pay_parameters *params,
 			        const struct residual_network *network,
                                 const u32 source,
 				const u32 target,
-				u32 *prev)
+				arc_t *prev)
 {
 	int ret = RENEPAY_ERR_NOFEASIBLEFLOW;
 	
 	for(size_t i=0;i<tal_count(prev);++i)
-		prev[i]=INVALID_INDEX;
+		prev[i].idx=INVALID_INDEX;
 	
 	// The graph is dense, and the farthest node is just a few hops away,
 	// hence let's BFS search.
@@ -456,12 +453,12 @@ static int find_admissible_path(const struct pay_parameters *params,
 			break;
 		}
 		
-		for(u32 arc = node_adjacency_begin(params,cur);
+		for(arc_t arc = node_adjacency_begin(params,cur);
 		        arc!= node_adjacency_end(params,cur);
 			arc = node_adjacency_next(params,cur,arc))
 		{
 			// check if this arc is traversable
-			if(network->cap[arc] <= 0)
+			if(network->cap[arc.idx] <= 0)
 				continue;
 			
 			u32 next = arc_head(params,arc);
@@ -487,17 +484,17 @@ static s64 get_augmenting_flow(const struct pay_parameters *params,
 			       const struct residual_network *network,
 	                       const u32 source,
 			       const u32 target,
-			       const u32 *prev)
+			       const arc_t *prev)
 {
 	s64 flow = INFINITE;
 	
 	u32 cur = target;
 	while(cur!=source)
 	{
-		const u32 arc = prev[cur];
-		const u32 dual = arc_dual(params,arc);
+		const arc_t arc = prev[cur];
+		const arc_t dual = arc_dual(params,arc);
 		
-		flow = MIN(flow , network->cap[arc]);
+		flow = MIN(flow , network->cap[arc.idx]);
 		
 		// we are traversing in the opposite direction to the flow,
 		// hence the next node is at the head of the `dual` arc.
@@ -513,19 +510,19 @@ static void augment_flow(const struct pay_parameters *params,
 			 struct residual_network *network,
 	                 const u32 source,
 			 const u32 target,
-			 const u32 *prev,
+			 const arc_t *prev,
 			 s64 flow)
 {
 	u32 cur = target;
 	
 	while(cur!=source)
 	{
-		const u32 arc = prev[cur];
-		const u32 dual = arc_dual(params,arc);
+		const arc_t arc = prev[cur];
+		const arc_t dual = arc_dual(params,arc);
 		
-		network->cap[arc] -= flow;
-		assert(network->cap[arc] >=0 );
-		network->cap[dual] += flow;
+		network->cap[arc.idx] -= flow;
+		assert(network->cap[arc.idx] >=0 );
+		network->cap[dual.idx] += flow;
 		
 		// we are traversing in the opposite direction to the flow,
 		// hence the next node is at the head of the `dual` arc.
@@ -551,7 +548,7 @@ static int find_feasible_flow(const struct pay_parameters *params,
 	
 	/* path information 
 	 * prev: is the id of the arc that lead to the node. */
-	u32 *prev = tal_arr(tmpctx,u32
+	arc_t *prev = tal_arr(tmpctx,arc_t
 		            gossmap_max_node_idx(params->gossmap));
 	
 	while(amount>0)
@@ -587,7 +584,7 @@ static int  find_optimal_path(
 	const struct residual_network* network,
 	const u32 source,
 	const u32 target,
-	s32 *prev,
+	arc_t *prev,
 	s64 *distance)
 {
 	tal_t *this_ctx = tal(tmpctx,tal_t);
@@ -597,7 +594,7 @@ static int  find_optimal_path(
 	
 	for(size_t i=0;i<tal_count(prev);++i)
 	{	
-		prev[i]=INVALID_INDEX;
+		prev[i].idx=INVALID_INDEX;
 		distance[i]=INFINITE;
 	}
 	distance[source]=0;
@@ -622,18 +619,18 @@ static int  find_optimal_path(
 			break;
 		}
 		
-		for(u32 arc = node_adjacency_begin(params,cur);
+		for(arc_t arc = node_adjacency_begin(params,cur);
 		        arc!= node_adjacency_end(params,cur);
 			arc = node_adjacency_next(params,cur,arc))
 		{
 			// check if this arc is traversable
-			if(network->cap[arc] <= 0)
+			if(network->cap[arc.idx] <= 0)
 				continue;
 			
 			u32 next = arc_head(params,arc);
 			
-			s64 cij = network->cost[arc] - network->potential[cur]
-			                             + network->potential[next];
+			s64 cij = network->cost[arc.idx] - network->potential[cur]
+			                                 + network->potential[next];
 			// Dijkstra only works with non-negative weights
 			assert(cij>=0);
 			
@@ -658,16 +655,16 @@ static void zero_flow(
 	for(u32 node=0;node<tal_count(network->potential);++node)
 	{
 		network->potential[node]=0;
-		for(u32 arc=node_adjacency_begin(params,node);
+		for(arc_t arc=node_adjacency_begin(params,node);
 			arc!=node_adjacency_end(params,node);
 			arc = node_adjacency_next(params,node,arc))
 		{
 			if(arc_is_dual(params,arc))continue;
 			
-			u32 dual = arc_dual(params,arc);
+			arc_t dual = arc_dual(params,arc);
 			
-			network->cap[arc] += network->cap[dual];
-			network->cap[dual] = 0;
+			network->cap[arc.idx] += network->cap[dual.idx];
+			network->cap[dual.idx] = 0;
 		}
 	}
 }
@@ -692,7 +689,7 @@ static int optimize_mcf(const struct pay_parameters *params,
 	
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
-	u32 *prev = tal_arr(this_ctx,u32,tal_count(network->potential));
+	arc_t *prev = tal_arr(this_ctx,arc_t,tal_count(network->potential));
 	s64 *distance = tal_arr(this_ctx,s64,tal_count(network->potential));
 	
 	while(amount>0)
@@ -764,7 +761,7 @@ static void estimate_costs(const struct pay_parameters *params,
 			
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
-				const u32 arc = channel_idx_to_arc(chan_idx,dir,k,0);
+				const arc_t arc = channel_idx_to_arc(chan_idx,dir,k,0);
 				chan_flow += get_arc_flow(params,network,arc);	
 			}
 			
@@ -839,11 +836,7 @@ static struct flow_path **
 			balance[n] -= flow;
 			balance[m] += flow;
 			
-			u32 chan_idx;
-			int dir,part,dual;
-			chan_idx = arc_to_channel_idx(arc,dir,part,dual);
-			
-			chan_flow[chan_idx].half[dir] +=flow;
+			chan_flow[arc.chanidx].half[arc.chandir] +=flow;
 		}
 			
 	}
