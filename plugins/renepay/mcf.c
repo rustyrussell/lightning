@@ -2,6 +2,7 @@
 #include <ccan/lqueue/lqueue.h>
 #include <plugins/renepay/mcf.h>
 #include <plugins/renepay/flow.h>
+#include <plugins/renepay/heap.h>
 #include <math.h>
 
 #define PARTS_BITS 2
@@ -603,10 +604,14 @@ static int  find_optimal_path(
 	}
 	distance[source]=0;
 	
-	// TODO add source to queue
-	while(1)
+	struct heap *myheap = heap_new(this_ctx);	
+	heap_insert(myheap,source,0);
+	
+	while(!heap_empty(myheap))
 	{
-		// TODO: get best node cur from queue 
+		struct heap_data *top = heap_top(myheap);
+		u32 cur = top->idx;
+		heap_pop(myheap);
 		
 		if (visited[cur])
 			continue;
@@ -633,12 +638,14 @@ static int  find_optimal_path(
 			                             + network->potential[next];
 			// Dijkstra only works with non-negative weights
 			ASSERT(cij>=0);
-			if(distance[next]>distance[cur]+cij)
-			{
-				prev[next]=arc;
-				distance[next]=distance[cur]+cij;
-				// TODO: add next to queue
-			}
+			
+			if(distance[next]<=distance[cur]+cij)
+				continue;
+			
+			prev[next]=arc;
+			distance[next]=distance[cur]+cij;
+			
+			heap_insert(myheap,next,distance[next]);
 		}
 	}
 	tal_free(this_ctx);	
