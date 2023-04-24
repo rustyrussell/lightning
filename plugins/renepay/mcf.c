@@ -3,6 +3,7 @@
 #include <plugins/renepay/mcf.h>
 #include <plugins/renepay/flow.h>
 #include <plugins/renepay/heap.h>
+#include <stdint.h>
 #include <math.h>
 
 #define PARTS_BITS 2
@@ -16,7 +17,7 @@ static const double CHANNEL_PIVOTS[]={0,0.5,0.8,0.95};
 // channel plus 1 bit for the dual representation.
 static const size_t ARC_ADDITIONAL_BITS = PARTS_BITS + 2;
 
-static const s64 INFINITE = 9e18;
+static const s64 INFINITE = INT64_MAX;
 static const u32 INVALID_INDEX=0xffffffff;
 static const s64 COST_FACTOR=10;
 static const s64 MU_MAX = 128;
