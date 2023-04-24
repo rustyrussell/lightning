@@ -301,17 +301,13 @@ static void init_residual_network(struct pay_parameters *params,
 	const size_t max_num_arcs = max_num_chans << ARC_ADDITIONAL_BITS;
 	const size_t max_num_nodes = gossmap_max_node_idx(params->gossmap);
 	
-	network->cap = tal_arr(network,s64,max_num_arcs);
-	for(size_t i=0;i<tal_count(network->cap);++i)
-		network->cap[i]=0;
+	network->cap = tal_arrz(network,s64,max_num_arcs);
 	
 	network->cost = tal_arr(network,s64,max_num_arcs);
 	for(size_t i=0;i<tal_count(network->cost);++i)
 		network->cost[i]=INFINITE;
 	
-    network->potential = tal_arr(network,s64,max_num_nodes);
-    for(size_t i=0;i<tal_count(network->potential);++i)
-        network->potential[i]=0;
+	network->potential = tal_arrz(network,s64,max_num_nodes);
     
 	params->arc_head_node = tal_arr(params,u32,max_num_arcs);
 	for(size_t i=0;i<tal_count(params->arc_head_node);++i)
@@ -596,13 +592,12 @@ static int  find_optimal_path(
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	int ret = RENEPAY_ERR_NOFEASIBLEFLOW;
 	
-	char *visited = tal_array(this_ctx,char,tal_count(prev));
+	char *visited = tal_arrz(this_ctx,char,tal_count(prev));
 	
 	for(size_t i=0;i<tal_count(prev);++i)
 	{	
 		prev[i]=INVALID_INDEX;
 		distance[i]=INFINITE;
-		visited[i]=0;
 	}
 	distance[source]=0;
 	
@@ -817,21 +812,13 @@ static struct flow_path **
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
 	const size_t max_num_chans = gossmap_max_chan_idx(params->gossmap);
-	struct chan_flow *chan_flow = tal_arr(this_ctx,struct chan_flow,max_num_chans);
-	
-	for(size_t i=0;i<max_num_chans;++i)
-		chan_flow[i].half[0]=chan_flow[i].half[1]=0;
+	struct chan_flow *chan_flow = tal_arrz(this_ctx,struct chan_flow,max_num_chans);
 	
 	const size_t max_num_nodes = gossmap_max_node_idx(params->gossmap);
-	s64 *balance = tal_arr(this_ctx,s64,max_num_nodes);
+	s64 *balance = tal_arrz(this_ctx,s64,max_num_nodes);
 	struct gossmap_chan **prev_chan = tal_arr(this_ctx,struct gossmap_chan*,max_num_nodes);
 	int *prev_dir = tal_arr(this_ctx,int,max_num_nodes);
 	u32 *prev_idx = tal_arr(this_ctx,u32,max_num_nodes);
-	
-	for(size_t i=0;i<max_num_nodes;++i)
-	{
-		balance[i]=0;
-	}
 	
 	// Convert the arc based residual network flow into a flow in the
 	// directed channel network.
