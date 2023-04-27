@@ -1,8 +1,8 @@
 #include "config.h"
 #include <ccan/lqueue/lqueue.h>
+#include <ccan/tal/tal.h>
 #include <plugins/renepay/mcf.h>
 #include <plugins/renepay/flow.h>
-#include <plugins/renepay/heap.h>
 #include <stdint.h>
 #include <math.h>
 #include <assert.h>
@@ -129,7 +129,7 @@ struct pay_parameters {
 	// probability and fee cost associated to an arc
 	s64 *arc_prob_cost, *arc_fee_cost;
 	
-	arc_t *arc_adjacency_next_arc;
+	arc_t *node_adjacency_next_arc;
 	arc_t *node_adjacency_first_arc;	
 	
 	// channel linearization parameters
@@ -147,7 +147,7 @@ struct residual_network {
 
 /* Helper function. 
  * Given an arc idx, return the dual's idx in the residual network. */
-static arc_t arc_dual(const arc_t arc)
+static arc_t arc_dual(arc_t arc)
 {
 	arc.dual ^= 1;
 	return arc;
@@ -186,27 +186,29 @@ static u32 arc_head(const struct pay_parameters *params,
 /* Helper function. 
  * Given node idx `node`, return the idx of the first arc whose tail is `node`.
  * */
-static u32 node_adjacency_begin(const struct pay_parameters *params,
+static arc_t node_adjacency_begin(const struct pay_parameters *params,
                                 const u32 node)
 {
-	return params->node_adjacency_first[node];
+	return params->node_adjacency_first_arc[node];
 }
 
 /* Helper function. 
- * Given node idx `node`, return the idx of one past the last arc whose tail is `node`. */
-static u32 node_adjacency_end(const struct pay_parameters *params UNUSED,
-                              const u32 node UNUSED)
+ * Is this the end of the adjacency list. */
+static bool node_adjacency_end(
+	const struct pay_parameters *params UNUSED,
+	const u32 node UNUSED,
+	const arc_t arc)
 {
-	return INVALID_INDEX;
+	return arc.idx == INVALID_INDEX;
 }
 
 /* Helper function. 
  * Given node idx `node` and `arc`, returns the idx of the next arc whose tail is `node`. */
-static u32 node_adjacency_next(const struct pay_parameters *params,
+static arc_t node_adjacency_next(const struct pay_parameters *params,
                                const u32 node UNUSED,
 			       const arc_t arc)
 {
-	return params->adjacency_next[arc.idx];
+	return params->node_adjacency_next_arc[arc.idx];
 }
 
 /* Helper function.
@@ -232,7 +234,7 @@ static double pickhardt_probability_cost(
 {
 	if(flow<=lim_low)
 		return 0.;
-	ASSSERT(flow<lim_high);
+	assert(flow<lim_high);
 	return -log(1.-(flow-lim_low)/(lim_high-lim_low));
 }
 
@@ -318,15 +320,13 @@ static void init_residual_network(struct pay_parameters *params,
 	for(size_t i=0;i<tal_count(params->arc_fee_cost);++i)
 		params->arc_fee_cost[i]=INFINITE;
 		
-	params->arc_adjacency_next_arc = tal_arr(params,arc_t,max_num_arcs);
-	for(size_t i=0;i<tal_count(params->arc_adjacency_next_arc);++i)
-		params->arc_adjacency_next_arc[i].idx=INVALID_INDEX;
+	params->node_adjacency_next_arc = tal_arr(params,arc_t,max_num_arcs);
+	for(size_t i=0;i<tal_count(params->node_adjacency_next_arc);++i)
+		params->node_adjacency_next_arc[i].idx=INVALID_INDEX;
 	
 	params->node_adjacency_first_arc = tal_arr(params,arc_t,max_num_nodes);
 	for(size_t i=0;i<tal_count(params->node_adjacency_first_arc);++i)
 		params->node_adjacency_first_arc[i].idx=INVALID_INDEX;
-	
-	s64 capacity[CHANNEL_PARTS],prob_cost[CHANNEL_PARTS];
 	
 	for(struct gossmap_node *node = gossmap_first_node(params->gossmap);
 	    node;
@@ -364,17 +364,17 @@ static void init_residual_network(struct pay_parameters *params,
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
 				arc_t arc = channel_idx_to_arc(chan_id,half,k,0);
-				arc_head_node[arc.idx] = next_id;
+				params->arc_head_node[arc.idx] = next_id;
 				
 				// Is this is the first arc?
 				if(prev_arc.idx==INVALID_INDEX)
 				// yes, then set it at the head of the linked list
 				{
-					node_adjacency_first_arc[node_id]=arc;
+					params->node_adjacency_first_arc[node_id]=arc;
 				} else
 				// no, then link it to the previous arc
 				{
-					arc_adjacency_next_arc[prev_arc]=arc;
+					params->node_adjacency_next_arc[prev_arc.idx]=arc;
 				}
 				
 				prev_arc = arc;
@@ -393,17 +393,17 @@ static void init_residual_network(struct pay_parameters *params,
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
 				arc_t arc = channel_idx_to_arc(chan_id,!half,k,1);
-				arc_head_node[arc.idx] = next_id;
+				params->arc_head_node[arc.idx] = next_id;
 				
 				// Is this is the first arc?
-				if(prev_arc==INVALID_INDEX)
+				if(prev_arc.idx==INVALID_INDEX)
 				// yes, then set it at the head of the linked list
 				{
-					node_adjacency_first_arc[node_id]=arc;
+					params->node_adjacency_first_arc[node_id]=arc;
 				} else
 				// no, then link it to the previous arc
 				{
-					arc_adjacency_next_arc[prev_arc.idx]=arc;
+					params->node_adjacency_next_arc[prev_arc.idx]=arc;
 				}
 				
 				prev_arc = arc;
@@ -454,7 +454,7 @@ static int find_admissible_path(const struct pay_parameters *params,
 		}
 		
 		for(arc_t arc = node_adjacency_begin(params,cur);
-		        arc!= node_adjacency_end(params,cur);
+		        !node_adjacency_end(params,cur,arc);
 			arc = node_adjacency_next(params,cur,arc))
 		{
 			// check if this arc is traversable
@@ -464,7 +464,7 @@ static int find_admissible_path(const struct pay_parameters *params,
 			u32 next = arc_head(params,arc);
 			
 			// if that node has been seen previously
-			if(prev[next]!=INVALID_INDEX)
+			if(prev[next].idx!=INVALID_INDEX)
 				continue;
 			
 			prev[next] = arc;
@@ -492,7 +492,7 @@ static s64 get_augmenting_flow(const struct pay_parameters *params,
 	while(cur!=source)
 	{
 		const arc_t arc = prev[cur];
-		const arc_t dual = arc_dual(params,arc);
+		const arc_t dual = arc_dual(arc);
 		
 		flow = MIN(flow , network->cap[arc.idx]);
 		
@@ -518,7 +518,7 @@ static void augment_flow(const struct pay_parameters *params,
 	while(cur!=source)
 	{
 		const arc_t arc = prev[cur];
-		const arc_t dual = arc_dual(params,arc);
+		const arc_t dual = arc_dual(arc);
 		
 		network->cap[arc.idx] -= flow;
 		assert(network->cap[arc.idx] >=0 );
@@ -548,7 +548,7 @@ static int find_feasible_flow(const struct pay_parameters *params,
 	
 	/* path information 
 	 * prev: is the id of the arc that lead to the node. */
-	arc_t *prev = tal_arr(tmpctx,arc_t
+	arc_t *prev = tal_arr(tmpctx,arc_t,
 		            gossmap_max_node_idx(params->gossmap));
 	
 	while(amount>0)
@@ -620,7 +620,7 @@ static int  find_optimal_path(
 		}
 		
 		for(arc_t arc = node_adjacency_begin(params,cur);
-		        arc!= node_adjacency_end(params,cur);
+		        !node_adjacency_end(params,cur,arc);
 			arc = node_adjacency_next(params,cur,arc))
 		{
 			// check if this arc is traversable
@@ -656,12 +656,12 @@ static void zero_flow(
 	{
 		network->potential[node]=0;
 		for(arc_t arc=node_adjacency_begin(params,node);
-			arc!=node_adjacency_end(params,node);
-			arc = node_adjacency_next(params,node,arc))
+			  !node_adjacency_end(params,node,arc);
+			  arc = node_adjacency_next(params,node,arc))
 		{
-			if(arc_is_dual(params,arc))continue;
+			if(arc_is_dual(arc))continue;
 			
-			arc_t dual = arc_dual(params,arc);
+			arc_t dual = arc_dual(arc);
 			
 			network->cap[arc.idx] += network->cap[dual.idx];
 			network->cap[dual.idx] = 0;
@@ -683,7 +683,7 @@ static int optimize_mcf(const struct pay_parameters *params,
 	int ret = RENEPAY_ERR_OK;
 	
 	zero_flow(params,network);
-   	s64 amount = params->amount->millisatoshis/1000;
+   	s64 amount = params->amount.millisatoshis/1000;
 	u32 source = gossmap_node_idx(params->gossmap,params->source),
 	    target = gossmap_node_idx(params->gossmap,params->target);
 	
@@ -762,7 +762,7 @@ static void estimate_costs(const struct pay_parameters *params,
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
 				const arc_t arc = channel_idx_to_arc(chan_idx,dir,k,0);
-				chan_flow += get_arc_flow(params,network,arc);	
+				chan_flow += get_arc_flow(network,arc);	
 			}
 			
 			// TODO(eduardo): this is wrong, because the base fee is
@@ -825,13 +825,13 @@ static struct flow_path **
 	for(u32 n = 0;n<max_num_nodes;++n)
 	{
 		for(u32 arc = node_adjacency_begin(params,cur);
-		        arc!= node_adjacency_end(params,cur);
+		        !node_adjacency_end(params,cur,arc);
 			arc = node_adjacency_next(params,cur,arc))
 		{
 			if(arc_is_dual(arc))
 				continue;
 			u32 m = arc_head(params,arc);
-			s64 flow = get_arc_flow(params,network,arc);
+			s64 flow = get_arc_flow(network,arc);
 			
 			balance[n] -= flow;
 			balance[m] += flow;
@@ -1036,7 +1036,7 @@ static struct flow_path **
  * described with a sequence of directed channels and one amount. 
  * In the `pay_flow` module there are dedicated routes to compute the actual
  * amount to be forward on each hop. */
-int optimal_payment_flow(
+struct flow_path* minflow(
                       const tal_t *ctx,
 		      struct gossmap *gossmap,
 		      const struct gossmap_node *source,
@@ -1044,10 +1044,9 @@ int optimal_payment_flow(
 		      struct chan_extra_map *chan_extra_map,
 		      const bitmap *disabled,
 		      struct amount_msat amount,
-		      double max_fee_ppm,
+		      struct amount_msat max_fee,
 		      double min_probability,
-		      double delay_feefactor,
-		      struct flow_paths **flow_paths)
+		      double delay_feefactor UNUSED)
 {
 	// TODO(eduardo) on which ctx should I allocate the MCF data?
 	struct pay_parameters *params = tal(tmpctx,struct pay_parameters);	
@@ -1144,11 +1143,11 @@ int optimal_payment_flow(
 	
 	end:
 	
-	*flow_paths = NULL;
+	struct flow_path *flow_paths = NULL;
 
 	if(ret==RENEPAY_ERR_OK)
 	{
-		*flow_paths = get_flow_paths(ctx,params,network);
+		flow_paths = get_flow_paths(ctx,params,network);
 	}else
 	{
 	// TODO(eduardo) fallback to c_prob or c_fee?
@@ -1157,6 +1156,6 @@ int optimal_payment_flow(
 	tal_free(network);
 	tal_free(params);
 	
-	return ret;
+	return flow_paths;
 }
 

@@ -36,19 +36,17 @@ struct flow_path
  * @chan_extra_map: hashtable of extra per-channel information
  * @disabled: NULL, or a bitmap by channel index of channels not to use.
  * @amount: the amount we want to reach @target
- * @max_fee_ppm: the maximum ppm allowed in fees
+ * @max_fee: the maximum allowed in fees
+ * @min_probability: minimum probability accepted
  * @delay_feefactor: how important delays are compared to fees
- * @errorcode: error code in case of failure
  *
  * @delay_feefactor converts 1 block delay into msat, as if it were an additional
  * fee.  So if a CTLV delay on a node is 5 blocks, that's treated as if it
  * were a fee of 5 * @delay_feefactor.
  *
- * @mu converts fees to add it to the uncertainty term.
- *
  * Return a series of subflows which deliver amount to target, or NULL.
  */
-struct flow **optimal_payment_flow(
+struct flow_path* minflow(
                       const tal_t *ctx,
 		      struct gossmap *gossmap,
 		      const struct gossmap_node *source,
@@ -56,7 +54,7 @@ struct flow **optimal_payment_flow(
 		      struct chan_extra_map *chan_extra_map,
 		      const bitmap *disabled,
 		      struct amount_msat amount,
-		      double max_fee_ppm,
-		      double delay_feefactor,
-		      int *errorcode);
+		      struct amount_msat max_fee,
+		      double min_probability,
+		      double delay_feefactor);
 #endif /* LIGHTNING_PLUGINS_RENEPAY_MCF_H */
