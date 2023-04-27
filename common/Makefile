@@ -37,6 +37,7 @@ COMMON_SRC_NOGEN :=				\
 	common/fp16.c				\
 	common/gossip_store.c			\
 	common/gossmap.c			\
+	common/gosstest.c			\
 	common/hash_u5.c			\
 	common/hmac.c				\
 	common/hsm_encryption.c			\
