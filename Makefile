@@ -133,6 +133,7 @@ CCAN_OBJS :=					\
 	ccan-tal.o				\
 	ccan-time.o				\
 	ccan-timer.o				\
+	ccan-ungraph.o				\
 	ccan-utf8.o
 
 CCAN_HEADERS :=						\
@@ -985,4 +986,6 @@ ccan-closefrom.o: $(CCANDIR)/ccan/closefrom/closefrom.c
 ccan-rune-rune.o: $(CCANDIR)/ccan/rune/rune.c
 	@$(call VERBOSE, "cc $<", $(CC) $(CFLAGS) -c -o $@ $<)
 ccan-rune-coding.o: $(CCANDIR)/ccan/rune/coding.c
+	@$(call VERBOSE, "cc $<", $(CC) $(CFLAGS) -c -o $@ $<)
+ccan-ungraph.o: $(CCANDIR)/ccan/ungraph/ungraph.c
 	@$(call VERBOSE, "cc $<", $(CC) $(CFLAGS) -c -o $@ $<)
