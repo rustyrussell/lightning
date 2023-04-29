@@ -3,6 +3,7 @@
 #include <ccan/tal/tal.h>
 #include <plugins/renepay/mcf.h>
 #include <plugins/renepay/flow.h>
+#include <plugins/renepay/heap.h>
 #include <stdint.h>
 #include <math.h>
 #include <assert.h>
@@ -104,7 +105,6 @@ typedef union
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 struct pay_parameters {
-	
 	/* The gossmap we are using */
 	struct gossmap *gossmap;
 	struct gossmap_node *source;
@@ -143,7 +143,7 @@ struct residual_network {
 	s64 *cost;
 	s64 *potential;
 };
-				
+
 
 /* Helper function. 
  * Given an arc idx, return the dual's idx in the residual network. */
@@ -299,7 +299,9 @@ static void init_residual_network(struct pay_parameters *params,
 	const size_t max_num_chans = gossmap_max_chan_idx(params->gossmap);
 	const size_t max_num_arcs = max_num_chans << ARC_ADDITIONAL_BITS;
 	const size_t max_num_nodes = gossmap_max_node_idx(params->gossmap);
-	
+
+	network->dijkstra = tal_arrz(network,dijkstra,max_num_nodes);
+
 	network->cap = tal_arrz(network,s64,max_num_arcs);
 	
 	network->cost = tal_arr(network,s64,max_num_arcs);
@@ -599,7 +601,7 @@ static int  find_optimal_path(
 	}
 	distance[source]=0;
 	
-	struct heap *myheap = heap_new(this_ctx);	
+	struct heap *myheap = heap_new(this_ctx,tal_count(distance));	
 	heap_insert(myheap,source,0);
 	
 	while(!heap_empty(myheap))
@@ -637,10 +639,11 @@ static int  find_optimal_path(
 			if(distance[next]<=distance[cur]+cij)
 				continue;
 			
+			
+			heap_update(myheap,next,distance[next],distance[cur]+cij);
+			
 			prev[next]=arc;
 			distance[next]=distance[cur]+cij;
-			
-			heap_insert(myheap,next,distance[next]);
 		}
 	}
 	tal_free(this_ctx);	
