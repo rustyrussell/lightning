@@ -184,6 +184,7 @@ static void dijkstra_malloc(const tal_t ctx, const size_t max_num_nodes)
 	
 	global_dijkstra->gheap_ctx.fanout=2;
 	global_dijkstra->gheap_ctx.page_chunks=1024;
+	global_dijkstra->item_size=sizeof(global_dijkstra->base[0]);
 	global_dijkstra->gheap_ctx.less_comparer=dijkstra_less_comparer;
 	global_dijkstra->gheap_ctx.less_comparer_ctx=NULL;
 	global_dijkstra->gheap_ctx.item_mover=dijkstra_item_mover;
