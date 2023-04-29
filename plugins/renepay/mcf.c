@@ -144,6 +144,107 @@ struct residual_network {
 	s64 *potential;
 };
 
+/* In the heap we keep node idx, but in this structure we keep the distance
+ * value associated to every node, and their position in the heap as a pointer
+ * so that we can update the nodes inside the heap when the distance label is
+ * changed. */
+struct dijkstra {
+	// 
+	s64 *distance;
+	u32 *base;
+	u32 **heapptr;
+	size_t heapsize;
+	struct gheap_ctx gheap_ctx;
+};
+/* Required a global dijkstra for gheap. */
+static struct dijkstra *global_dijkstra;
+
+static int dijkstra_less_comparer(
+	const void *const ctx UNUSED,
+	const void *const a,
+	const void *const b)
+{
+	return global_dijkstra->distance[*(u32*)a]
+		> global_dijkstra->distance[*(u32*)b];
+}
+static void dijkstra_item_mover(void *const dst, const void *const src)
+{
+	u32 src_idx = *(u32*)src;
+	*(u32*)dst = src_idx;
+	global_dijkstra->heapptr[src_idx] = dst;
+}
+static void dijkstra_malloc(const tal_t ctx, const size_t max_num_nodes)
+{
+	global_dijkstra = tal(ctx,struct dijkstra);
+	global_dijkstra->distance = tal_arr(global_dijkstra,s64,max_num_nodes);
+	global_dijkstra->base = tal_arr(global_dijkstra,u32,max_num_nodes);
+	global_dijkstra->heapptr = tal_arr(global_dijkstra,u32*,max_num_nodes);
+	
+	global_dijkstra->heapsize=0;
+	
+	global_dijkstra->gheap_ctx.fanout=2;
+	global_dijkstra->gheap_ctx.page_chunks=1024;
+	global_dijkstra->gheap_ctx.less_comparer=dijkstra_less_comparer;
+	global_dijkstra->gheap_ctx.less_comparer_ctx=NULL;
+	global_dijkstra->gheap_ctx.item_mover=dijkstra_item_mover;
+}
+static void dijkstra_init()
+{
+	const size_t max_num_nodes = tal_count(global_dijkstra->distance);
+	global_dijkstra->heapsize=0;
+	for(size_t i=0;i<max_num_nodes;++i)
+	{
+		global_dijkstra->distance[i]=INFINITE;
+		global_dijkstra->heapptr[i] = NULL;
+	}
+}
+static void dijkstra_append(u32 node_idx, s64 distance)
+{
+	const size_t pos = global_dijkstra->heapsize;
+	
+	global_dijkstra->base[pos]=node_idx;
+	global_dijkstra->distance[node_idx]=distance;
+	global_dijkstra->heapptr[node_idx] = &(global_dijkstra->base[pos]);
+	global_dijkstra->heapsize++;
+}
+static void dijkstra_update(u32 node_idx, s64 distance)
+{
+	if(!global_dijkstra->heapptr[node_idx])
+	{
+		// not in the heap
+		dijkstra_append(node_idx,distance);
+	}
+	
+	gheap_restore_heap_after_item_increase(
+		&global_dijkstra->gheap_ctx
+		global_dijkstra->base,
+		global_dijkstra->heapsize,
+		global_dijkstra->heapptr[node_idx]
+			- global_dijkstra->base);
+}
+static u32 dijkstra_top()
+{
+	return global_dijkstra->base[0];
+}
+static bool dijkstra_empty()
+{
+	return global_dijkstra->heapsize==0;
+}
+static void dijkstra_pop()
+{
+	if(global_dijkstra->heapsize==0)
+		return;
+		
+	const u32 top = dijkstra_top();
+	assert(global_dijkstra->heapptr[top]==global_dijkstra->base);
+	
+	gheap_pop_heap(
+		&global_dijkstra->gheap_ctx
+		global_dijkstra->base,
+		global_dijkstra->heapsize--);
+		
+	global_dijkstra->heapptr[top]=NULL;
+}
 
 /* Helper function. 
  * Given an arc idx, return the dual's idx in the residual network. */
@@ -586,8 +687,7 @@ static int  find_optimal_path(
 	const struct residual_network* network,
 	const u32 source,
 	const u32 target,
-	arc_t *prev,
-	s64 *distance)
+	arc_t *prev)
 {
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	int ret = RENEPAY_ERR_NOFEASIBLEFLOW;
@@ -597,18 +697,17 @@ static int  find_optimal_path(
 	for(size_t i=0;i<tal_count(prev);++i)
 	{	
 		prev[i].idx=INVALID_INDEX;
-		distance[i]=INFINITE;
 	}
-	distance[source]=0;
 	
-	struct heap *myheap = heap_new(this_ctx,tal_count(distance));	
-	heap_insert(myheap,source,0);
+	const s64 *const distance=global_dijkstra->distance;
 	
-	while(!heap_empty(myheap))
+	dijkstra_init();
+	dijkstra_append(source,0);
+	
+	while(!dijkstra_empty())
 	{
-		struct heap_data *top = heap_top(myheap);
-		u32 cur = top->idx;
-		heap_pop(myheap);
+		u32 cur = dijkstra_top();
+		dijkstra_pop();
 		
 		if (visited[cur])
 			continue;
@@ -633,17 +732,15 @@ static int  find_optimal_path(
 			
 			s64 cij = network->cost[arc.idx] - network->potential[cur]
 			                                 + network->potential[next];
+			
 			// Dijkstra only works with non-negative weights
 			assert(cij>=0);
 			
 			if(distance[next]<=distance[cur]+cij)
 				continue;
 			
-			
-			heap_update(myheap,next,distance[next],distance[cur]+cij);
-			
+			dijkstra_update(next,distance[cur]+cij);
 			prev[next]=arc;
-			distance[next]=distance[cur]+cij;
 		}
 	}
 	tal_free(this_ctx);	
@@ -693,11 +790,14 @@ static int optimize_mcf(const struct pay_parameters *params,
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
 	arc_t *prev = tal_arr(this_ctx,arc_t,tal_count(network->potential));
-	s64 *distance = tal_arr(this_ctx,s64,tal_count(network->potential));
+	
+	
+	// s64 *distance = tal_arr(this_ctx,s64,tal_count(network->potential));
+	const s64 *const distance = global_dijkstra->distance;
 	
 	while(amount>0)
 	{
-		int err = find_optimal_path(params,network,source,target,prev,distance);
+		int err = find_optimal_path(params,network,source,target,prev);
 		if(err!=RENEPAY_ERR_OK)
 		{
 			// unexpected error
@@ -1040,7 +1140,7 @@ static struct flow_path **
  * In the `pay_flow` module there are dedicated routes to compute the actual
  * amount to be forward on each hop. */
 struct flow_path* minflow(
-                      const tal_t *ctx,
+                      const tal_t *caller_ctx,
 		      struct gossmap *gossmap,
 		      const struct gossmap_node *source,
 		      const struct gossmap_node *target,
@@ -1052,7 +1152,9 @@ struct flow_path* minflow(
 		      double delay_feefactor UNUSED)
 {
 	// TODO(eduardo) on which ctx should I allocate the MCF data?
-	struct pay_parameters *params = tal(tmpctx,struct pay_parameters);	
+	tal_t *this_ctx = tal(tmpctx,tal_t);
+	
+	struct pay_parameters *params = tal(this_ctx,struct pay_parameters);	
 	
 	int ret;
 	
@@ -1079,8 +1181,10 @@ struct flow_path* minflow(
 	// params->basefee_penalty = 
 	
 	// build the uncertainty network with linearization and residual arcs
-	struct residual_network *network = tal(tmpctx,struct residual_network);
+	struct residual_network *network = tal(this_ctx,struct residual_network);
 	init_residual_network(params,network);
+	
+	dijkstra_malloc(this_ctx);
 	
 	const u32 target_idx = gossmap_node_idx(params->gossmap,target);
 	const u32 source_idx = gossmap_node_idx(params->gossmap,source);
@@ -1150,15 +1254,13 @@ struct flow_path* minflow(
 
 	if(ret==RENEPAY_ERR_OK)
 	{
-		flow_paths = get_flow_paths(ctx,params,network);
+		flow_paths = get_flow_paths(caller_ctx,params,network);
 	}else
 	{
 	// TODO(eduardo) fallback to c_prob or c_fee?
 	}
 	
-	tal_free(network);
-	tal_free(params);
-	
+	tal_free(this_ctx);
 	return flow_paths;
 }
 
