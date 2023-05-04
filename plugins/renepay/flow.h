@@ -65,7 +65,6 @@ struct chan_extra_half *new_chan_extra_half(struct chan_extra_map *chan_extra_ma
 
 /* An actual partial flow. */
 struct flow {
-	/* The series of channels to traverse. */
 	const struct gossmap_chan **path;
 	/* The directions to traverse. */
 	int *dirs;

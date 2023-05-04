@@ -16,15 +16,6 @@ enum {
 	RENEPAY_ERR_NOCHEAPFLOW
 };
 
-/* In this module, internally a flow is non-negative integer function on the
- * arcs that satisfies the capacity constraints; outside, a flow is seen as one
- * amount sent through a sequence of directed channels. */
-struct flow_path
-{
-	struct gossmap_chan **path;
-	int *dirs;
-	struct amount_sat amount;
-};
 
 
 /**
@@ -46,7 +37,7 @@ struct flow_path
  *
  * Return a series of subflows which deliver amount to target, or NULL.
  */
-struct flow_path* minflow(
+struct flow** minflow(
                       const tal_t *ctx,
 		      struct gossmap *gossmap,
 		      const struct gossmap_node *source,

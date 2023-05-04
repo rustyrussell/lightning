@@ -173,7 +173,7 @@ static void dijkstra_item_mover(void *const dst, const void *const src)
 	*(u32*)dst = src_idx;
 	global_dijkstra->heapptr[src_idx] = dst;
 }
-static void dijkstra_malloc(const tal_t ctx, const size_t max_num_nodes)
+static void dijkstra_malloc(const tal_t *ctx, const size_t max_num_nodes)
 {
 	global_dijkstra = tal(ctx,struct dijkstra);
 	global_dijkstra->distance = tal_arr(global_dijkstra,s64,max_num_nodes);
@@ -184,12 +184,12 @@ static void dijkstra_malloc(const tal_t ctx, const size_t max_num_nodes)
 	
 	global_dijkstra->gheap_ctx.fanout=2;
 	global_dijkstra->gheap_ctx.page_chunks=1024;
-	global_dijkstra->item_size=sizeof(global_dijkstra->base[0]);
+	global_dijkstra->gheap_ctx.item_size=sizeof(global_dijkstra->base[0]);
 	global_dijkstra->gheap_ctx.less_comparer=dijkstra_less_comparer;
 	global_dijkstra->gheap_ctx.less_comparer_ctx=NULL;
 	global_dijkstra->gheap_ctx.item_mover=dijkstra_item_mover;
 }
-static void dijkstra_init()
+static void dijkstra_init(void)
 {
 	const size_t max_num_nodes = tal_count(global_dijkstra->distance);
 	global_dijkstra->heapsize=0;
@@ -217,21 +217,21 @@ static void dijkstra_update(u32 node_idx, s64 distance)
 	}
 	
 	gheap_restore_heap_after_item_increase(
-		&global_dijkstra->gheap_ctx
+		&global_dijkstra->gheap_ctx,
 		global_dijkstra->base,
 		global_dijkstra->heapsize,
 		global_dijkstra->heapptr[node_idx]
 			- global_dijkstra->base);
 }
-static u32 dijkstra_top()
+static u32 dijkstra_top(void)
 {
 	return global_dijkstra->base[0];
 }
-static bool dijkstra_empty()
+static bool dijkstra_empty(void)
 {
 	return global_dijkstra->heapsize==0;
 }
-static void dijkstra_pop()
+static void dijkstra_pop(void)
 {
 	if(global_dijkstra->heapsize==0)
 		return;
@@ -240,7 +240,7 @@ static void dijkstra_pop()
 	assert(global_dijkstra->heapptr[top]==global_dijkstra->base);
 	
 	gheap_pop_heap(
-		&global_dijkstra->gheap_ctx
+		&global_dijkstra->gheap_ctx,
 		global_dijkstra->base,
 		global_dijkstra->heapsize--);
 		
@@ -401,8 +401,6 @@ static void init_residual_network(struct pay_parameters *params,
 	const size_t max_num_chans = gossmap_max_chan_idx(params->gossmap);
 	const size_t max_num_arcs = max_num_chans << ARC_ADDITIONAL_BITS;
 	const size_t max_num_nodes = gossmap_max_node_idx(params->gossmap);
-
-	network->dijkstra = tal_arrz(network,dijkstra,max_num_nodes);
 
 	network->cap = tal_arrz(network,s64,max_num_arcs);
 	
@@ -878,7 +876,7 @@ static void estimate_costs(const struct pay_parameters *params,
 			struct chan_extra_half *extra_half 
 				= get_chan_extra_half_by_chan(
 						params->gossmap,
-						params->chan_extra_map
+						params->chan_extra_map,
 						c,
 						dir);  
 			
@@ -901,12 +899,12 @@ struct chan_flow
 struct list_data
 {
 	struct list_node list;
-	struct flow_path *flow_path;
+	struct flow *flow_path;
 };
 
 /* Given a flow in the residual network, build a set of payment flows in the
  * gossmap that corresponds to this flow. */		
-static struct flow_path **
+static struct flow **
 	get_flow_paths(
 		const tal_t *ctx,
 		const struct pay_parameters *params,
@@ -1009,10 +1007,9 @@ static struct flow_path **
 			}
 			delta = MIN(delta,balance[final_idx]);
 			
-			struct flow_path *fp = tal(ctx,struct flow_path);
+			struct flow *fp = tal(ctx,struct flow);
 			fp->path = tal_arr(fp,struct gossmap_chan*,length);
 			fp->dirs = tal_arr(fp,int,length);
-			fp->amount.satoshis = delta;
 			
 			balance[node_idx] += delta;
 			balance[final_idx]-= delta;
@@ -1027,6 +1024,12 @@ static struct flow_path **
 				chan_flow[prev_chan[cur_idx]].half[prev_dir[cur_idx]]-=delta;
 			}
 			
+			flow_complete(
+				fp,
+				params->gossmap,
+				params->chan_extra_map,
+				struct amount_msat(delta));
+			
 			// add fp to list
 			ld = tal(list_ctx,struct list_data);
 			ld->flow_path = fp;
@@ -1036,7 +1039,7 @@ static struct flow_path **
 	}
 	
 	// copy the list into the array we are going to return	
-	struct flow_path **flows = tal_arr(ctx,struct flow_path*,num_paths);
+	struct flow **flows = tal_arr(ctx,struct flow*,num_paths);
 	size_t pos=0;
 	list_for_each(&path_list,ld,list)
 	{
@@ -1140,7 +1143,7 @@ static struct flow_path **
  * described with a sequence of directed channels and one amount. 
  * In the `pay_flow` module there are dedicated routes to compute the actual
  * amount to be forward on each hop. */
-struct flow_path* minflow(
+struct flow** minflow(
                       const tal_t *caller_ctx,
 		      struct gossmap *gossmap,
 		      const struct gossmap_node *source,
@@ -1251,7 +1254,7 @@ struct flow_path* minflow(
 	
 	end:
 	
-	struct flow_path *flow_paths = NULL;
+	struct flow **flow_paths = NULL;
 
 	if(ret==RENEPAY_ERR_OK)
 	{

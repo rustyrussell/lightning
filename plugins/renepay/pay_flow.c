@@ -261,6 +261,7 @@ static bitmap *make_disabled_bitmap(const tal_t *ctx,
 
 static double flows_probability(struct flow **flows)
 {
+	// TODO
 	double prob = 1.0;
 
 	for (size_t i = 0; i < tal_count(flows); i++)
@@ -271,6 +272,7 @@ static double flows_probability(struct flow **flows)
 
 static struct amount_msat flows_fee(struct flow **flows)
 {
+	// TODO
 	struct amount_msat fee = AMOUNT_MSAT(0);
 
 	for (size_t i = 0; i < tal_count(flows); i++) {
@@ -398,13 +400,16 @@ struct pay_flow **get_payflows(struct payment *p,
 		u64 delay;
 		bool too_unlikely, too_expensive, too_delayed;
 		const u32 *final_cltvs;
-
+		
+		// TODO(eduardo): set a maximum admissible fee (1%)?
+		struct amount_msat max_fee 
+			= (struct amount_msat){.millisatoshis = amount.millisatoshis/100};
+		
 		/* Note!  This actually puts flows in chan_extra_map, so
 		 * flows must be removed if not used! */
 		flows = minflow(tmpctx, pay_plugin->gossmap, src, dst,
 				&pay_plugin->chan_extra_map, disabled,
-				amount,
-				frugality,
+				amount, max_fee ,/* min prob = */ 0.01 ,
 				p->delay_feefactor);
 		if (!flows) {
 			paynote(p, "Failed to find any paths for %s",
