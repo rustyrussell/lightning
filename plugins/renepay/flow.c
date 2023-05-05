@@ -19,29 +19,69 @@ const struct half_chan *flow_edge(const struct flow *flow, size_t idx)
 }
 
 /* Assuming a uniform distribution, what is the chance this f gets through?
+ * Here we compute the conditional probability of success for a flow f, given
+ * the knowledge that the liquidity is in the range [a,b) and some amount
+ * x is already committed on another part of the payment.
+ * 
+ * The probability equation for x=0 is:
+ * 
+ * 	prob(f) = 
+ * 	
+ * 	for f<a:	1.
+ * 	for f>=a:	(b-f)/(b-a)
+ * 
+ * When x>0 the prob. of success for passing x and f is:
+ * 
+ * 	prob(f and x) = prob(x) * prob(f|x)
+ * 
+ * and it can be shown to be equal to
+ * 
+ * 	prob(f and x) = prob(f+x)
+ * 
+ * The purpose of this function is to obtain prob(f|x), i.e. the probability of
+ * getting f through provided that we already succeeded in getting x.
+ * This conditional probability comes with three cases:
+ * 
+ * 	prob(f|x) = 
+ * 	
+ * 	for x<a and f<a-x: 	1.
+ * 	for x<a and f>=a-x:	(b-x-f)/(b-a)
+ * 	for x>=a:		(b-x-f)/(b-x)
  *
- * This is the "(c_e + 1 − f_e) / (c_e + 1)" in the paper.
+ * This is the same as the probability of success of f when the bounds are
+ * shifted by x amount, the new bounds be [MAX(0,a-x),b-x).
  */
 static double edge_probability(struct amount_msat min, struct amount_msat max,
+			       struct amount_msat in_flight,
 			       struct amount_msat f)
 {
-	struct amount_msat range_plus_one, numerator;
-
-	/* If f is <= known minimum, probability is 1. */
-	if (!amount_msat_sub(&f, f, min))
-		return 1.0;
-
-	/* +1 because the number of elements in the range is min-max + 1 */
-	if (!amount_msat_sub(&range_plus_one, max, min))
+	struct amount_msat B; // =  max +1 - in_flight
+	
+	// one past the last known value, makes computations simpler
+	if(!amount_msat_add(&B,B,AMOUNT_MSAT(1)))
 		abort();
-	if (!amount_msat_add(&range_plus_one, range_plus_one, AMOUNT_MSAT(1)))
+		
+	// in_flight cannot be greater than max
+	if(!amount_msat_sub(&B,B,in_flight))
 		abort();
-
-	/* If f > capacity, probability is 0 */
-	if (!amount_msat_sub(&numerator, range_plus_one, f))
-		return 0.0;
-
-	return amount_msat_ratio(numerator, range_plus_one);
+		
+	struct amount_msat A; // = MAX(0,min-in_flight);
+	
+	if(!amount_msat_sub(&A,A,in_flight))
+		A = AMOUNT_MSAT(0);
+	
+	struct amount_msat denominator; // = B-A
+	
+	// B cannot be smaller than or equal A
+	if(!amount_msat_sub(&denominator,B,A) || amount_msat_less_eq(B,A))
+		abort();
+	
+	struct amount_msat numerator; // MAX(0,B-f)
+	
+	if(!amount_msat_sub(&numerator,B,f))
+		numerator = AMOUNT_MSAT(0);
+	
+	return amount_msat_less_eq(f,A) ? 1.0 : amount_msat_ratio(numerator,denominator);
 }
 
 bool flow_path_eq(const struct gossmap_chan **path1,
@@ -152,57 +192,57 @@ void flow_add(struct flow *flow,
 /* From the paper:
  * −log((c_e + 1 − f_e) / (c_e + 1)) + μ f_e fee(e)
  */
-double flow_edge_cost(const struct gossmap *gossmap,
-		      const struct gossmap_chan *c, int dir,
-		      const struct amount_msat known_min,
-		      const struct amount_msat known_max,
-		      struct amount_msat prev_flow,
-		      struct amount_msat f,
-		      double mu,
-		      double basefee_penalty,
-		      double delay_riskfactor)
-{
-	double prob, effective_feerate;
-	double certainty_term, feerate_term;
-
-#ifdef SUPERVERBOSE_ENABLED
-	struct short_channel_id scid
-		= gossmap_chan_scid(gossmap, c);
-	SUPERVERBOSE("flow_edge_cost %s/%i, cap %"PRIu64"-%"PRIu64", prev_flow=%"PRIu64", f=%"PRIu64", mu=%f, basefee_penalty=%f, delay_riskfactor=%f: ",
-		     type_to_string(tmpctx, struct short_channel_id, &scid),
-		     dir,
-		     known_min.millisatoshis, known_max.millisatoshis,
-		     prev_flow.millisatoshis, f.millisatoshis,
-		     mu, basefee_penalty, delay_riskfactor);
-#endif
-
-	/* Probability depends on any previous flows, too! */
-	if (!amount_msat_add(&prev_flow, prev_flow, f))
-		abort();
-	prob = edge_probability(known_min, known_max, prev_flow);
-	if (prob == 0) {
-		SUPERVERBOSE(" INFINITE\n");
-		return FLOW_INF_COST;
-	}
-
-	certainty_term = -log(prob);
-
-	/* This is in parts-per-million */
-	effective_feerate = (c->half[dir].proportional_fee
-			     + c->half[dir].base_fee * basefee_penalty)
-		/ 1000000.0;
-
-	/* Feerate term includes delay factor */
-	feerate_term = (mu
-			* (f.millisatoshis /* Raw: costfn */
-			   * effective_feerate
-			   + c->half[dir].delay * delay_riskfactor));
-
-	SUPERVERBOSE(" %f + %f = %f\n",
-		     certainty_term, feerate_term,
-		     certainty_term + feerate_term);
-	return certainty_term + feerate_term;
-}
+// double flow_edge_cost(const struct gossmap *gossmap,
+// 		      const struct gossmap_chan *c, int dir,
+// 		      const struct amount_msat known_min,
+// 		      const struct amount_msat known_max,
+// 		      struct amount_msat prev_flow,
+// 		      struct amount_msat f,
+// 		      double mu,
+// 		      double basefee_penalty,
+// 		      double delay_riskfactor)
+// {
+// 	double prob, effective_feerate;
+// 	double certainty_term, feerate_term;
+// 
+// #ifdef SUPERVERBOSE_ENABLED
+// 	struct short_channel_id scid
+// 		= gossmap_chan_scid(gossmap, c);
+// 	SUPERVERBOSE("flow_edge_cost %s/%i, cap %"PRIu64"-%"PRIu64", prev_flow=%"PRIu64", f=%"PRIu64", mu=%f, basefee_penalty=%f, delay_riskfactor=%f: ",
+// 		     type_to_string(tmpctx, struct short_channel_id, &scid),
+// 		     dir,
+// 		     known_min.millisatoshis, known_max.millisatoshis,
+// 		     prev_flow.millisatoshis, f.millisatoshis,
+// 		     mu, basefee_penalty, delay_riskfactor);
+// #endif
+// 
+// 	/* Probability depends on any previous flows, too! */
+// 	if (!amount_msat_add(&prev_flow, prev_flow, f))
+// 		abort();
+// 	prob = edge_probability(known_min, known_max, prev_flow);
+// 	if (prob == 0) {
+// 		SUPERVERBOSE(" INFINITE\n");
+// 		return FLOW_INF_COST;
+// 	}
+// 
+// 	certainty_term = -log(prob);
+// 
+// 	/* This is in parts-per-million */
+// 	effective_feerate = (c->half[dir].proportional_fee
+// 			     + c->half[dir].base_fee * basefee_penalty)
+// 		/ 1000000.0;
+// 
+// 	/* Feerate term includes delay factor */
+// 	feerate_term = (mu
+// 			* (f.millisatoshis /* Raw: costfn */
+// 			   * effective_feerate
+// 			   + c->half[dir].delay * delay_riskfactor));
+// 
+// 	SUPERVERBOSE(" %f + %f = %f\n",
+// 		     certainty_term, feerate_term,
+// 		     certainty_term + feerate_term);
+// 	return certainty_term + feerate_term;
+// }
 
 /* Helper function to fill in amounts and success_prob for flow */
 void flow_complete(struct flow *flow,
@@ -234,12 +274,14 @@ void flow_complete(struct flow *flow,
 		}
 
 		flow->amounts[i] = delivered;
+		flow->success_prob
+			*= edge_probability(h->known_min, h->known_max,
+					    h->htlc_total,
+					    delivered);
+		
 		if (!amount_msat_add(&h->htlc_total, h->htlc_total, delivered))
 			abort();
 		h->num_htlcs++;
-		flow->success_prob
-			*= edge_probability(h->known_min, h->known_max,
-					    h->htlc_total);
 		if (!amount_msat_add_fee(&delivered,
 					 flow_edge(flow, i)->base_fee,
 					 flow_edge(flow, i)->proportional_fee))
