@@ -104,6 +104,7 @@ double flow_edge_cost(const struct gossmap *gossmap,
 		      double basefee_penalty,
 		      double delay_riskfactor);
 
+// TODO(eduardo): check this
 /* Function to fill in amounts and success_prob for flow, and add to
  * chan_extra_map */
 void flow_complete(struct flow *flow,
@@ -115,6 +116,9 @@ void flow_complete(struct flow *flow,
 void remove_completed_flow(const struct gossmap *gossmap,
 			   struct chan_extra_map *chan_extra_map,
 			   struct flow *flow);
+
+double flows_probability(struct flow **flows);
+struct amount_msat flows_fee(struct flow **flows);
 
 /*
  * mu (μ) is used as follows in the cost function:
@@ -156,5 +160,12 @@ void remove_completed_flow(const struct gossmap *gossmap,
 double derive_mu(const struct gossmap *gossmap,
 		 struct amount_msat amount,
 		 double frugality);
+
+// TODO(eduardo):
+s64 linear_fee_cost(
+		const struct gossmap_chan *c,
+		const int dir,
+		double base_fee_penalty,
+		double delay_feefactor);
 
 #endif /* LIGHTNING_PLUGINS_RENEPAY_FLOW_H */

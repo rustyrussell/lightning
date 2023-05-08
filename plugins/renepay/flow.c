@@ -18,6 +18,7 @@ const struct half_chan *flow_edge(const struct flow *flow, size_t idx)
 	return &flow->path[idx]->half[flow->dirs[idx]];
 }
 
+// TODO(eduardo): check this
 /* Assuming a uniform distribution, what is the chance this f gets through?
  * Here we compute the conditional probability of success for a flow f, given
  * the knowledge that the liquidity is in the range [a,b) and some amount
@@ -244,6 +245,7 @@ void flow_add(struct flow *flow,
 // 	return certainty_term + feerate_term;
 // }
 
+// TODO(eduardo): check this
 /* Helper function to fill in amounts and success_prob for flow */
 void flow_complete(struct flow *flow,
 		   const struct gossmap *gossmap,
@@ -385,6 +387,62 @@ double derive_mu(const struct gossmap *gossmap,
 		/* +1 in case median fee is zero... */
 		/ (median_fee.millisatoshis + 1); /* Raw: derive_mu */
 }
+
+/* Get the fee cost associated to this directed channel. 
+ * Cost is expressed as PPM of the payment.
+ * 
+ * Choose and integer `c_fee` to linearize the following fee function
+ * 
+ *  	fee_msat = base_msat + floor(millionths*x_msat / 10^6)
+ *  	
+ * into
+ * 
+ *  	fee_microsat = c_fee * x_sat
+ *  
+ *  use `base_fee_penalty` to weight the base fee and `delay_feefactor` to
+ *  weight the CTLV delay.
+ *  */
+s64 linear_fee_cost(
+		const struct gossmap_chan *c,
+		const int dir,
+		double base_fee_penalty,
+		double delay_feefactor)
+{
+	s64 pfee = c->half[dir].proportional_fee,
+	    bfee = c->half[dir].base_fee,
+	    delay = c->half[dir].delay;
+	
+	return pfee + (bfee + delay_feefactor*delay) * base_fee_penalty;
+}
+
+double flows_probability(struct flow **flows)
+{
+	double prob = 1.0;
+
+	for (size_t i = 0; i < tal_count(flows); i++)
+		prob *= flows[i]->success_prob;
+
+	return prob;
+}
+
+struct amount_msat flows_fee(struct flow **flows)
+{
+	struct amount_msat fee = AMOUNT_MSAT(0);
+
+	for (size_t i = 0; i < tal_count(flows); i++) {
+		struct amount_msat this_fee;
+		size_t n = tal_count(flows[i]->amounts);
+
+		if (!amount_msat_sub(&this_fee,
+				     flows[i]->amounts[0],
+				     flows[i]->amounts[n-1]))
+			abort();
+		if(!amount_msat_add(&fee, this_fee,fee))
+			abort();
+	}
+	return fee;
+}
+
 
 #ifndef SUPERVERBOSE_ENABLED
 #undef SUPERVERBOSE

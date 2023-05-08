@@ -259,34 +259,6 @@ static bitmap *make_disabled_bitmap(const tal_t *ctx,
 	return disabled;
 }
 
-static double flows_probability(struct flow **flows)
-{
-	// TODO
-	double prob = 1.0;
-
-	for (size_t i = 0; i < tal_count(flows); i++)
-		prob *= flows[i]->success_prob;
-
-	return prob;
-}
-
-static struct amount_msat flows_fee(struct flow **flows)
-{
-	// TODO
-	struct amount_msat fee = AMOUNT_MSAT(0);
-
-	for (size_t i = 0; i < tal_count(flows); i++) {
-		struct amount_msat this_fee;
-		size_t n = tal_count(flows[i]->amounts);
-
-		if (!amount_msat_sub(&this_fee,
-				     flows[i]->amounts[0],
-				     flows[i]->amounts[n-1]))
-			abort();
-		amount_msat_accumulate(&fee, this_fee);
-	}
-	return fee;
-}
 
 static u64 flows_worst_delay(struct flow **flows)
 {
@@ -363,6 +335,7 @@ static void remove_flows(const struct gossmap *gossmap,
 		remove_completed_flow(gossmap, chan_extra_map, flows[i]);
 }
 
+// TODO(eduardo): check this
 /* Get some payment flows to get this amount to destination, or NULL. */
 struct pay_flow **get_payflows(struct payment *p,
 			       struct amount_msat amount,
@@ -370,8 +343,8 @@ struct pay_flow **get_payflows(struct payment *p,
 			       bool unlikely_ok,
 			       bool is_entire_payment)
 {
-	double frugality = 1.0;
-	bool was_too_expensive = false;
+	// double frugality = 1.0;
+	// bool was_too_expensive = false;
 	bitmap *disabled;
 	struct pay_flow **pay_flows;
 	const struct gossmap_node *src, *dst;
@@ -401,7 +374,6 @@ struct pay_flow **get_payflows(struct payment *p,
 		bool too_unlikely, too_expensive, too_delayed;
 		const u32 *final_cltvs;
 		
-		// TODO(eduardo): set a maximum admissible fee (1%)?
 		struct amount_msat max_fee 
 			= (struct amount_msat){.millisatoshis = amount.millisatoshis/100};
 		
@@ -409,8 +381,12 @@ struct pay_flow **get_payflows(struct payment *p,
 		 * flows must be removed if not used! */
 		flows = minflow(tmpctx, pay_plugin->gossmap, src, dst,
 				&pay_plugin->chan_extra_map, disabled,
-				amount, max_fee ,/* min prob = */ 0.01 ,
-				p->delay_feefactor);
+				amount, 
+				max_fee ,
+				/* min probability = */ 0.1 ,
+				p->delay_feefactor,
+				/* base_fee_penalty = */ 1,
+				/* prob_cost_factor = */ 10);
 		if (!flows) {
 			paynote(p, "Failed to find any paths for %s",
 				type_to_string(tmpctx,
@@ -426,14 +402,20 @@ struct pay_flow **get_payflows(struct payment *p,
 
 		too_unlikely = (prob < 0.01);
 		if (too_unlikely)
+		{
 			paynote(p, "Flows too unlikely, P() = %f%%", prob * 100);
-
+			
+			if(!unlikely_ok)
+				goto fail_path;
+		}
 		too_expensive = amount_msat_greater(fee, feebudget);
 		if (too_expensive)
+		{
 			paynote(p, "Flows too expensive, fee = %s (max %s)",
 				type_to_string(tmpctx, struct amount_msat, &fee),
 				type_to_string(tmpctx, struct amount_msat, &feebudget));
-
+			goto fail_path;
+		}
 		too_delayed = (delay > p->maxdelay);
 		if (too_delayed) {
 			paynote(p, "Flows too delayed, delay = %"PRIu64" (max %u)",
@@ -447,48 +429,11 @@ struct pay_flow **get_payflows(struct payment *p,
 			p->delay_feefactor *= 2;
 			paynote(p, "Doubling delay_feefactor to %f",
 				p->delay_feefactor);
-		}
-
-		/* too expensive vs too unlikely is a tradeoff... */
-		if (too_expensive) {
-			if (too_unlikely && !unlikely_ok) {
-				paynote(p, "Giving up!");
-				goto fail_path;
-			}
-
-			/* Try increasing frugality? */
-			if (frugality >= 32) {
-				paynote(p, "Still too expensive, giving up!");
-				goto fail_path;
-			}
-			frugality *= 2;
-			was_too_expensive = true;
-			paynote(p, "... retry with frugality increased to %f",
-				frugality);
-			goto retry;
-		} else if (too_unlikely) {
-			/* Are we bouncing between "too expensive" and
-			 * "too unlikely"? */
-			if (was_too_expensive) {
-				paynote(p, "Bouncing between expensive and unlikely");
-				if (!unlikely_ok)
-					goto fail_path;
-				paynote(p, "... picking unlikely");
-				goto seems_ok;
-			}
-
-			/* Try decreasing frugality? */
-			if (frugality < 0.01) {
-				paynote(p, "Still too unlikely, giving up!");
-				goto fail_path;
-			}
-			frugality /= 2;
-			paynote(p, "... retry with frugality reduced to %f",
-				frugality);
+			
 			goto retry;
 		}
 
-	seems_ok:
+	// seems_ok:
 		/* Now we check for min/max htlc violations, and
 		 * excessive htlc counts.  It would be more efficient
 		 * to do this inside minflow(), but the diagnostics here
