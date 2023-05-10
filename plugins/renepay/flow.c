@@ -3,6 +3,7 @@
 #include <ccan/asort/asort.h>
 #include <common/gossmap.h>
 #include <math.h>
+#include <stdio.h>
 #include <plugins/renepay/flow.h>
 
 #ifndef SUPERVERBOSE
@@ -56,17 +57,25 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 			       struct amount_msat in_flight,
 			       struct amount_msat f)
 {
-	struct amount_msat B; // =  max +1 - in_flight
+	printf("%s: with min=%ld, max=%ld, in_flight=%ld, flow=%ld\n",
+		__PRETTY_FUNCTION__,min.millisatoshis,max.millisatoshis,
+		in_flight.millisatoshis,f.millisatoshis);
+	
+	struct amount_msat B=max; // =  max +1 - in_flight
 	
 	// one past the last known value, makes computations simpler
 	if(!amount_msat_add(&B,B,AMOUNT_MSAT(1)))
+	{
+		printf("%s: aborting, lineno=%d\n",__PRETTY_FUNCTION__,__LINE__);
 		abort();
-		
+	}	
 	// in_flight cannot be greater than max
 	if(!amount_msat_sub(&B,B,in_flight))
+	{
+		printf("%s: aborting, lineno=%d\n",__PRETTY_FUNCTION__,__LINE__);
 		abort();
-		
-	struct amount_msat A; // = MAX(0,min-in_flight);
+	}	
+	struct amount_msat A=min; // = MAX(0,min-in_flight);
 	
 	if(!amount_msat_sub(&A,A,in_flight))
 		A = AMOUNT_MSAT(0);
@@ -75,8 +84,10 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 	
 	// B cannot be smaller than or equal A
 	if(!amount_msat_sub(&denominator,B,A) || amount_msat_less_eq(B,A))
+	{
+		printf("%s: aborting, lineno=%d\n",__PRETTY_FUNCTION__,__LINE__);
 		abort();
-	
+	}
 	struct amount_msat numerator; // MAX(0,B-f)
 	
 	if(!amount_msat_sub(&numerator,B,f))
@@ -101,11 +112,11 @@ bool flow_path_eq(const struct gossmap_chan **path1,
 	return true;
 }
 
-static void destroy_chan_extra(struct chan_extra *ce,
-			       struct chan_extra_map *chan_extra_map)
-{
-	chan_extra_map_del(chan_extra_map, ce);
-}
+// static void destroy_chan_extra(struct chan_extra *ce,
+// 			       struct chan_extra_map *chan_extra_map)
+// {
+// 	chan_extra_map_del(chan_extra_map, ce);
+// }
 
 /* Returns either NULL, or an entry from the hash */
 struct chan_extra_half *
@@ -133,6 +144,34 @@ get_chan_extra_half_by_chan(const struct gossmap *gossmap,
 					   dir);
 }
 
+/* Helper to get the chan_extra_half. If it doesn't exist create a new one. */
+struct chan_extra_half *
+get_chan_extra_half_by_chan_verify(
+		const struct gossmap *gossmap,
+		struct chan_extra_map *chan_extra_map,
+		const struct gossmap_chan *chan,
+		int dir)
+{
+	
+	const struct short_channel_id scid = gossmap_chan_scid(gossmap,chan);
+	struct chan_extra_half *h = get_chan_extra_half_by_scid(
+					chan_extra_map,scid,dir);
+	if (!h) {
+		struct amount_sat cap;
+		struct amount_msat cap_msat;
+
+		if (!gossmap_chan_get_capacity(gossmap,chan, &cap))
+			cap = AMOUNT_SAT(0);
+		if (!amount_sat_to_msat(&cap_msat, cap))
+		{
+			abort();
+		}
+		h = new_chan_extra_half(chan_extra_map,
+					scid,dir,cap_msat);
+	}
+	return h;
+}
+
 struct chan_extra_half *new_chan_extra_half(struct chan_extra_map *chan_extra_map,
 					    const struct short_channel_id scid,
 					    int dir,
@@ -149,7 +188,12 @@ struct chan_extra_half *new_chan_extra_half(struct chan_extra_map *chan_extra_ma
 	}
 	/* Remove self from map when done */
 	chan_extra_map_add(chan_extra_map, ce);
-	tal_add_destructor2(ce, destroy_chan_extra, chan_extra_map);
+	
+	// TODO(eduardo):
+	// Is this desctructor really necessary? the chan_extra will deallocated
+	// when the chan_extra_map is freed. Anyways valgrind complains that the
+	// hash table is removing the element with a freed pointer.
+	// tal_add_destructor2(ce, destroy_chan_extra, chan_extra_map);
 	return &ce->half[dir];
 }
 
@@ -163,9 +207,15 @@ void remove_completed_flow(const struct gossmap *gossmap,
 							       flow->path[i],
 							       flow->dirs[i]);
 		if (!amount_msat_sub(&h->htlc_total, h->htlc_total, flow->amounts[i]))
+		{
+			printf("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
+		}
 		if (h->num_htlcs == 0)
+		{
+			printf("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
+		}
 		h->num_htlcs--;
 	}
 }
@@ -181,8 +231,10 @@ void flow_add(struct flow *flow,
 	/* Add in new amount */
 	if (!amount_msat_add(&delivered,
 			     flow->amounts[tal_count(flow->amounts)-1], additional))
+	{
+		printf("%s: aborting\n",__PRETTY_FUNCTION__);
 		abort();
-
+	}
 	/* Remove original from current_flows */
 	remove_completed_flow(gossmap, chan_extra_map, flow);
 
@@ -245,8 +297,15 @@ void flow_add(struct flow *flow,
 // 	return certainty_term + feerate_term;
 // }
 
-// TODO(eduardo): check this
-/* Helper function to fill in amounts and success_prob for flow */
+/* Helper function to fill in amounts and success_prob for flow 
+ * 
+ * IMPORTANT: here we do not commit flows to chan_extra, flows are commited
+ * after we send those htlc.
+ * 
+ * IMPORTANT: flow->success_prob is misleading, because that's the prob. of
+ * success provided that there are no other flows in the current MPP flow set.
+ * 
+ * */
 void flow_complete(struct flow *flow,
 		   const struct gossmap *gossmap,
 		   struct chan_extra_map *chan_extra_map,
@@ -255,40 +314,117 @@ void flow_complete(struct flow *flow,
 	flow->success_prob = 1.0;
 	flow->amounts = tal_arr(flow, struct amount_msat, tal_count(flow->path));
 	for (int i = tal_count(flow->path) - 1; i >= 0; i--) {
-		struct chan_extra_half *h;
-
-		h = get_chan_extra_half_by_chan(gossmap, chan_extra_map,
-						flow->path[i], flow->dirs[i]);
-		if (!h) {
-			struct amount_sat cap;
-			struct amount_msat cap_msat;
-
-			if (!gossmap_chan_get_capacity(gossmap,
-						       flow->path[i], &cap))
-				cap = AMOUNT_SAT(0);
-			if (!amount_sat_to_msat(&cap_msat, cap))
-				abort();
-			h = new_chan_extra_half(chan_extra_map,
-						gossmap_chan_scid(gossmap,
-								  flow->path[i]),
-						flow->dirs[i],
-						cap_msat);
-		}
-
+		const struct chan_extra_half *h
+			= get_chan_extra_half_by_chan_verify(gossmap,
+							chan_extra_map,
+							flow->path[i],
+							flow->dirs[i]);
+		
 		flow->amounts[i] = delivered;
 		flow->success_prob
 			*= edge_probability(h->known_min, h->known_max,
 					    h->htlc_total,
 					    delivered);
 		
-		if (!amount_msat_add(&h->htlc_total, h->htlc_total, delivered))
-			abort();
-		h->num_htlcs++;
+		// if (!amount_msat_add(&h->htlc_total, h->htlc_total, delivered))
+		// {
+		// 	printf("%s: aborting\n",__PRETTY_FUNCTION__);
+		// 	abort();
+		// }
+		// h->num_htlcs++;
 		if (!amount_msat_add_fee(&delivered,
 					 flow_edge(flow, i)->base_fee,
 					 flow_edge(flow, i)->proportional_fee))
+		{
+			printf("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
+		}
 	}
+}
+
+/* Compute the prob. of success of a set of concurrent set of flows. 
+ * 
+ * IMPORTANT: this is not simply the multiplication of the prob. of success of
+ * all of them, because they're not independent events. A flow that passes
+ * through a channel c changes that channel's liquidity and then if another flow
+ * passes through that same channel the previous liquidity change must be taken
+ * into account.
+ * 
+ * 	P(A and B) != P(A) * P(B),
+ * 	
+ * but	
+ * 	
+ * 	P(A and B) = P(A) * P(B | A) 
+ * 
+ * also due to the linear form of P() we have
+ * 
+ * 	P(A and B) = P(A + B)
+ * 	*/
+struct chan_inflight_flow
+{
+	struct amount_msat half[2];
+};
+
+// TODO(eduardo): here chan_extra_map should be const
+// TODO(eduardo): here flows should be const
+double flow_set_probability(
+		struct flow ** flows,
+		struct gossmap const*const gossmap,
+		struct chan_extra_map * chan_extra_map)
+{
+	tal_t *this_ctx = tal(tmpctx,tal_t);
+	double prob = 1.0;
+	
+	// TODO(eduardo): should it be better to use a map instead of an array
+	// here?
+	const size_t max_num_chans= gossmap_max_chan_idx(gossmap);
+	struct chan_inflight_flow *in_flight 
+		= tal_arr(this_ctx,struct chan_inflight_flow,max_num_chans);
+	
+	for(size_t i=0;i<max_num_chans;++i)
+	{
+		in_flight[i].half[0]=in_flight[i].half[1]=AMOUNT_MSAT(0);
+	}
+	
+	for(size_t i=0;i<tal_count(flows);++i)
+	{
+		const struct flow* f = flows[i];
+		for(size_t j=0;j<tal_count(f->path);++j)
+		{
+			const struct chan_extra_half *h
+				= get_chan_extra_half_by_chan(
+						gossmap,
+						chan_extra_map,
+						f->path[j],
+						f->dirs[j]);
+			assert(h);
+			
+			const u32 c_idx = gossmap_chan_idx(gossmap,f->path[j]);
+			const int c_dir = f->dirs[j];
+			
+			const struct amount_msat deliver = f->amounts[j];
+			
+			struct amount_msat prev_flow;
+			if(!amount_msat_add(&prev_flow,h->htlc_total,in_flight[c_idx].half[c_dir]))
+			{
+				printf("%s: aborting\n",__PRETTY_FUNCTION__);
+				abort();
+			}
+			
+			prob *= edge_probability(h->known_min,h->known_max,
+						 prev_flow,deliver);
+			
+			if(!amount_msat_add(&in_flight[c_idx].half[c_dir],
+					in_flight[c_idx].half[c_dir],
+					deliver))
+			{
+				printf("%s: aborting\n",__PRETTY_FUNCTION__);
+				abort();
+			}
+		}
+	}
+	tal_free(this_ctx);
+	return prob;
 }
 
 static int cmp_amount_msat(const struct amount_msat *a,
@@ -362,8 +498,10 @@ static void get_medians(const struct gossmap *gossmap,
 	if (!num_caps)
 		*median_capacity = amount;
 	else if (!amount_sat_to_msat(median_capacity, caps[num_caps / 2]))
+	{
+		printf("%s: aborting\n",__PRETTY_FUNCTION__);
 		abort();
-
+	}
 	asort(fees, num_fees, cmp_amount_msat, NULL);
 	if (!num_caps)
 		*median_fee = AMOUNT_MSAT(0);
@@ -415,16 +553,6 @@ s64 linear_fee_cost(
 	return pfee + (bfee + delay_feefactor*delay) * base_fee_penalty;
 }
 
-double flows_probability(struct flow **flows)
-{
-	double prob = 1.0;
-
-	for (size_t i = 0; i < tal_count(flows); i++)
-		prob *= flows[i]->success_prob;
-
-	return prob;
-}
-
 struct amount_msat flows_fee(struct flow **flows)
 {
 	struct amount_msat fee = AMOUNT_MSAT(0);
@@ -436,9 +564,15 @@ struct amount_msat flows_fee(struct flow **flows)
 		if (!amount_msat_sub(&this_fee,
 				     flows[i]->amounts[0],
 				     flows[i]->amounts[n-1]))
+		{
+			printf("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
+		}
 		if(!amount_msat_add(&fee, this_fee,fee))
+		{
+			printf("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
+		}
 	}
 	return fee;
 }

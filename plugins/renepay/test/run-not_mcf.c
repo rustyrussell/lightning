@@ -1,6 +1,6 @@
 #include "config.h"
 #include "../flow.c"
-#include "../not_mcf.c"
+#include "../mcf.c"
 #include <ccan/array_size/array_size.h>
 #include <ccan/read_write_all/read_write_all.h>
 #include <common/bigsize.h>
@@ -309,8 +309,11 @@ int main(int argc, char *argv[])
 			chan_extra_map, NULL,
 			/* Half the capacity */
 			AMOUNT_MSAT(500000000),
-			1,
-			1);
+			 /* max_fee = */ AMOUNT_MSAT(1000000), // 1k sats
+			 /* min probability = */ 0.1, // 10%
+			 /* delay fee factor = */ 1,
+			 /* base fee penalty */ 1,
+			 /* prob cost factor = */ 10);
 	print_flows("Flow via single path l1->l2->l3", gossmap, flows);
 
 	/* Should go 1->2->3 */
@@ -387,8 +390,11 @@ int main(int argc, char *argv[])
 			chan_extra_map, NULL,
 			/* This will go first via 1-2-3, then 1->3. */
 			AMOUNT_MSAT(500000000),
-			0.1,
-			1);
+			 /* max_fee = */ AMOUNT_MSAT(1000000), // 1k sats
+			 /* min probability = */ 0.1, // 10%
+			 /* delay fee factor = */ 1,
+			 /* base fee penalty */ 1,
+			 /* prob cost factor = */ 10);
 
 	print_flows("Flow via two paths, low mu", gossmap, flows);
 
@@ -433,9 +439,12 @@ int main(int argc, char *argv[])
 			 gossmap_find_node(gossmap, &l3),
 			 chan_extra_map, NULL,
 			 /* This will go 400000000 via 1->3, rest via 1-2-3. */
-			 AMOUNT_MSAT(500000000),
-			 10,
-			 1);
+			 /* amount = */ AMOUNT_MSAT(500000000), //500k sats
+			 /* max_fee = */ AMOUNT_MSAT(1000000), // 1k sats
+			 /* min probability = */ 0.1, // 10%
+			 /* delay fee factor = */ 1,
+			 /* base fee penalty */ 1,
+			 /* prob cost factor = */ 10);
 	print_flows("Flow via two paths, high mu", gossmap, flows2);
 	ASSERT(tal_count(flows2) == 2);
 	ASSERT(tal_count(flows2[0]->path) == 1);

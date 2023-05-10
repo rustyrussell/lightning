@@ -18,7 +18,8 @@ PLUGIN_RENEPAY_TEST_COMMON_OBJS :=		\
 	common/dijkstra.o			\
 	common/setup.o				\
 	common/type_to_string.o			\
-	common/utils.o
+	common/utils.o				\
+	plugins/renepay/dijkstra.o
 
 $(PLUGIN_RENEPAY_TEST_PROGRAMS): $(CCAN_OBJS) $(BITCOIN_OBJS) $(WIRE_OBJS) $(PLUGIN_RENEPAY_TEST_COMMON_OBJS)
 

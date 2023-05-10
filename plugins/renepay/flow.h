@@ -56,6 +56,13 @@ struct chan_extra_half *get_chan_extra_half_by_chan(const struct gossmap *gossma
 						    struct chan_extra_map *chan_extra_map,
 						    const struct gossmap_chan *chan,
 						    int dir);
+/* Helper to get the chan_extra_half. If it doesn't exist create a new one. */
+struct chan_extra_half *
+get_chan_extra_half_by_chan_verify(
+		const struct gossmap *gossmap,
+		struct chan_extra_map *chan_extra_map,
+		const struct gossmap_chan *chan,
+		int dir);
 
 /* tal_free() this removes it from chan_extra_map */
 struct chan_extra_half *new_chan_extra_half(struct chan_extra_map *chan_extra_map,
@@ -104,20 +111,23 @@ double flow_edge_cost(const struct gossmap *gossmap,
 		      double basefee_penalty,
 		      double delay_riskfactor);
 
-// TODO(eduardo): check this
-/* Function to fill in amounts and success_prob for flow, and add to
- * chan_extra_map */
+/* Function to fill in amounts and success_prob for flow. */
 void flow_complete(struct flow *flow,
 		   const struct gossmap *gossmap,
 		   struct chan_extra_map *chan_extra_map,
 		   struct amount_msat delivered);
+
+/* Compute the prob. of success of a set of concurrent set of flows. */ 
+double flow_set_probability(
+		struct flow ** flows,
+		struct gossmap const*const gossmap,
+		struct chan_extra_map * chan_extra_map);
 
 /* Once flow is completed, this can remove it from the extra_map */
 void remove_completed_flow(const struct gossmap *gossmap,
 			   struct chan_extra_map *chan_extra_map,
 			   struct flow *flow);
 
-double flows_probability(struct flow **flows);
 struct amount_msat flows_fee(struct flow **flows);
 
 /*

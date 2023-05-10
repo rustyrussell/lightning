@@ -217,37 +217,37 @@ static const s64 MU_MAX = 128;
  * the outgoing arcs. If we ever need to loop over the
  * incoming arcs then we will define a reverse adjacency
  * API. 
- * Then for each outgoing channel `(c,!half)` there will
+ * Then for each outgoing channel `(c,half)` there will
  * be 4 parts for the actual residual capacity, hence
  * with the dual bit set to 0:
- * 
- * 	(c,!half,0,0)
- * 	(c,!half,1,0)
- * 	(c,!half,2,0)
- * 	(c,!half,3,0)
- * 	
- * and also we need to consider the dual arcs
- * corresponding to the channel direction `(c,half)`
- * (the dual has reverse direction):
- * 
- * 	(c,half,0,1)
- * 	(c,half,1,1)
- * 	(c,half,2,1)
- * 	(c,half,3,1)
- *  
- * These are the 8 outgoing arcs relative to `node` and
- * associated with channel `c`. The incoming arcs will
- * be:
  * 
  * 	(c,half,0,0)
  * 	(c,half,1,0)
  * 	(c,half,2,0)
  * 	(c,half,3,0)
+ * 	
+ * and also we need to consider the dual arcs
+ * corresponding to the channel direction `(c,!half)`
+ * (the dual has reverse direction):
  * 
  * 	(c,!half,0,1)
  * 	(c,!half,1,1)
  * 	(c,!half,2,1)
  * 	(c,!half,3,1)
+ *  
+ * These are the 8 outgoing arcs relative to `node` and
+ * associated with channel `c`. The incoming arcs will
+ * be:
+ * 
+ * 	(c,!half,0,0)
+ * 	(c,!half,1,0)
+ * 	(c,!half,2,0)
+ * 	(c,!half,3,0)
+ * 
+ * 	(c,half,0,1)
+ * 	(c,half,1,1)
+ * 	(c,half,2,1)
+ * 	(c,half,3,1)
  * 	
  * but they will be stored as outgoing arcs on the peer
  * node `next`.
@@ -302,7 +302,7 @@ struct pay_parameters {
  * capacity; these quantities remain constant during MCF execution. */
 struct linear_network
 {
-	u32 *arc_head_node; 
+	u32 *arc_tail_node; 
 	// notice that a tail node is not needed, 
 	// because the tail of arc is the head of dual(arc)
 	
@@ -358,16 +358,17 @@ static s64 get_arc_flow(
 static u32 arc_tail(const struct linear_network *linear_network,
                     const arc_t arc)
 {
-	assert(arc_dual(arc).idx < tal_count(linear_network->arc_head_node));
-	return linear_network->arc_head_node[ arc_dual(arc).idx ];
+	assert(arc.idx < tal_count(linear_network->arc_tail_node));
+	return linear_network->arc_tail_node[ arc.idx ];
 }
 /* Helper function. 
  * Given an arc idx, return the node that this arc is pointing to in the residual network. */
 static u32 arc_head(const struct linear_network *linear_network,
                     const arc_t arc)
 {
-	assert(arc.idx < tal_count(linear_network->arc_head_node));
-	return linear_network->arc_head_node[arc.idx];
+	const arc_t dual = arc_dual(arc);
+	assert(dual.idx < tal_count(linear_network->arc_tail_node));
+	return linear_network->arc_tail_node[dual.idx];
 }
 		
 /* Helper function. 
@@ -407,6 +408,7 @@ static arc_t channel_idx_to_arc(
 		int dual)
 {
 	arc_t arc;
+	// arc.idx=0; // shouldn't be necessary, but valgrind complains of uninitialized field idx
 	arc.dual=dual;
 	arc.part=part;
 	arc.chandir=half;
@@ -499,6 +501,25 @@ static void combine_cost_function(
 	}
 }
 
+static void linear_network_add_adjacenct_arc(
+		struct linear_network *linear_network,
+		const u32 node_idx,
+		const arc_t arc)
+{
+	assert(arc.idx < tal_count(linear_network->arc_tail_node));
+	linear_network->arc_tail_node[arc.idx] = node_idx;
+	
+	assert(node_idx < tal_count(linear_network->node_adjacency_first_arc));
+	const arc_t first_arc = linear_network->node_adjacency_first_arc[node_idx];
+
+	assert(arc.idx < tal_count(linear_network->node_adjacency_next_arc));
+	linear_network->node_adjacency_next_arc[arc.idx]=first_arc;
+	
+	assert(node_idx < tal_count(linear_network->node_adjacency_first_arc));
+	linear_network->node_adjacency_first_arc[node_idx]=arc;
+}
+				
+
 static void init_linear_network(
 		const struct pay_parameters *params,
 		struct linear_network *linear_network)
@@ -510,9 +531,9 @@ static void init_linear_network(
 	linear_network->max_num_arcs = max_num_arcs;
 	linear_network->max_num_nodes = max_num_nodes;
 	
-	linear_network->arc_head_node = tal_arr(linear_network,u32,max_num_arcs);
-	for(size_t i=0;i<tal_count(linear_network->arc_head_node);++i)
-		linear_network->arc_head_node[i]=INVALID_INDEX;
+	linear_network->arc_tail_node = tal_arr(linear_network,u32,max_num_arcs);
+	for(size_t i=0;i<tal_count(linear_network->arc_tail_node);++i)
+		linear_network->arc_tail_node[i]=INVALID_INDEX;
 	
 	linear_network->node_adjacency_next_arc = tal_arr(linear_network,arc_t,max_num_arcs);
 	for(size_t i=0;i<tal_count(linear_network->node_adjacency_next_arc);++i)
@@ -529,7 +550,8 @@ static void init_linear_network(
 	linear_network->arc_fee_cost = tal_arr(linear_network,s64,max_num_arcs);
 	for(size_t i=0;i<tal_count(linear_network->arc_fee_cost);++i)
 		linear_network->arc_fee_cost[i]=INFINITE;
-		
+	
+	linear_network->capacity = tal_arrz(linear_network,s64,max_num_arcs);
 	
 	for(struct gossmap_node *node = gossmap_first_node(params->gossmap);
 	    node;
@@ -537,10 +559,10 @@ static void init_linear_network(
 	{
 		const u32 node_id = gossmap_node_idx(params->gossmap,node);
 		
-		arc_t prev_arc = (arc_t){.idx = INVALID_INDEX};
-		
 		for(size_t j=0;j<node->num_chans;++j)
 		{
+			
+			
 			int half;
 			const struct gossmap_chan *c = gossmap_nth_chan(params->gossmap,
 			                                                node, j, &half);
@@ -571,66 +593,33 @@ static void init_linear_network(
 			// that are outgoing to `node`
 			linearize_channel(params,c,half,capacity,prob_cost);
 			
+			const s64 fee_cost = linear_fee_cost(c,half,
+						params->base_fee_penalty,
+						params->delay_feefactor);
+			
 			// let's subscribe the 4 parts of the channel direction
 			// (c,half), the dual of these guys will be subscribed
 			// when the `i` hits the `next` node.
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
 				arc_t arc = channel_idx_to_arc(chan_id,half,k,0);
-				linear_network->arc_head_node[arc.idx] = next_id;
 				
-				// Is this is the first arc?
-				if(prev_arc.idx==INVALID_INDEX)
-				// yes, then set it at the head of the linked list
-				{
-					linear_network->node_adjacency_first_arc[node_id]=arc;
-				} else
-				// no, then link it to the previous arc
-				{
-					linear_network->node_adjacency_next_arc[prev_arc.idx]=arc;
-				}
-				
-				prev_arc = arc;
+				linear_network_add_adjacenct_arc(linear_network,node_id,arc);
 				
 				linear_network->capacity[arc.idx] = capacity[k];
 				linear_network->arc_prob_cost[arc.idx] = prob_cost[k];
 				
-				linear_network->arc_fee_cost[arc.idx] 
-					= linear_fee_cost(c,half,
-							   params->base_fee_penalty,
-							   params->delay_feefactor);
-			}
-			
-			// split the opposite direction to obtain the dual arcs
-			// that are outgoing to `node`
-			linearize_channel(params,c,!half,capacity,prob_cost);
-			
-			// let's subscribe the 4 parts of the channel direction
-			// (c,!half) in dual representation
-			for(size_t k=0;k<CHANNEL_PARTS;++k)
-			{
-				arc_t arc = channel_idx_to_arc(chan_id,!half,k,1);
-				linear_network->arc_head_node[arc.idx] = next_id;
+				linear_network->arc_fee_cost[arc.idx] = fee_cost;
 				
-				// Is this is the first arc?
-				if(prev_arc.idx==INVALID_INDEX)
-				// yes, then set it at the head of the linked list
-				{
-					linear_network->node_adjacency_first_arc[node_id]=arc;
-				} else
-				// no, then link it to the previous arc
-				{
-					linear_network->node_adjacency_next_arc[prev_arc.idx]=arc;
-				}
+				// + the respective dual
+				arc_t dual = arc_dual(arc);
 				
-				prev_arc = arc;
+				linear_network_add_adjacenct_arc(linear_network,next_id,dual);
 				
-				linear_network->capacity[arc.idx] = 0;
-				linear_network->arc_prob_cost[arc.idx] = -prob_cost[k];
-				linear_network->arc_fee_cost[arc.idx] 
-					= -linear_fee_cost(c,!half,
-							    params->base_fee_penalty,
-					                    params->delay_feefactor);
+				linear_network->capacity[dual.idx] = 0;
+				linear_network->arc_prob_cost[dual.idx] = -prob_cost[k];
+				
+				linear_network->arc_fee_cost[dual.idx] = -fee_cost;
 			}
 		}
 	}
@@ -675,6 +664,7 @@ static int find_admissible_path(
 	{
 		qdata = lqueue_dequeue(&myqueue);
 		u32 cur = qdata->idx;
+	
 		tal_free(qdata);
 		
 		if(cur==target)
@@ -800,6 +790,7 @@ static int find_feasible_flow(
 		int err = find_admissible_path(
 					linear_network,
 					residual_network,source,target,prev);
+		
 		if(err!=RENEPAY_ERR_OK)
 		{
 			ret = RENEPAY_ERR_NOFEASIBLEFLOW;
@@ -1012,6 +1003,7 @@ static u32 find_positive_balance(
 	 * algorithm does not come up with spurious flow cycles. */
 	while(balance[final_idx]<=0)
 	{
+		printf("%s: node = %d\n",__PRETTY_FUNCTION__,final_idx);
 		u32 updated_idx=INVALID_INDEX;
 		struct gossmap_node *cur
 			= gossmap_node_byidx(gossmap,final_idx);
@@ -1048,6 +1040,9 @@ static u32 find_positive_balance(
 		
 		assert(updated_idx!=INVALID_INDEX);
 		assert(updated_idx!=final_idx);
+		printf("%s: balance[%d] = %ld\n",__PRETTY_FUNCTION__,
+			updated_idx,balance[updated_idx]);
+		
 		final_idx = updated_idx;
 	}
 	return final_idx;
@@ -1073,6 +1068,7 @@ static struct flow **
 		const struct linear_network *linear_network,
 		const struct residual_network *residual_network)
 {
+	printf("%s: starting\n",__PRETTY_FUNCTION__);
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
 	const size_t max_num_chans = gossmap_max_chan_idx(gossmap);
@@ -1119,22 +1115,29 @@ static struct flow **
 	// positive balance node.
 	for(u32 node_idx=0;node_idx<max_num_nodes;++node_idx)
 	{
+		// for(size_t i=0;i<tal_count(prev_idx);++i)
+		// {
+		// 	prev_idx[i]=INVALID_INDEX;
+		// }
 		// this node has negative balance, flows leaves from here
 		while(balance[node_idx]<0)
 		{	
-			
 			prev_chan[node_idx]=NULL;
 			u32 final_idx = find_positive_balance(gossmap,chan_flow,node_idx,balance,
 							prev_chan,prev_dir,prev_idx);
-			
+		
 			s64 delta=-balance[node_idx];
 			int length = 0;
 			delta = MIN(delta,balance[final_idx]);
 			
 			// walk backwards, get me the length and the max flow we
 			// can send.
-			for(u32 cur_idx = final_idx;cur_idx!=node_idx;cur_idx=prev_idx[node_idx])
+			for(u32 cur_idx = final_idx;
+			    cur_idx!=node_idx;
+			    cur_idx=prev_idx[cur_idx])
 			{
+				assert(cur_idx!=INVALID_INDEX);
+				
 				const int dir = prev_dir[cur_idx];
 				struct gossmap_chan const * const c = prev_chan[cur_idx];
 				const u32 c_idx = gossmap_chan_idx(gossmap,c);
@@ -1156,8 +1159,12 @@ static struct flow **
 			balance[final_idx]-= delta;
 			
 			// walk backwards, substract flow
-			for(u32 cur_idx = final_idx;cur_idx!=node_idx;cur_idx=prev_idx[node_idx])
+			for(u32 cur_idx = final_idx;
+			    cur_idx!=node_idx;
+			    cur_idx=prev_idx[cur_idx])
 			{
+				assert(cur_idx!=INVALID_INDEX);
+				
 				const int dir = prev_dir[cur_idx];
 				struct gossmap_chan const * const c = prev_chan[cur_idx];
 				const u32 c_idx = gossmap_chan_idx(gossmap,c);
@@ -1192,6 +1199,7 @@ static struct flow **
 	}
 	
 	tal_free(this_ctx);
+	printf("%s: done\n",__PRETTY_FUNCTION__);
 	return flows;
 }
 
@@ -1217,6 +1225,7 @@ struct flow** minflow(
 		double base_fee_penalty,
 		u32 prob_cost_factor )
 {
+	printf("%s: starting\n",__PRETTY_FUNCTION__);
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
 	struct pay_parameters *params = tal(this_ctx,struct pay_parameters);	
@@ -1263,18 +1272,23 @@ struct flow** minflow(
 	
 	init_residual_netork(linear_network,residual_network);
 	
+	printf("%s: done with allocation and initialization\n",__PRETTY_FUNCTION__);
 	
 	struct amount_msat best_fee;
 	// double best_prob_success;
 	struct flow **best_flow_paths = NULL;
 	
+	printf("%s: searching for a feasible flow\n",__PRETTY_FUNCTION__);
 	int err = find_feasible_flow(linear_network,residual_network,source_idx,target_idx,
 	                             params->amount.millisatoshis/1000);
+	
 	if(err!=RENEPAY_ERR_OK)
 	{
 		// there is no flow that satisfy the constraints, we stop here
+		printf("%s: feasible flow not found\n",__PRETTY_FUNCTION__);
 		goto fail;
 	}
+	printf("%s: found a feasible flow\n",__PRETTY_FUNCTION__);
 	
 	// first flow found
 	best_flow_paths = get_flow_paths(ctx,params->gossmap,params->chan_extra_map,
@@ -1292,6 +1306,7 @@ struct flow** minflow(
 	{
 		
 		s64 mu = (mu_left + mu_right)/2;
+		printf("%s: mu=%ld\n",__PRETTY_FUNCTION__,mu);
 		
 		combine_cost_function(linear_network,residual_network,mu);
 		
@@ -1302,7 +1317,10 @@ struct flow** minflow(
 		flow_paths = get_flow_paths(this_ctx,params->gossmap,params->chan_extra_map,
 		                            linear_network,residual_network);
 		
-		double prob_success = flows_probability(flow_paths);
+		double prob_success = flow_set_probability(
+						flow_paths,
+						params->gossmap,
+						params->chan_extra_map);
 		struct amount_msat fee = flows_fee(flow_paths);
 		
 		if(amount_msat_greater(fee,params->max_fee))
@@ -1332,7 +1350,11 @@ struct flow** minflow(
 			tal_free(flow_paths);
 	}
 	
+	
+	
 	fail:
+	
+	printf("%s: finished\n",__PRETTY_FUNCTION__);
 	
 	tal_free(this_ctx);
 	return best_flow_paths;
