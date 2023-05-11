@@ -6,6 +6,7 @@
 #include <plugins/renepay/mcf.h>
 #include <plugins/renepay/flow.h>
 #include <plugins/renepay/dijkstra.h>
+#include <common/type_to_string.h>
 #include <stdint.h>
 #include <math.h>
 #include <assert.h>
@@ -425,7 +426,7 @@ static void linearize_channel(
 		s64 *capacity,
 		s64 *cost)
 {
-	struct chan_extra_half *extra_half = get_chan_extra_half_by_chan(
+	struct chan_extra_half *extra_half = get_chan_extra_half_by_chan_verify(
 							params->gossmap,
 							params->chan_extra_map,
 							c,
@@ -442,7 +443,12 @@ static void linearize_channel(
 		
 		cost[i] = params->cost_fraction[i]
 		          *params->amount.millisatoshis
-		          *params->prob_cost_factor;
+		          *params->prob_cost_factor*1.0/(b-a);
+		
+		// printf("channel part: %ld, cost_fraction: %lf, cost: %ld\n",
+		// 	i,params->cost_fraction[i],cost[i]);
+		// printf("prob_cost_factor: %d, amount_msat: %ld\n",
+		// 	params->prob_cost_factor,params->amount.millisatoshis);
 	}
 }
 
@@ -487,8 +493,13 @@ static void combine_cost_function(
 		struct residual_network *residual_network,
 		s64 mu)
 {
+	// printf("Report on arcs cost\n");
 	for(u32 arc_idx=0;arc_idx<linear_network->max_num_arcs;++arc_idx)
 	{
+		arc_t arc = (arc_t){.idx=arc_idx};
+		if(arc_tail(linear_network,arc)==INVALID_INDEX)
+			continue;
+		
 		const s64 pcost = linear_network->arc_prob_cost[arc_idx],
 		          fcost = linear_network->arc_fee_cost[arc_idx];
 			  
@@ -498,7 +509,17 @@ static void combine_cost_function(
 		residual_network->cost[arc_idx]
 			= mu==0 ? pcost : 
 			          (mu==(MU_MAX-1) ? fcost : combined);
+		
+		// printf("arc_idx: %d, comb. cost: %ld, res. cap: %ld\n",arc_idx,
+		// 	residual_network->cost[arc_idx],
+		// 	residual_network->cap[arc_idx]);
+		// printf("cap: %ld, prob_cost: %ld, fee_cost: %ld, mu: %ld\n\n",
+		// 	linear_network->capacity[arc_idx],
+		// 	linear_network->arc_prob_cost[arc_idx],
+		// 	linear_network->arc_fee_cost[arc_idx],
+		// 	mu);
 	}
+	// printf("\n\n");
 }
 
 static void linear_network_add_adjacenct_arc(
@@ -602,6 +623,8 @@ static void init_linear_network(
 			// when the `i` hits the `next` node.
 			for(size_t k=0;k<CHANNEL_PARTS;++k)
 			{
+				// if(capacity[k]==0)continue;
+				
 				arc_t arc = channel_idx_to_arc(chan_id,half,k,0);
 				
 				linear_network_add_adjacenct_arc(linear_network,node_id,arc);
@@ -1003,7 +1026,7 @@ static u32 find_positive_balance(
 	 * algorithm does not come up with spurious flow cycles. */
 	while(balance[final_idx]<=0)
 	{
-		printf("%s: node = %d\n",__PRETTY_FUNCTION__,final_idx);
+		// printf("%s: node = %d\n",__PRETTY_FUNCTION__,final_idx);
 		u32 updated_idx=INVALID_INDEX;
 		struct gossmap_node *cur
 			= gossmap_node_byidx(gossmap,final_idx);
@@ -1040,8 +1063,8 @@ static u32 find_positive_balance(
 		
 		assert(updated_idx!=INVALID_INDEX);
 		assert(updated_idx!=final_idx);
-		printf("%s: balance[%d] = %ld\n",__PRETTY_FUNCTION__,
-			updated_idx,balance[updated_idx]);
+		// printf("%s: balance[%d] = %ld\n",__PRETTY_FUNCTION__,
+		//	updated_idx,balance[updated_idx]);
 		
 		final_idx = updated_idx;
 	}
@@ -1068,7 +1091,7 @@ static struct flow **
 		const struct linear_network *linear_network,
 		const struct residual_network *residual_network)
 {
-	printf("%s: starting\n",__PRETTY_FUNCTION__);
+	// printf("%s: starting\n",__PRETTY_FUNCTION__);
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
 	const size_t max_num_chans = gossmap_max_chan_idx(gossmap);
@@ -1199,10 +1222,87 @@ static struct flow **
 	}
 	
 	tal_free(this_ctx);
-	printf("%s: done\n",__PRETTY_FUNCTION__);
+	// printf("%s: done\n",__PRETTY_FUNCTION__);
 	return flows;
 }
 
+/* Given the constraints on max fee and min prob.,
+ * is the flow A better than B? */
+static bool is_better(
+		struct amount_msat max_fee,
+		double min_probability,
+		
+		struct amount_msat A_fee,
+		double A_prob,
+		
+		struct amount_msat B_fee,
+		double B_prob)
+{
+	bool A_fee_pass = amount_msat_less_eq(A_fee,max_fee);
+	bool B_fee_pass = amount_msat_less_eq(B_fee,max_fee);
+	bool A_prob_pass = A_prob >= min_probability;
+	bool B_prob_pass = B_prob >= min_probability;
+	
+	// all bounds are met
+	if(A_fee_pass && B_fee_pass && A_prob_pass && B_prob_pass)
+	{
+		// prefer lower fees
+		return amount_msat_less_eq(A_fee,B_fee);
+	}
+	
+	// prefer the solution that satisfies both bounds
+	if((!A_fee_pass || !A_prob_pass) && (B_fee_pass && B_prob_pass))
+	{
+		return false;
+	}
+	// prefer the solution that satisfies both bounds
+	if((A_fee_pass && A_prob_pass) && (!B_fee_pass || !B_prob_pass))
+	{
+		return true;
+	}
+	
+	// no solution satisfies both bounds
+	
+	// bound on fee is met
+	if(A_fee_pass && B_fee_pass)
+	{
+		// pick the highest prob.
+		return A_prob > B_prob;
+	}
+	
+	// bound on prob. is met
+	if(A_prob_pass && B_prob_pass)
+	{
+		// pick the lowest fee
+		return amount_msat_less_eq(A_fee,B_fee);
+	}
+	
+	// prefer the solution that satisfies the bound on fees
+	if(A_fee_pass)
+	{
+		return true;
+	}
+	if(B_fee_pass)
+	{
+		return false;
+	}
+	
+	// none of them satisfy the fee bound
+	
+	// prefer the solution that satisfies the bound on prob.
+	if(A_prob_pass)
+	{
+		return true;
+	}
+	if(B_prob_pass)
+	{
+		return true;
+	}
+	
+	// no bound whatsoever is satisfied
+	// go for fees
+	return amount_msat_less_eq(A_fee,B_fee);
+}
 
 
 // TODO(eduardo): choose some default values for the minflow parameters
@@ -1210,7 +1310,11 @@ static struct flow **
  * flows, ie. base fees are not considered. Hence a flow along a path is
  * described with a sequence of directed channels and one amount. 
  * In the `pay_flow` module there are dedicated routes to compute the actual
- * amount to be forward on each hop. */
+ * amount to be forward on each hop. 
+ * 
+ * TODO(eduardo): notice that we don't pay fees to forward payments with local
+ * channels and we can tell with absolute certainty the liquidity on them. 
+ * Check that local channels have fee costs = 0 and bounds with certainty (min=max). */
 struct flow** minflow(
 		const tal_t *ctx,
 		struct gossmap *gossmap,
@@ -1250,6 +1354,9 @@ struct flow** minflow(
 		params->cost_fraction[i]=
 			log((1-CHANNEL_PIVOTS[i-1])/(1-CHANNEL_PIVOTS[i]))
 			/params->cap_fraction[i];
+		
+		// printf("channel part: %ld, fraction: %lf, cost_fraction: %lf\n",
+		//	i,params->cap_fraction[i],params->cost_fraction[i]);
 	}
 	
 	params->max_fee = max_fee;
@@ -1275,7 +1382,7 @@ struct flow** minflow(
 	printf("%s: done with allocation and initialization\n",__PRETTY_FUNCTION__);
 	
 	struct amount_msat best_fee;
-	// double best_prob_success;
+	double best_prob_success;
 	struct flow **best_flow_paths = NULL;
 	
 	printf("%s: searching for a feasible flow\n",__PRETTY_FUNCTION__);
@@ -1286,16 +1393,17 @@ struct flow** minflow(
 	{
 		// there is no flow that satisfy the constraints, we stop here
 		printf("%s: feasible flow not found\n",__PRETTY_FUNCTION__);
-		goto fail;
+		goto finish;
 	}
 	printf("%s: found a feasible flow\n",__PRETTY_FUNCTION__);
 	
 	// first flow found
 	best_flow_paths = get_flow_paths(ctx,params->gossmap,params->chan_extra_map,
 	                            linear_network,residual_network);
-	// best_prob_success = flows_probability(best_flow_paths);
+	best_prob_success = flow_set_probability(best_flow_paths,
+						params->gossmap,
+						params->chan_extra_map);
 	best_fee = flows_fee(best_flow_paths);
-	
 	
 	// binary search for a value of `mu` that fits our fee and prob.
 	// constraints.
@@ -1323,27 +1431,36 @@ struct flow** minflow(
 						params->chan_extra_map);
 		struct amount_msat fee = flows_fee(flow_paths);
 		
+		printf("prob %.2f, fee %s\n",prob_success,
+				type_to_string(this_ctx,struct amount_msat,&fee));
+		
+		// is this better than the previous one?
+		if(!best_flow_paths || 
+			is_better(params->max_fee,params->min_probability,
+				  fee,prob_success,
+			          best_fee, best_prob_success))
+		{
+			best_flow_paths = tal_steal(ctx,flow_paths);
+			best_fee = fee;
+			best_prob_success=prob_success;
+			flow_paths = NULL;
+		}
+		
 		if(amount_msat_greater(fee,params->max_fee))
 		{
 			// too expensive
 			mu_left = mu+1;
+			printf("%s: too expensive\n",__PRETTY_FUNCTION__);
 		}else if(prob_success < params->min_probability)
 		{
 			// too unlikely
 			mu_right = mu;
+			printf("%s: too unlikely\n",__PRETTY_FUNCTION__);
 		}else
 		{
 			// with mu constraints are satisfied, now let's optimize
 			// the fees
 			mu_left = mu+1;
-			
-			if(!best_flow_paths || amount_msat_less(fee,best_fee))
-			{
-				best_flow_paths = tal_steal(ctx,flow_paths);
-				best_fee = fee;
-				// best_prob_success=prob_success;
-				flow_paths = NULL;
-			}
 		}
 		
 		if(flow_paths)
@@ -1352,7 +1469,7 @@ struct flow** minflow(
 	
 	
 	
-	fail:
+	finish:
 	
 	printf("%s: finished\n",__PRETTY_FUNCTION__);
 	

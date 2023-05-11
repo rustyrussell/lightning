@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <plugins/renepay/flow.h>
+#include <common/type_to_string.h>
 
 #ifndef SUPERVERBOSE
 #define SUPERVERBOSE(...)
@@ -57,9 +58,9 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 			       struct amount_msat in_flight,
 			       struct amount_msat f)
 {
-	printf("%s: with min=%ld, max=%ld, in_flight=%ld, flow=%ld\n",
-		__PRETTY_FUNCTION__,min.millisatoshis,max.millisatoshis,
-		in_flight.millisatoshis,f.millisatoshis);
+	//printf("%s: with min=%ld, max=%ld, in_flight=%ld, flow=%ld\n",
+	//	__PRETTY_FUNCTION__,min.millisatoshis,max.millisatoshis,
+	//	in_flight.millisatoshis,f.millisatoshis);
 	
 	struct amount_msat B=max; // =  max +1 - in_flight
 	
@@ -164,6 +165,7 @@ get_chan_extra_half_by_chan_verify(
 			cap = AMOUNT_SAT(0);
 		if (!amount_sat_to_msat(&cap_msat, cap))
 		{
+			printf("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
 		}
 		h = new_chan_extra_half(chan_extra_map,
@@ -217,6 +219,45 @@ void remove_completed_flow(const struct gossmap *gossmap,
 			abort();
 		}
 		h->num_htlcs--;
+	}
+}
+void remove_completed_flow_set(
+		const struct gossmap *gossmap,
+		struct chan_extra_map *chan_extra_map,
+		struct flow **flows)
+{
+	for(size_t i=0;i<tal_count(flows);++i)
+	{
+		remove_completed_flow(gossmap,chan_extra_map,flows[i]);
+	}
+}
+
+void commit_flow(
+		const struct gossmap *gossmap,
+		struct chan_extra_map *chan_extra_map,
+		struct flow *flow)
+{
+	for (size_t i = 0; i < tal_count(flow->path); i++) {
+		struct chan_extra_half *h = get_chan_extra_half_by_chan(gossmap,
+							       chan_extra_map,
+							       flow->path[i],
+							       flow->dirs[i]);
+		if (!amount_msat_add(&h->htlc_total, h->htlc_total, flow->amounts[i]))
+		{
+			printf("%s: aborting\n",__PRETTY_FUNCTION__);
+			abort();
+		}
+		h->num_htlcs++;
+	}
+}
+void commit_flow_set(
+		const struct gossmap *gossmap,
+		struct chan_extra_map *chan_extra_map,
+		struct flow **flows)
+{
+	for(size_t i=0;i<tal_count(flows);++i)
+	{
+		commit_flow(gossmap,chan_extra_map,flows[i]);
 	}
 }
 
@@ -311,6 +352,7 @@ void flow_complete(struct flow *flow,
 		   struct chan_extra_map *chan_extra_map,
 		   struct amount_msat delivered)
 {
+	// printf("%s:\n",__PRETTY_FUNCTION__);
 	flow->success_prob = 1.0;
 	flow->amounts = tal_arr(flow, struct amount_msat, tal_count(flow->path));
 	for (int i = tal_count(flow->path) - 1; i >= 0; i--) {
@@ -325,6 +367,9 @@ void flow_complete(struct flow *flow,
 			*= edge_probability(h->known_min, h->known_max,
 					    h->htlc_total,
 					    delivered);
+					    
+		// printf("(%s, ",type_to_string(tmpctx,struct amount_msat,&delivered));
+		// printf("%.2f)--",flow->success_prob);
 		
 		// if (!amount_msat_add(&h->htlc_total, h->htlc_total, delivered))
 		// {
@@ -340,6 +385,7 @@ void flow_complete(struct flow *flow,
 			abort();
 		}
 	}
+	// printf("\n%s: finished\n",__PRETTY_FUNCTION__);
 }
 
 /* Compute the prob. of success of a set of concurrent set of flows. 

@@ -127,6 +127,9 @@ double flow_set_probability(
 void remove_completed_flow(const struct gossmap *gossmap,
 			   struct chan_extra_map *chan_extra_map,
 			   struct flow *flow);
+void remove_completed_flow_set(const struct gossmap *gossmap,
+			   struct chan_extra_map *chan_extra_map,
+			   struct flow **flows);
 
 struct amount_msat flows_fee(struct flow **flows);
 
@@ -177,5 +180,17 @@ s64 linear_fee_cost(
 		const int dir,
 		double base_fee_penalty,
 		double delay_feefactor);
+
+/* Take the flows and commit them to the chan_extra's . */
+void commit_flow(
+		const struct gossmap *gossmap,
+		struct chan_extra_map *chan_extra_map,
+		struct flow *flow);
+
+/* Take the flows and commit them to the chan_extra's . */
+void commit_flow_set(
+		const struct gossmap *gossmap,
+		struct chan_extra_map *chan_extra_map,
+		struct flow **flows);
 
 #endif /* LIGHTNING_PLUGINS_RENEPAY_FLOW_H */

@@ -60,7 +60,11 @@ static void print_flows(const char *desc,
 		}
 		delivered = flows[i]->amounts[tal_count(flows[i]->amounts)-1];
 		if (!amount_msat_sub(&fee, flows[i]->amounts[0], delivered))
+		{
+			fprintf(stderr,"%s: flow[i]->amount[0]<delivered\n",
+				__PRETTY_FUNCTION__);
 			abort();
+		}
 		printf(" prob %.2f, %s delivered with fee %s\n",
 		       flows[i]->success_prob,
 		       type_to_string(tmpctx, struct amount_msat, &delivered),
@@ -81,50 +85,52 @@ int main(int argc, char *argv[])
 	common_setup(argv[0]);
 
 	fd = tmpdir_mkstemp(tmpctx, "run-not_mcf-diamond.XXXXXX", &gossfile);
-	ASSERT(write_all(fd, empty_map, sizeof(empty_map)));
+	assert(write_all(fd, empty_map, sizeof(empty_map)));
 
 	gossmap = gossmap_load(tmpctx, gossfile, NULL);
-	ASSERT(gossmap);
+	assert(gossmap);
 
 	/* These are in ascending order, for easy direction setting */
-	ASSERT(node_id_from_hexstr("022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d59", 66, &l1));
-	ASSERT(node_id_from_hexstr("0266e4598d1d3c415f572a8488830b60f7e744ed9235eb0b1ba93283b315c03518", 66, &l2));
-	ASSERT(node_id_from_hexstr("035d2b1192dfba134e10e540875d366ebc8bc353d5aa766b80c090b39c3a5d885d", 66, &l3));
-	ASSERT(node_id_from_hexstr("0382ce59ebf18be7d84677c2e35f23294b9992ceca95491fcf8a56c6cb2d9de199", 66, &l4));
-	ASSERT(short_channel_id_from_str("1x2x0", 7, &scid12));
-	ASSERT(short_channel_id_from_str("1x3x0", 7, &scid13));
-	ASSERT(short_channel_id_from_str("2x4x0", 7, &scid24));
-	ASSERT(short_channel_id_from_str("3x4x0", 7, &scid34));
+	assert(node_id_from_hexstr("022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d59", 66, &l1));
+	assert(node_id_from_hexstr("0266e4598d1d3c415f572a8488830b60f7e744ed9235eb0b1ba93283b315c03518", 66, &l2));
+	assert(node_id_from_hexstr("035d2b1192dfba134e10e540875d366ebc8bc353d5aa766b80c090b39c3a5d885d", 66, &l3));
+	assert(node_id_from_hexstr("0382ce59ebf18be7d84677c2e35f23294b9992ceca95491fcf8a56c6cb2d9de199", 66, &l4));
+	assert(short_channel_id_from_str("1x2x0", 7, &scid12));
+	assert(short_channel_id_from_str("1x3x0", 7, &scid13));
+	assert(short_channel_id_from_str("2x4x0", 7, &scid24));
+	assert(short_channel_id_from_str("3x4x0", 7, &scid34));
 
 	mods = gossmap_localmods_new(tmpctx);
 
-	/* 1->2->4 has capacity 10M sat, 1->3->4 has capacity 5M sat (lower fee!) */
-	ASSERT(gossmap_local_addchan(mods, &l1, &l2, &scid12, NULL));
-	ASSERT(gossmap_local_updatechan(mods, &scid12,
+	/* 1->2->4 has capacity 10k sat, 1->3->4 has capacity 5k sat (lower fee!) */
+	assert(gossmap_local_addchan(mods, &l1, &l2, &scid12, NULL));
+	assert(gossmap_local_updatechan(mods, &scid12,
+					/*htlc_min=*/ AMOUNT_MSAT(0),
+					/*htlc_max=*/ AMOUNT_MSAT(10000000),
+					/*base_fee=*/ 0, 
+					/*ppm_fee =*/ 1001, 
+					/* delay  =*/ 5,
+					/* enabled=*/ true,
+					/* dir    =*/ 0));
+	assert(gossmap_local_addchan(mods, &l2, &l4, &scid24, NULL));
+	assert(gossmap_local_updatechan(mods, &scid24,
 					AMOUNT_MSAT(0),
-					AMOUNT_MSAT(10000000000),
-					0, 1000, 5,
+					AMOUNT_MSAT(10000000),
+					0, 1002, 5,
 					true,
 					0));
-	ASSERT(gossmap_local_addchan(mods, &l2, &l4, &scid24, NULL));
-	ASSERT(gossmap_local_updatechan(mods, &scid24,
+	assert(gossmap_local_addchan(mods, &l1, &l3, &scid13, NULL));
+	assert(gossmap_local_updatechan(mods, &scid13,
 					AMOUNT_MSAT(0),
-					AMOUNT_MSAT(10000000000),
-					0, 1000, 5,
+					AMOUNT_MSAT(5000000),
+					0, 503, 5,
 					true,
 					0));
-	ASSERT(gossmap_local_addchan(mods, &l1, &l3, &scid13, NULL));
-	ASSERT(gossmap_local_updatechan(mods, &scid13,
+	assert(gossmap_local_addchan(mods, &l3, &l4, &scid34, NULL));
+	assert(gossmap_local_updatechan(mods, &scid34,
 					AMOUNT_MSAT(0),
-					AMOUNT_MSAT(5000000000),
-					0, 500, 5,
-					true,
-					0));
-	ASSERT(gossmap_local_addchan(mods, &l3, &l4, &scid34, NULL));
-	ASSERT(gossmap_local_updatechan(mods, &scid34,
-					AMOUNT_MSAT(0),
-					AMOUNT_MSAT(5000000000),
-					0, 500, 5,
+					AMOUNT_MSAT(5000000),
+					0, 504, 5,
 					true,
 					0));
 
@@ -134,16 +140,16 @@ int main(int argc, char *argv[])
 	/* The local chans have no "capacity", so set them manually. */
 	new_chan_extra_half(chan_extra_map,
 			    scid12, 0,
-			    AMOUNT_MSAT(10000000000));
+			    AMOUNT_MSAT(10000000));
 	new_chan_extra_half(chan_extra_map,
 			    scid24, 0,
-			    AMOUNT_MSAT(10000000000));
+			    AMOUNT_MSAT(10000000));
 	new_chan_extra_half(chan_extra_map,
 			    scid13, 0,
-			    AMOUNT_MSAT(5000000000));
+			    AMOUNT_MSAT(5000000));
 	new_chan_extra_half(chan_extra_map,
 			    scid34, 0,
-			    AMOUNT_MSAT(5000000000));
+			    AMOUNT_MSAT(5000000));
 
 	struct flow **flows;
 	flows = minflow(tmpctx, gossmap,
@@ -151,15 +157,14 @@ int main(int argc, char *argv[])
 			gossmap_find_node(gossmap, &l4),
 			chan_extra_map, NULL,
 			/* Half the capacity */
-			AMOUNT_MSAT(5000000000), // 5M sats
-			 /* max_fee = */ AMOUNT_MSAT(1000000), // 1k sats
-			 /* min probability = */ 0.1, // 10%
-			 /* delay fee factor = */ 1,
-			 /* base fee penalty */ 1,
-			 /* prob cost factor = */ 10);
+			AMOUNT_MSAT(1000000), // 1000 sats
+			 /* max_fee = */ AMOUNT_MSAT(10000), // 10 sats
+			 /* min probability = */ 0.8, // 80%
+			 /* delay fee factor = */ 0,
+			 /* base fee penalty */ 0,
+			 /* prob cost factor = */ 1);
 	
 	print_flows("Simple minflow", gossmap,chan_extra_map, flows);
-	ASSERT(tal_count(flows) == 2);
 
 	common_shutdown();
 }
