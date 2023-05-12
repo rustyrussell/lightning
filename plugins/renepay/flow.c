@@ -596,7 +596,7 @@ s64 linear_fee_cost(
 	    bfee = c->half[dir].base_fee,
 	    delay = c->half[dir].delay;
 	
-	return pfee + (bfee + delay_feefactor*delay) * base_fee_penalty;
+	return pfee + bfee* base_fee_penalty+ delay*delay_feefactor;
 }
 
 struct amount_msat flows_fee(struct flow **flows)

@@ -174,7 +174,6 @@ double derive_mu(const struct gossmap *gossmap,
 		 struct amount_msat amount,
 		 double frugality);
 
-// TODO(eduardo):
 s64 linear_fee_cost(
 		const struct gossmap_chan *c,
 		const int dir,

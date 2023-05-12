@@ -145,7 +145,7 @@ static void valgrind_ok2(void)
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
 	struct chan_extra_map *chan_extra_map
-		= tal(tmpctx, struct chan_extra_map);
+		= tal(this_ctx, struct chan_extra_map);
 	
 	chan_extra_map_init(chan_extra_map);
 	
@@ -178,7 +178,7 @@ static void valgrind_fail3(void)
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
 	struct chan_extra_map *chan_extra_map
-		= tal(tmpctx, struct chan_extra_map);
+		= tal(this_ctx, struct chan_extra_map);
 	
 	chan_extra_map_init(chan_extra_map);
 	
@@ -200,10 +200,36 @@ static void valgrind_fail3(void)
 	/* Valgrind complains. It seems that the hash table is trying to remove
 	 * the element at a moment when its memory has already been released. 
 	 * If the following two lines are not commented the error disapears. */
-	// tal_free(x1);
-	// tal_free(x2);
+	tal_free(x1);
+	tal_free(x2);
 	
 	tal_free(this_ctx);
+}
+
+static void destroy_int(int* x)
+{
+	fprintf(stderr,"Destroying %d\n",*x);
+}
+
+/* This clearly shows that the parent is destroyed before the children. 
+ * That's the reason why the chan_extra destructor fails. */
+static void test_order(void)
+{
+	const tal_t *this_ctx = tal(tmpctx,tal_t);
+	
+	int *parent = tal(this_ctx,int);
+	tal_add_destructor(parent,destroy_int);
+	*parent = 1;
+	
+	int *child = tal(parent,int);
+	tal_add_destructor(child,destroy_int);
+	*child=2;
+	
+	tal_free(this_ctx);
+	
+	// prints:
+	// Destroying 1
+	// Destroying 2
 }
 
 int main(int argc, char *argv[])
@@ -212,6 +238,8 @@ int main(int argc, char *argv[])
 	valgrind_ok1();
 	valgrind_ok2();
 	valgrind_fail3();
+	
+	test_order();
 	common_shutdown();
 }
 
