@@ -4,6 +4,7 @@
 #include <bitcoin/short_channel_id.h>
 #include <ccan/htable/htable_type.h>
 #include <common/amount.h>
+#include <common/gossmap.h>
 
 /* Any implementation needs to keep some data on channels which are
  * in-use (or about which we have extra information).  We use a hash

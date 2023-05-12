@@ -20,7 +20,6 @@ const struct half_chan *flow_edge(const struct flow *flow, size_t idx)
 	return &flow->path[idx]->half[flow->dirs[idx]];
 }
 
-// TODO(eduardo): check this
 /* Assuming a uniform distribution, what is the chance this f gets through?
  * Here we compute the conditional probability of success for a flow f, given
  * the knowledge that the liquidity is in the range [a,b) and some amount
@@ -31,7 +30,8 @@ const struct half_chan *flow_edge(const struct flow *flow, size_t idx)
  * 	prob(f) = 
  * 	
  * 	for f<a:	1.
- * 	for f>=a:	(b-f)/(b-a)
+ * 	for b>=f>=a:	(b-f)/(b-a)
+ * 	for b<f:	0.
  * 
  * When x>0 the prob. of success for passing x and f is:
  * 
@@ -43,13 +43,14 @@ const struct half_chan *flow_edge(const struct flow *flow, size_t idx)
  * 
  * The purpose of this function is to obtain prob(f|x), i.e. the probability of
  * getting f through provided that we already succeeded in getting x.
- * This conditional probability comes with three cases:
+ * This conditional probability comes with 4 cases:
  * 
  * 	prob(f|x) = 
  * 	
  * 	for x<a and f<a-x: 	1.
  * 	for x<a and f>=a-x:	(b-x-f)/(b-a)
  * 	for x>=a:		(b-x-f)/(b-x)
+ * 	for f>b-x:		0.
  *
  * This is the same as the probability of success of f when the bounds are
  * shifted by x amount, the new bounds be [MAX(0,a-x),b-x).
@@ -58,22 +59,32 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 			       struct amount_msat in_flight,
 			       struct amount_msat f)
 {
-	//printf("%s: with min=%ld, max=%ld, in_flight=%ld, flow=%ld\n",
-	//	__PRETTY_FUNCTION__,min.millisatoshis,max.millisatoshis,
-	//	in_flight.millisatoshis,f.millisatoshis);
+	assert(amount_msat_less_eq(min,max));
+	assert(amount_msat_less_eq(in_flight,max));
 	
+	const tal_t *this_ctx = tal(tmpctx,tal_t);
+	
+	// SUPERVERBOSE("%s: with min=%ld, max=%ld, in_flight=%ld, flow=%ld\n",
+	// 	__PRETTY_FUNCTION__,min.millisatoshis,max.millisatoshis,
+	// 	in_flight.millisatoshis,f.millisatoshis);
+	
+	const struct amount_msat one = AMOUNT_MSAT(1);
 	struct amount_msat B=max; // =  max +1 - in_flight
 	
 	// one past the last known value, makes computations simpler
-	if(!amount_msat_add(&B,B,AMOUNT_MSAT(1)))
+	if(!amount_msat_add(&B,B,one))
 	{
-		printf("%s: aborting, lineno=%d\n",__PRETTY_FUNCTION__,__LINE__);
+		SUPERVERBOSE("%s: aborting, cannot add %s + %s\n",__PRETTY_FUNCTION__,
+			   type_to_string(this_ctx, struct amount_msat, &B),
+			   type_to_string(this_ctx, struct amount_msat, &one));
 		abort();
 	}	
 	// in_flight cannot be greater than max
 	if(!amount_msat_sub(&B,B,in_flight))
 	{
-		printf("%s: aborting, lineno=%d\n",__PRETTY_FUNCTION__,__LINE__);
+		SUPERVERBOSE("%s: aborting, cannot substract %s - %s\n",__PRETTY_FUNCTION__,
+			   type_to_string(this_ctx, struct amount_msat, &B),
+			   type_to_string(this_ctx, struct amount_msat, &in_flight));
 		abort();
 	}	
 	struct amount_msat A=min; // = MAX(0,min-in_flight);
@@ -86,7 +97,9 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 	// B cannot be smaller than or equal A
 	if(!amount_msat_sub(&denominator,B,A) || amount_msat_less_eq(B,A))
 	{
-		printf("%s: aborting, lineno=%d\n",__PRETTY_FUNCTION__,__LINE__);
+		SUPERVERBOSE("%s: aborting, cannot substract %s - %s\n",__PRETTY_FUNCTION__,
+			   type_to_string(this_ctx, struct amount_msat, &B),
+			   type_to_string(this_ctx, struct amount_msat, &A));
 		abort();
 	}
 	struct amount_msat numerator; // MAX(0,B-f)
@@ -94,6 +107,7 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 	if(!amount_msat_sub(&numerator,B,f))
 		numerator = AMOUNT_MSAT(0);
 	
+	tal_free(this_ctx);
 	return amount_msat_less_eq(f,A) ? 1.0 : amount_msat_ratio(numerator,denominator);
 }
 
@@ -165,7 +179,7 @@ get_chan_extra_half_by_chan_verify(
 			cap = AMOUNT_SAT(0);
 		if (!amount_sat_to_msat(&cap_msat, cap))
 		{
-			printf("%s: aborting\n",__PRETTY_FUNCTION__);
+			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
 		}
 		h = new_chan_extra_half(chan_extra_map,
@@ -210,12 +224,12 @@ void remove_completed_flow(const struct gossmap *gossmap,
 							       flow->dirs[i]);
 		if (!amount_msat_sub(&h->htlc_total, h->htlc_total, flow->amounts[i]))
 		{
-			printf("%s: aborting\n",__PRETTY_FUNCTION__);
+			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
 		}
 		if (h->num_htlcs == 0)
 		{
-			printf("%s: aborting\n",__PRETTY_FUNCTION__);
+			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
 		}
 		h->num_htlcs--;
@@ -244,7 +258,7 @@ void commit_flow(
 							       flow->dirs[i]);
 		if (!amount_msat_add(&h->htlc_total, h->htlc_total, flow->amounts[i]))
 		{
-			printf("%s: aborting\n",__PRETTY_FUNCTION__);
+			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
 		}
 		h->num_htlcs++;
@@ -273,7 +287,7 @@ void flow_add(struct flow *flow,
 	if (!amount_msat_add(&delivered,
 			     flow->amounts[tal_count(flow->amounts)-1], additional))
 	{
-		printf("%s: aborting\n",__PRETTY_FUNCTION__);
+		SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 		abort();
 	}
 	/* Remove original from current_flows */
@@ -352,7 +366,7 @@ void flow_complete(struct flow *flow,
 		   struct chan_extra_map *chan_extra_map,
 		   struct amount_msat delivered)
 {
-	// printf("%s:\n",__PRETTY_FUNCTION__);
+	// SUPERVERBOSE("%s:\n",__PRETTY_FUNCTION__);
 	flow->success_prob = 1.0;
 	flow->amounts = tal_arr(flow, struct amount_msat, tal_count(flow->path));
 	for (int i = tal_count(flow->path) - 1; i >= 0; i--) {
@@ -368,12 +382,12 @@ void flow_complete(struct flow *flow,
 					    h->htlc_total,
 					    delivered);
 					    
-		// printf("(%s, ",type_to_string(tmpctx,struct amount_msat,&delivered));
-		// printf("%.2f)--",flow->success_prob);
+		// SUPERVERBOSE("(%s, ",type_to_string(tmpctx,struct amount_msat,&delivered));
+		// SUPERVERBOSE("%.2f)--",flow->success_prob);
 		
 		// if (!amount_msat_add(&h->htlc_total, h->htlc_total, delivered))
 		// {
-		// 	printf("%s: aborting\n",__PRETTY_FUNCTION__);
+		// 	SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 		// 	abort();
 		// }
 		// h->num_htlcs++;
@@ -381,11 +395,11 @@ void flow_complete(struct flow *flow,
 					 flow_edge(flow, i)->base_fee,
 					 flow_edge(flow, i)->proportional_fee))
 		{
-			printf("%s: aborting\n",__PRETTY_FUNCTION__);
+			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
 		}
 	}
-	// printf("\n%s: finished\n",__PRETTY_FUNCTION__);
+	// SUPERVERBOSE("\n%s: finished\n",__PRETTY_FUNCTION__);
 }
 
 /* Compute the prob. of success of a set of concurrent set of flows. 
@@ -453,7 +467,7 @@ double flow_set_probability(
 			struct amount_msat prev_flow;
 			if(!amount_msat_add(&prev_flow,h->htlc_total,in_flight[c_idx].half[c_dir]))
 			{
-				printf("%s: aborting\n",__PRETTY_FUNCTION__);
+				SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 				abort();
 			}
 			
@@ -464,7 +478,7 @@ double flow_set_probability(
 					in_flight[c_idx].half[c_dir],
 					deliver))
 			{
-				printf("%s: aborting\n",__PRETTY_FUNCTION__);
+				SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 				abort();
 			}
 		}
@@ -545,7 +559,7 @@ static void get_medians(const struct gossmap *gossmap,
 		*median_capacity = amount;
 	else if (!amount_sat_to_msat(median_capacity, caps[num_caps / 2]))
 	{
-		printf("%s: aborting\n",__PRETTY_FUNCTION__);
+		SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 		abort();
 	}
 	asort(fees, num_fees, cmp_amount_msat, NULL);
@@ -611,12 +625,12 @@ struct amount_msat flows_fee(struct flow **flows)
 				     flows[i]->amounts[0],
 				     flows[i]->amounts[n-1]))
 		{
-			printf("%s: aborting\n",__PRETTY_FUNCTION__);
+			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
 		}
 		if(!amount_msat_add(&fee, this_fee,fee))
 		{
-			printf("%s: aborting\n",__PRETTY_FUNCTION__);
+			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
 			abort();
 		}
 	}
