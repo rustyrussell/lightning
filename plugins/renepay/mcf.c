@@ -859,7 +859,7 @@ static int  find_optimal_path(
 	s64 const * const distance=dijkstra_distance_data();
 	
 	dijkstra_init();
-	dijkstra_append(source,0);
+	dijkstra_update(source,0);
 	
 	while(!dijkstra_empty())
 	{

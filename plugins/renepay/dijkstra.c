@@ -27,13 +27,31 @@ static void dijkstra_item_mover(void *const dst, const void *const src)
 	global_dijkstra->heapptr[src_idx] = dst;
 }
 
+static void dijkstra_destroy(struct dijkstra *ptr UNUSED)
+{
+	global_dijkstra=NULL;
+}
+
+void dijkstra_free(void)
+{
+	if(global_dijkstra)
+	{
+		tal_free(global_dijkstra);
+		assert(global_dijkstra==NULL);
+	}
+}
+
 /* Allocation of resources for the heap. */
 void dijkstra_malloc(const tal_t *ctx, const size_t max_num_nodes)
 {
+	dijkstra_free();
+	
 	global_dijkstra = tal(ctx,struct dijkstra);
+	tal_add_destructor(global_dijkstra,dijkstra_destroy);		
+	
 	global_dijkstra->distance = tal_arr(global_dijkstra,s64,max_num_nodes);
 	global_dijkstra->base = tal_arr(global_dijkstra,u32,max_num_nodes);
-	global_dijkstra->heapptr = tal_arr(global_dijkstra,u32*,max_num_nodes);
+	global_dijkstra->heapptr = tal_arrz(global_dijkstra,u32*,max_num_nodes);
 	
 	global_dijkstra->heapsize=0;
 	
@@ -45,7 +63,7 @@ void dijkstra_malloc(const tal_t *ctx, const size_t max_num_nodes)
 	global_dijkstra->gheap_ctx.item_mover=dijkstra_item_mover;
 }
 
-/* Initialization of the heap for a new Dijkstra search. */
+
 void dijkstra_init(void)
 {
 	const size_t max_num_nodes = tal_count(global_dijkstra->distance);
@@ -56,9 +74,21 @@ void dijkstra_init(void)
 		global_dijkstra->heapptr[i] = NULL;
 	}
 }
-
-void dijkstra_append(u32 node_idx, s64 distance)
+size_t dijkstra_size(void)
 {
+	return global_dijkstra->heapsize;
+}
+
+size_t dijkstra_maxsize(void)
+{
+	return tal_count(global_dijkstra->distance);
+}
+
+static void dijkstra_append(u32 node_idx, s64 distance)
+{
+	assert(dijkstra_size() < dijkstra_maxsize());
+	assert(node_idx < dijkstra_maxsize());
+	
 	const size_t pos = global_dijkstra->heapsize;
 	
 	global_dijkstra->base[pos]=node_idx;
@@ -68,22 +98,48 @@ void dijkstra_append(u32 node_idx, s64 distance)
 }
 void dijkstra_update(u32 node_idx, s64 distance)
 {
+	assert(node_idx < dijkstra_maxsize());
+	
 	if(!global_dijkstra->heapptr[node_idx])
 	{
 		// not in the heap
 		dijkstra_append(node_idx,distance);
+		gheap_restore_heap_after_item_increase(
+			&global_dijkstra->gheap_ctx,
+			global_dijkstra->base,
+			global_dijkstra->heapsize,
+			global_dijkstra->heapptr[node_idx]
+				- global_dijkstra->base);
+		return;
 	}
-	assert(node_idx < tal_count(global_dijkstra->distance));
-	assert(global_dijkstra->distance[node_idx] >= distance);
 	
-	global_dijkstra->distance[node_idx] = distance;
+	if(global_dijkstra->distance[node_idx] > distance)
+	{
+		// distance decrease
+		global_dijkstra->distance[node_idx] = distance;
+		
+		gheap_restore_heap_after_item_increase(
+			&global_dijkstra->gheap_ctx,
+			global_dijkstra->base,
+			global_dijkstra->heapsize,
+			global_dijkstra->heapptr[node_idx]
+				- global_dijkstra->base);
+	}else
+	{
+		// distance increase
+		global_dijkstra->distance[node_idx] = distance;
+		
+		gheap_restore_heap_after_item_decrease(
+			&global_dijkstra->gheap_ctx,
+			global_dijkstra->base,
+			global_dijkstra->heapsize,
+			global_dijkstra->heapptr[node_idx]
+				- global_dijkstra->base);
 	
-	gheap_restore_heap_after_item_increase(
-		&global_dijkstra->gheap_ctx,
-		global_dijkstra->base,
-		global_dijkstra->heapsize,
-		global_dijkstra->heapptr[node_idx]
-			- global_dijkstra->base);
+	}
+  	// assert(gheap_is_heap(&global_dijkstra->gheap_ctx, 
+	//                      global_dijkstra->base, 
+	// 		     dijkstra_size()));
 }
 u32 dijkstra_top(void)
 {
