@@ -111,22 +111,6 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 	return amount_msat_less_eq(f,A) ? 1.0 : amount_msat_ratio(numerator,denominator);
 }
 
-bool flow_path_eq(const struct gossmap_chan **path1,
-		  const int *dirs1,
-		  const struct gossmap_chan **path2,
-		  const int *dirs2)
-{
-	if (tal_count(path1) != tal_count(path2))
-		return false;
-	for (size_t i = 0; i < tal_count(path1); i++) {
-		if (path1[i] != path2[i])
-			return false;
-		if (dirs1[i] != dirs2[i])
-			return false;
-	}
-	return true;
-}
-
 // static void destroy_chan_extra(struct chan_extra *ce,
 // 			       struct chan_extra_map *chan_extra_map)
 // {
@@ -275,83 +259,8 @@ void commit_flow_set(
 	}
 }
 
-/* Add this to the flow. */
-void flow_add(struct flow *flow,
-	      const struct gossmap *gossmap,
-	      struct chan_extra_map *chan_extra_map,
-	      struct amount_msat additional)
-{
-	struct amount_msat delivered;
-
-	/* Add in new amount */
-	if (!amount_msat_add(&delivered,
-			     flow->amounts[tal_count(flow->amounts)-1], additional))
-	{
-		SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-		abort();
-	}
-	/* Remove original from current_flows */
-	remove_completed_flow(gossmap, chan_extra_map, flow);
-
-	/* Recalc probability and fees, adjust chan_extra_map entries */
-	flow_complete(flow, gossmap, chan_extra_map, delivered);
-}
-
-/* From the paper:
- * −log((c_e + 1 − f_e) / (c_e + 1)) + μ f_e fee(e)
- */
-// double flow_edge_cost(const struct gossmap *gossmap,
-// 		      const struct gossmap_chan *c, int dir,
-// 		      const struct amount_msat known_min,
-// 		      const struct amount_msat known_max,
-// 		      struct amount_msat prev_flow,
-// 		      struct amount_msat f,
-// 		      double mu,
-// 		      double basefee_penalty,
-// 		      double delay_riskfactor)
-// {
-// 	double prob, effective_feerate;
-// 	double certainty_term, feerate_term;
-// 
-// #ifdef SUPERVERBOSE_ENABLED
-// 	struct short_channel_id scid
-// 		= gossmap_chan_scid(gossmap, c);
-// 	SUPERVERBOSE("flow_edge_cost %s/%i, cap %"PRIu64"-%"PRIu64", prev_flow=%"PRIu64", f=%"PRIu64", mu=%f, basefee_penalty=%f, delay_riskfactor=%f: ",
-// 		     type_to_string(tmpctx, struct short_channel_id, &scid),
-// 		     dir,
-// 		     known_min.millisatoshis, known_max.millisatoshis,
-// 		     prev_flow.millisatoshis, f.millisatoshis,
-// 		     mu, basefee_penalty, delay_riskfactor);
-// #endif
-// 
-// 	/* Probability depends on any previous flows, too! */
-// 	if (!amount_msat_add(&prev_flow, prev_flow, f))
-// 		abort();
-// 	prob = edge_probability(known_min, known_max, prev_flow);
-// 	if (prob == 0) {
-// 		SUPERVERBOSE(" INFINITE\n");
-// 		return FLOW_INF_COST;
-// 	}
-// 
-// 	certainty_term = -log(prob);
-// 
-// 	/* This is in parts-per-million */
-// 	effective_feerate = (c->half[dir].proportional_fee
-// 			     + c->half[dir].base_fee * basefee_penalty)
-// 		/ 1000000.0;
-// 
-// 	/* Feerate term includes delay factor */
-// 	feerate_term = (mu
-// 			* (f.millisatoshis /* Raw: costfn */
-// 			   * effective_feerate
-// 			   + c->half[dir].delay * delay_riskfactor));
-// 
-// 	SUPERVERBOSE(" %f + %f = %f\n",
-// 		     certainty_term, feerate_term,
-// 		     certainty_term + feerate_term);
-// 	return certainty_term + feerate_term;
-// }
-
+// TODO(eduardo): unit test this with a single path flow with known fees and
+// probabilities.
 /* Helper function to fill in amounts and success_prob for flow 
  * 
  * IMPORTANT: here we do not commit flows to chan_extra, flows are commited
@@ -359,14 +268,12 @@ void flow_add(struct flow *flow,
  * 
  * IMPORTANT: flow->success_prob is misleading, because that's the prob. of
  * success provided that there are no other flows in the current MPP flow set.
- * 
  * */
 void flow_complete(struct flow *flow,
 		   const struct gossmap *gossmap,
 		   struct chan_extra_map *chan_extra_map,
 		   struct amount_msat delivered)
 {
-	// SUPERVERBOSE("%s:\n",__PRETTY_FUNCTION__);
 	flow->success_prob = 1.0;
 	flow->amounts = tal_arr(flow, struct amount_msat, tal_count(flow->path));
 	for (int i = tal_count(flow->path) - 1; i >= 0; i--) {
@@ -382,15 +289,6 @@ void flow_complete(struct flow *flow,
 					    h->htlc_total,
 					    delivered);
 					    
-		// SUPERVERBOSE("(%s, ",type_to_string(tmpctx,struct amount_msat,&delivered));
-		// SUPERVERBOSE("%.2f)--",flow->success_prob);
-		
-		// if (!amount_msat_add(&h->htlc_total, h->htlc_total, delivered))
-		// {
-		// 	SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-		// 	abort();
-		// }
-		// h->num_htlcs++;
 		if (!amount_msat_add_fee(&delivered,
 					 flow_edge(flow, i)->base_fee,
 					 flow_edge(flow, i)->proportional_fee))
@@ -399,7 +297,6 @@ void flow_complete(struct flow *flow,
 			abort();
 		}
 	}
-	// SUPERVERBOSE("\n%s: finished\n",__PRETTY_FUNCTION__);
 }
 
 /* Compute the prob. of success of a set of concurrent set of flows. 
@@ -613,7 +510,7 @@ s64 linear_fee_cost(
 	return pfee + bfee* base_fee_penalty+ delay*delay_feefactor;
 }
 
-struct amount_msat flows_fee(struct flow **flows)
+struct amount_msat flow_set_fee(struct flow **flows)
 {
 	struct amount_msat fee = AMOUNT_MSAT(0);
 

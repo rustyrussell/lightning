@@ -85,18 +85,6 @@ struct flow {
 /* Helper to access the half chan at flow index idx */
 const struct half_chan *flow_edge(const struct flow *flow, size_t idx);
 
-/* Path comparison helper */
-bool flow_path_eq(const struct gossmap_chan **path1,
-		  const int *dirs1,
-		  const struct gossmap_chan **path2,
-		  const int *dirs2);
-
-/* Add this to the completed flow. */
-void flow_add(struct flow *flow,
-	      const struct gossmap *gossmap,
-	      struct chan_extra_map *chan_extra_map,
-	      struct amount_msat additional);
-
 /* A big number, meaning "don't bother" (not infinite, since you may add) */
 #define FLOW_INF_COST 100000000.0
 
@@ -132,7 +120,7 @@ void remove_completed_flow_set(const struct gossmap *gossmap,
 			   struct chan_extra_map *chan_extra_map,
 			   struct flow **flows);
 
-struct amount_msat flows_fee(struct flow **flows);
+struct amount_msat flow_set_fee(struct flow **flows);
 
 /*
  * mu (μ) is used as follows in the cost function:

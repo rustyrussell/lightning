@@ -397,7 +397,7 @@ struct pay_flow **get_payflows(struct payment *p,
 
 		/* Are we unhappy? */
 		prob = flow_set_probability(flows,pay_plugin->gossmap,&pay_plugin->chan_extra_map);
-		fee = flows_fee(flows);
+		fee = flow_set_fee(flows);
 		delay = flows_worst_delay(flows) + p->final_cltv;
 
 		too_unlikely = (prob < 0.01);

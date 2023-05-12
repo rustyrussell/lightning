@@ -1403,7 +1403,7 @@ struct flow** minflow(
 	best_prob_success = flow_set_probability(best_flow_paths,
 						params->gossmap,
 						params->chan_extra_map);
-	best_fee = flows_fee(best_flow_paths);
+	best_fee = flow_set_fee(best_flow_paths);
 	
 	// binary search for a value of `mu` that fits our fee and prob.
 	// constraints.
@@ -1429,7 +1429,7 @@ struct flow** minflow(
 						flow_paths,
 						params->gossmap,
 						params->chan_extra_map);
-		struct amount_msat fee = flows_fee(flow_paths);
+		struct amount_msat fee = flow_set_fee(flow_paths);
 		
 		printf("prob %.2f, fee %s\n",prob_success,
 				type_to_string(this_ctx,struct amount_msat,&fee));
