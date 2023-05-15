@@ -259,8 +259,6 @@ void commit_flow_set(
 	}
 }
 
-// TODO(eduardo): unit test this with a single path flow with known fees and
-// probabilities.
 /* Helper function to fill in amounts and success_prob for flow 
  * 
  * IMPORTANT: here we do not commit flows to chan_extra, flows are commited
