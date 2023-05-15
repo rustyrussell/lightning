@@ -9,6 +9,11 @@
 /* Any implementation needs to keep some data on channels which are
  * in-use (or about which we have extra information).  We use a hash
  * table here, since most channels are not in use. */
+// TODO(eduardo): if we know the liquidity of channel (X,dir) is [A,B]
+// then we also know that the liquidity of channel (X,!dir) is [Cap-B,Cap-A]. 
+// This means that it is redundant to store known_min and known_max for both
+// halves of the channel and it also means that once we update the knowledge of
+// (X,dir) the knowledge of (X,!dir) is updated as well.
 struct chan_extra {
 	struct short_channel_id scid;
 
