@@ -26,7 +26,7 @@ struct pay_plugin {
 	struct list_head payments;
 
 	/* Per-channel metadata: some persists between payments */
-	struct chan_extra_map chan_extra_map;
+	struct chan_extra_map *chan_extra_map;
 };
 
 /* Set in init */
@@ -34,64 +34,112 @@ extern struct pay_plugin *pay_plugin;
 
 struct payment {
 	/* Inside pay_plugin->payments list */
+	// TODO(eduardo): is it used?
 	struct list_node list;
 
 	/* The command, and our owner (needed for timer func) */
+	// TODO(eduardo): is it used?
 	struct command *cmd;
 
 	/* We promised this in pay() output */
+	// TODO(eduardo): is it used?
 	struct timeabs start_time;
 
 	/* Localmods to apply to gossip_map for our own use. */
+	// TODO(eduardo): is it used?
 	struct gossmap_localmods *local_gossmods;
 
 	/* invstring (bolt11 or bolt12) */
+	// TODO(eduardo): is it used?
 	const char *invstr;
 
 	/* How much, what, where */
+	// TODO(eduardo): is it used?
 	struct node_id dest;
+	// TODO(eduardo): is it used?
 	struct sha256 payment_hash;
+	// TODO(eduardo): is it used?
 	struct amount_msat amount;
+	
+	// TODO(eduardo): is it used?
 	u32 final_cltv;
 
 	/* Total sent, including fees. */
+	// TODO(eduardo): is it used?
 	struct amount_msat total_sent;
 	/* Total that is delivering (i.e. without fees) */
+	// TODO(eduardo): is it used?
 	struct amount_msat total_delivering;
 
 	/* payment_secret, if specified by invoice. */
+	// TODO(eduardo): is it used?
 	struct secret *payment_secret;
 	/* Payment metadata, if specified by invoice. */
+	// TODO(eduardo): is it used?
 	const u8 *payment_metadata;
 
 	/* Description and labels, if any. */
+	// TODO(eduardo): is it used?
+	// TODO(eduardo): could be NULL
 	const char *description, *label;
 
 	/* Penalty for CLTV delays */
+	// TODO(eduardo): is it used?
 	double delay_feefactor;
+	
+	/* Penalty for base fee */
+	// TODO(eduardo): is it used?
+	double base_fee_penalty;
+	
+	/* linear fee cost = 
+	 * 	millionths 
+	 * 	+ base_fee* base_fee_penalty
+	 * 	+delay*delay_feefactor;*/
 
 	/* Limits on what routes we'll accept. */
+	// TODO(eduardo): is it used?
 	struct amount_msat maxspend;
+	// TODO(eduardo): is it used?
 	unsigned int maxdelay;
+	// TODO(eduardo): is it used?
 	struct timeabs stop_time;
+	
+	/* The minimum acceptable prob. of success */
+	// TODO(eduardo): is it used?
+	double min_prob_success;
+	
+	/* linear prob. cost = 
+	 * 	- prob_cost_factor * log prob. */
+	
+	/* Conversion from prob. cost to millionths */
+	// TODO(eduardo): is it used?
+	double prob_cost_factor;
 
 	/* Channels we decided to disable for various reasons. */
+	// TODO(eduardo): is it used?
 	struct short_channel_id *disabled;
 
 	/* Chatty description of attempts. */
+	// TODO(eduardo): is it used?
 	const char **paynotes;
 
 	/* Groupid, so listpays() can group them back together */
+	// TODO(eduardo): is it used?
 	u64 groupid;
+	// TODO(eduardo): is it used?
 	u64 next_partid;
 	/* If this is paying a local offer, this is the one (sendpay ensures we
 	 * don't pay twice for single-use offers) */
+	// TODO(eduardo): is it used?
+	// TODO(eduardo): could be NULL
 	struct sha256 *local_offer_id;
 
 	/* Timers. */
+	// TODO(eduardo): is it used?
 	struct plugin_timer *rexmit_timer;
 
 	/* DEVELOPER allows disabling shadow route */
+	// TODO(eduardo): is it used?
 	bool use_shadow;
 };
 

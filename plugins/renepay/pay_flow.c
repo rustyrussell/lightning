@@ -326,14 +326,14 @@ static bool disable_htlc_violations(struct payment *p,
 	return disabled_some;
 }
 
-/* We're not using these flows after all: clean up chan_extra_map */
-static void remove_flows(const struct gossmap *gossmap,
-			 struct chan_extra_map *chan_extra_map,
-			 struct flow **flows)
-{
-	for (size_t i = 0; i < tal_count(flows); i++)
-		remove_completed_flow(gossmap, chan_extra_map, flows[i]);
-}
+// /* We're not using these flows after all: clean up chan_extra_map */
+// static void remove_flows(const struct gossmap *gossmap,
+// 			 struct chan_extra_map *chan_extra_map,
+// 			 struct flow **flows)
+// {
+// 	for (size_t i = 0; i < tal_count(flows); i++)
+// 		remove_completed_flow(gossmap, chan_extra_map, flows[i]);
+// }
 
 // TODO(eduardo): check this
 /* Get some payment flows to get this amount to destination, or NULL. */
@@ -348,12 +348,21 @@ struct pay_flow **get_payflows(struct payment *p,
 	bitmap *disabled;
 	struct pay_flow **pay_flows;
 	const struct gossmap_node *src, *dst;
-
-	if (!gossmap_refresh(pay_plugin->gossmap, NULL))
+	
+	// TODO(eduardo): is it necessary to check for return value?
+	gossmap_refresh(pay_plugin->gossmap, NULL);
+	
+	if (pay_plugin->gossmap == NULL)
 		plugin_err(pay_plugin->plugin, "Failed to refresh gossmap: %s",
 			   strerror(errno));
-
+	
+	// TODO(eduardo): remember that local channels have
+	// know_min=know_max=liquidity. Is this related to local_gossmods?
+	// 
+	// TODO(eduardo): where is p->local_gossmods set?
 	gossmap_apply_localmods(pay_plugin->gossmap, p->local_gossmods);
+	
+	// TODO(eduardo): where is p->disabled set?
 	disabled = make_disabled_bitmap(tmpctx, pay_plugin->gossmap, p->disabled);
 	src = gossmap_find_node(pay_plugin->gossmap, &pay_plugin->my_id);
 	if (!src) {
@@ -374,19 +383,16 @@ struct pay_flow **get_payflows(struct payment *p,
 		bool too_unlikely, too_expensive, too_delayed;
 		const u32 *final_cltvs;
 		
-		struct amount_msat max_fee 
-			= (struct amount_msat){.millisatoshis = amount.millisatoshis/100};
-		
 		/* Note!  This actually puts flows in chan_extra_map, so
 		 * flows must be removed if not used! */
 		flows = minflow(tmpctx, pay_plugin->gossmap, src, dst,
-				&pay_plugin->chan_extra_map, disabled,
+				pay_plugin->chan_extra_map, disabled,
 				amount, 
-				max_fee ,
-				/* min probability = */ 0.1 ,
+				feebudget,
+				p->min_prob_success ,
 				p->delay_feefactor,
-				/* base_fee_penalty = */ 1,
-				/* prob_cost_factor = */ 10);
+				p->base_fee_penalty,
+				p->prob_cost_factor);
 		if (!flows) {
 			paynote(p, "Failed to find any paths for %s",
 				type_to_string(tmpctx,
@@ -396,17 +402,15 @@ struct pay_flow **get_payflows(struct payment *p,
 		}
 
 		/* Are we unhappy? */
-		prob = flow_set_probability(flows,pay_plugin->gossmap,&pay_plugin->chan_extra_map);
+		prob = flow_set_probability(flows,pay_plugin->gossmap,pay_plugin->chan_extra_map);
 		fee = flow_set_fee(flows);
 		delay = flows_worst_delay(flows) + p->final_cltv;
 
 		too_unlikely = (prob < 0.01);
-		if (too_unlikely)
+		if (too_unlikely && !unlikely_ok)
 		{
 			paynote(p, "Flows too unlikely, P() = %f%%", prob * 100);
-			
-			if(!unlikely_ok)
-				goto fail_path;
+			goto fail_path;
 		}
 		too_expensive = amount_msat_greater(fee, feebudget);
 		if (too_expensive)
@@ -420,17 +424,19 @@ struct pay_flow **get_payflows(struct payment *p,
 		if (too_delayed) {
 			paynote(p, "Flows too delayed, delay = %"PRIu64" (max %u)",
 				delay, p->maxdelay);
-			/* FIXME: What is a sane limit? */
-			if (p->delay_feefactor > 1000) {
-				paynote(p, "Giving up!");
-				goto fail_path;
-			}
+			// /* FIXME: What is a sane limit? */
+			// if (p->delay_feefactor > 1000) {
+			// 	paynote(p, "Giving up!");
+			// 	goto fail_path;
+			// }
 
-			p->delay_feefactor *= 2;
-			paynote(p, "Doubling delay_feefactor to %f",
-				p->delay_feefactor);
+			// p->delay_feefactor *= 2;
+			// paynote(p, "Doubling delay_feefactor to %f",
+			// 	p->delay_feefactor);
+			// 
+			// goto retry;
 			
-			goto retry;
+			goto fail_path;
 		}
 
 	// seems_ok:
@@ -442,7 +448,14 @@ struct pay_flow **get_payflows(struct payment *p,
 		if (disable_htlc_violations(p, flows, pay_plugin->gossmap,
 					    disabled))
 			goto retry;
-
+		
+		/* Commit the flows to the chan_extra_map, 
+		 * update the htlc_total and num_htlcs. */
+		commit_flow_set(pay_plugin->gossmap,
+				pay_plugin->chan_extra_map,
+				flows);
+		
+		
 		/* This can adjust amounts and final cltv for each flow,
 		 * to make it look like it's going elsewhere */
 		final_cltvs = shadow_additions(tmpctx, pay_plugin->gossmap,
@@ -456,12 +469,8 @@ struct pay_flow **get_payflows(struct payment *p,
 		break;
 
 	retry:
-		remove_flows(pay_plugin->gossmap, &pay_plugin->chan_extra_map,
-			     flows);
 		continue;
 	fail_path:
-		remove_flows(pay_plugin->gossmap, &pay_plugin->chan_extra_map,
-			     flows);
 		goto fail;
 	}
 

@@ -61,7 +61,7 @@ void amount_msat_reduce_(struct amount_msat *dst,
 static void memleak_mark(struct plugin *p, struct htable *memtable)
 {
 	memleak_scan_obj(memtable, pay_plugin);
-	memleak_scan_htable(memtable, &pay_plugin->chan_extra_map.raw);
+	memleak_scan_htable(memtable, &pay_plugin->chan_extra_map->raw);
 }
 #endif
 
@@ -83,7 +83,9 @@ static const char *init(struct plugin *p,
 		 JSON_SCAN(json_to_bool, &pay_plugin->exp_offers));
 
 	list_head_init(&pay_plugin->payments);
-	chan_extra_map_init(&pay_plugin->chan_extra_map);
+	
+	pay_plugin->chan_extra_map = tal(pay_plugin,struct chan_extra_map);
+	chan_extra_map_init(pay_plugin->chan_extra_map);
 
 	// TODO(eduardo) is it ok to use NULL or pay_plugin as `ctx`?
 	pay_plugin->gossmap = gossmap_load(pay_plugin,
@@ -116,12 +118,11 @@ static void chan_update_capacity(struct payment *p,
 	/* This is assumed */
 	if (min_capacity && max_capacity)
 		assert(amount_msat_greater_eq(*max_capacity, *min_capacity));
-
-	h = get_chan_extra_half_by_scid(&pay_plugin->chan_extra_map, scid, dir);
+	
+	h = get_chan_extra_half_by_scid(pay_plugin->chan_extra_map, scid, dir);
 	if (!h)
-		h = new_chan_extra_half(&pay_plugin->chan_extra_map, scid, dir,
+		h = new_chan_extra_half(pay_plugin->chan_extra_map, scid, dir,
 					*max_capacity);
-
 	if (min_capacity && amount_msat_greater(*min_capacity, h->known_min))
 		h->known_min = *min_capacity;
 	if (max_capacity && amount_msat_less(*max_capacity, h->known_max))
@@ -205,11 +206,14 @@ static void add_routehints(struct payment *p,
 				      r[j].fee_base_msat,
 				      r[j].fee_proportional_millionths,
 				      p->maxspend);
-			dest = &r[j].pubkey;
+			// TODO(eduardo): I think should be `end`
+			end = &r[j].pubkey;
+			// dest = &r[j].pubkey;
 		}
 	}
 }
 
+// TODO(eduardo): check this
 /* listpeers gives us the certainty on local channels' capacity.  Of course,
  * this is racy and transient, but better than nothing! */
 static bool update_capacities_from_listpeers(struct plugin *plugin,
@@ -811,6 +815,7 @@ sendpay_flows(struct command *cmd,
 	return command_still_pending(cmd);
 }
 
+// TODO(eduardo): check this
 static struct command_result *try_paying(struct command *cmd,
 					 struct payment *p,
 					 bool first_time)
@@ -826,7 +831,7 @@ static struct command_result *try_paying(struct command *cmd,
 		abort();
 
 	/* Fees spent so far */
-	if (amount_msat_sub(&fees_spent, p->total_sent, p->total_delivering))
+	if (!amount_msat_sub(&fees_spent, p->total_sent, p->total_delivering))
 		abort();
 
 	/* Remaining fee budget. */
@@ -915,18 +920,23 @@ static struct command_result *json_pay(struct command *cmd,
 				       const char *buf,
 				       const jsmntok_t *params)
 {
-	struct payment *p;
-	unsigned int *retryfor;
+ 	struct payment *p;
+	
+ 	u64 invexpiry;
+ 	struct amount_msat *msat, *invmsat;
+	struct amount_msat *maxfee;
 	u64 *riskfactor_millionths;
-	struct amount_msat *invmsat, *msat, *maxfee;
-	u64 invexpiry;
-	u32 *maxdelay;
-	struct out_req *req;
+ 	u32 *maxdelay;
+	u64 *base_fee_penalty, *prob_cost_factor;
+	u64 *min_prob_success_millionths;
+	unsigned int *retryfor;
+
 #if DEVELOPER
 	bool *use_shadow;
 #endif
 
-	p = tal(cmd, struct payment);
+ 	p = tal(cmd, struct payment);
+
 	p->cmd = cmd;
 	p->paynotes = tal_arr(p, const char *, 0);
 	p->disabled = tal_arr(p, struct short_channel_id, 0);
@@ -935,20 +945,33 @@ static struct command_result *json_pay(struct command *cmd,
 	p->total_sent = AMOUNT_MSAT(0);
 	p->total_delivering = AMOUNT_MSAT(0);
 	p->rexmit_timer = NULL;
-
+ 	p->local_gossmods = gossmap_localmods_new(p);
+	
 	if (!param(cmd, buf, params,
 		   p_req("invstring", param_string, &p->invstr),
-		   p_opt("amount_msat", param_msat, &msat),
-		   p_opt("label", param_string, &p->label),
+ 		   p_opt("amount_msat", param_msat, &msat),
+ 		   p_opt("maxfee", param_msat, &maxfee),
+ 		   
+		   // MCF parameters
+		   p_opt_def("base_fee_penalty", param_millionths, &base_fee_penalty,10),
+ 		   p_opt_def("prob_cost_factor", param_millionths, &prob_cost_factor,10),
+ 		   
+		   // TODO(eduardo): probability of success as a ppm parameter
+		   // or a real number?
+		   p_opt_def("min_prob_success", param_millionths, 
+		   	&min_prob_success_millionths,100000), // default is 10%
+	
 		   p_opt_def("riskfactor", param_millionths,
 			     &riskfactor_millionths, 1.0),
-		   p_opt_def("retry_for", param_number, &retryfor, 60),
+
 		   p_opt_def("maxdelay", param_number, &maxdelay,
 			     /* We're initially called to probe usage, before init! */
 			     pay_plugin ? pay_plugin->maxdelay_default : 0),
-		   p_opt("localofferid", param_sha256, &p->local_offer_id),
-		   p_opt("maxfee", param_msat, &maxfee),
-		   p_opt("description", param_string, &p->description),
+
+ 		   p_opt_def("retry_for", param_number, &retryfor, 60),
+ 		   p_opt("localofferid", param_sha256, &p->local_offer_id),
+ 		   p_opt("description", param_string, &p->description),
+ 		   p_opt("label", param_string, &p->label),
 #if DEVELOPER
 		   p_opt_def("use_shadow", param_bool, &use_shadow, true),
 #endif
@@ -957,15 +980,29 @@ static struct command_result *json_pay(struct command *cmd,
 
 #if DEVELOPER
 	p->use_shadow = *use_shadow;
+	tal_free(use_shadow);
 #else
 	p->use_shadow = true;
 #endif
-
-	p->local_gossmods = gossmap_localmods_new(p);
-	p->delay_feefactor = *riskfactor_millionths / 1000000.0;
+ 	
+	plugin_log(pay_plugin->plugin,LOG_DBG,"Starting renepay");
+	
+	p->base_fee_penalty=*base_fee_penalty;
+	p->prob_cost_factor= *prob_cost_factor;
+	p->min_prob_success=*min_prob_success_millionths * 1e-6;
+ 	p->delay_feefactor = *riskfactor_millionths / 1000000.0;
 	p->maxdelay = *maxdelay;
+	
+	tal_free(base_fee_penalty);
+	tal_free(prob_cost_factor);
+	tal_free(min_prob_success_millionths);
+	tal_free(riskfactor_millionths);
 	tal_free(maxdelay);
 
+	p->start_time = time_now();
+	p->stop_time = timeabs_add(p->start_time, time_from_sec(*retryfor));
+	tal_free(retryfor);
+	
 	if (!bolt12_has_prefix(p->invstr)) {
 		struct bolt11 *b11;
 		char *fail;
@@ -988,7 +1025,9 @@ static struct command_result *json_pay(struct command *cmd,
 			p->payment_metadata = tal_dup_talarr(p, u8, b11->metadata);
 		else
 			p->payment_metadata = NULL;
+			
 		add_routehints(p, b11->routes, &p->dest);
+		
 		p->final_cltv = b11->min_final_cltv_expiry;
 		/* Sanity check */
 		if (feature_offered(b11->features, OPT_VAR_ONION) &&
@@ -1016,6 +1055,7 @@ static struct command_result *json_pay(struct command *cmd,
 						    "bolt11 uses description_hash, but you did not provide description parameter");
 		}
 	} else {
+		// TODO(eduardo): check this, compare with `pay`
 		const struct tlv_invoice *b12;
 		char *fail;
 		b12 = invoice_decode(tmpctx, p->invstr, strlen(p->invstr),
@@ -1078,11 +1118,20 @@ static struct command_result *json_pay(struct command *cmd,
 		else
 			invexpiry = *b12->invoice_created_at + BOLT12_DEFAULT_REL_EXPIRY;
 	}
+	
+	if (node_id_eq(&pay_plugin->my_id, &p->dest))
+		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
+				    "This payment is destined for ourselves. "
+				    "Self-payments are not supported");
 
-	if (time_now().ts.tv_sec > invexpiry)
-		return command_fail(cmd, PAY_INVOICE_EXPIRED, "Invoice expired");
-
+	/* It's now owned by the global plugin */
+	list_add_tail(&pay_plugin->payments, &p->list);
+	tal_add_destructor(p, destroy_payment);
+	tal_steal(pay_plugin, p);
+	
+	// set the payment amount
 	if (invmsat) {
+		// amount is written in the invoice
 		if (msat) {
 			return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
 					    "amount_msat parameter unnecessary");
@@ -1090,22 +1139,19 @@ static struct command_result *json_pay(struct command *cmd,
 		p->amount = *invmsat;
 		tal_free(invmsat);
 	} else {
+		// amount is not written in the invoice
 		if (!msat) {
 			return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
 					    "amount_msat parameter required");
 		}
 		p->amount = *msat;
+		tal_free(msat);
 	}
-
-	if (node_id_eq(&pay_plugin->my_id, &p->dest))
-		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
-				    "This payment is destined for ourselves. "
-				    "Self-payments are not supported");
-
+	
 	/* Default max fee is 5 sats, or 0.5%, whichever is *higher* */
 	if (!maxfee) {
 		struct amount_msat fee = amount_msat_div(p->amount, 200);
-		if (amount_msat_less(p->amount, AMOUNT_MSAT(5000)))
+		if (amount_msat_less(fee, AMOUNT_MSAT(5000)))
 			fee = AMOUNT_MSAT(5000);
 		maxfee = tal_dup(tmpctx, struct amount_msat, &fee);
 	}
@@ -1116,15 +1162,12 @@ static struct command_result *json_pay(struct command *cmd,
 			"Overflow when computing fee budget, fee far too high.");
 	}
 	tal_free(maxfee);
-
-	p->start_time = time_now();
-	p->stop_time = timeabs_add(p->start_time, time_from_sec(*retryfor));
-	tal_free(retryfor);
-
-	/* It's now owned by the global plugin */
-	list_add_tail(&pay_plugin->payments, &p->list);
-	tal_add_destructor(p, destroy_payment);
-	tal_steal(pay_plugin, p);
+	
+	
+	if (time_now().ts.tv_sec > invexpiry)
+		return command_fail(cmd, PAY_INVOICE_EXPIRED, "Invoice expired");
+	
+	struct out_req *req;
 
 	/* Get local capacities... */
 	req = jsonrpc_request_start(cmd->plugin, cmd, "listpeers",
