@@ -106,13 +106,26 @@ static const char *init(struct plugin *p,
 	return NULL;
 }
 
+// TODO(eduardo): check this
+// TODO(eduardo): remember that if [a,b] is fixed on (c,dir) then [cap-b,cap-a]
+// is fixed on (c,!dir)
+// TODO(eduardo): I think this function does too many things.  I would prefer to
+// have finer grained control; like a function `chan_update_knowledge` that
+// improves the knowledge and also checks the bounds. But we also need to have
+// the possiblity to relax the knowledge in another function.
 /* We know something about this channel!  Update it! */
-static void chan_update_capacity(struct payment *p,
+static void chan_update_knowledge(struct payment *p,
 				 struct short_channel_id scid,
 				 int dir,
 				 const struct amount_msat *min_capacity,
 				 const struct amount_msat *max_capacity)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"Updating channel: %s [%s, %s]",
+		type_to_string(tmpctx,struct short_channel_id, &scid),
+		min_capacity ? type_to_string(tmpctx,struct amount_msat, min_capacity) : "-",
+		max_capacity ? type_to_string(tmpctx,struct amount_msat, max_capacity) : "-");
+	
+	
 	struct chan_extra_half *h;
 
 	/* This is assumed */
@@ -187,7 +200,10 @@ static void add_localchan(struct payment *p,
 				 dir);
 	/* We know (assume!) something about this channel: that it has at
 	 * sufficient capacity. */
-	chan_update_capacity(p, scid, dir, &p->maxspend, &p->maxspend);
+	plugin_log(pay_plugin->plugin,LOG_DBG,"add_localchan: %s [maxspend %s]",
+		type_to_string(tmpctx,struct short_channel_id, &scid),
+		type_to_string(tmpctx,struct amount_msat, &p->maxspend));
+	chan_update_knowledge(p, scid, dir, &p->maxspend, &p->maxspend);
 }
 
 /* Add routehints provided by bolt11 */
@@ -213,90 +229,80 @@ static void add_routehints(struct payment *p,
 	}
 }
 
-// TODO(eduardo): check this
-/* listpeers gives us the certainty on local channels' capacity.  Of course,
+/* listpeerchannels gives us the certainty on local channels' capacity.  Of course,
  * this is racy and transient, but better than nothing! */
-static bool update_capacities_from_listpeers(struct plugin *plugin,
-					     struct payment *p,
-					     const char *buf,
-					     const jsmntok_t *toks)
+static bool update_capacities_from_listpeerchannels(
+		struct plugin *plugin,
+		struct payment *p,
+		const char *buf,
+		const jsmntok_t *toks)
 {
-	const jsmntok_t *peers, *peer;
+	const jsmntok_t *channels, *channel;
 	size_t i;
 
 	if (json_get_member(buf, toks, "error"))
 		goto malformed;
 
-	peers = json_get_member(buf, toks, "peers");
-	if (!peers)
+	channels = json_get_member(buf, toks, "channels");
+	if (!channels)
 		goto malformed;
 
-	json_for_each_arr(i, peer, peers) {
-		const jsmntok_t *channel, *channels;
-		size_t j;
-		bool connected;
-
-		channels = json_get_member(buf, peer, "channels");
-		if (!channels)
+	json_for_each_arr(i, channel, channels) {
+		struct short_channel_id scid;
+		const jsmntok_t *scidtok = json_get_member(buf, channel, "short_channel_id");
+		/* If channel is still opening, this won't be there. 
+		 * Also it won't be in the gossmap, so there is 
+		 * no need to mark it as disabled. */
+		if (!scidtok)
 			continue;
-
-		if (!json_to_bool(buf,
-				  json_get_member(buf, peer, "connected"),
-				  &connected))
+		if (!json_to_short_channel_id(buf, scidtok, &scid))
 			goto malformed;
-
-		json_for_each_arr(j, channel, channels) {
-			const jsmntok_t *spendabletok, *scidtok, *dirtok, *statetok;
-			struct short_channel_id scid;
-			int dir;
-			struct amount_msat spendable;
-
-			scidtok = json_get_member(buf, channel, "short_channel_id");
-			/* If channel is still opening, this won't be there */
-			if (!scidtok)
-				continue;
-
-			spendabletok = json_get_member(buf, channel, "spendable_msat");
-			dirtok = json_get_member(buf, channel, "direction");
-			/* FIXME: Example max_accepted_htlcs and htlcs */
-			statetok = json_get_member(buf, channel, "state");
-			if (spendabletok == NULL
-			    || dirtok == NULL
-			    || statetok == NULL)
-				goto malformed;
-
-			if (!json_to_short_channel_id(buf, scidtok, &scid))
-				goto malformed;
-			if (!json_to_int(buf, dirtok, &dir))
-				goto malformed;
-			if (!json_to_msat(buf, spendabletok, &spendable))
-				goto malformed;
-
-			/* Don't report opening/closing channels */
-			if (!json_tok_streq(buf, statetok, "CHANNELD_NORMAL")) {
-				tal_arr_expand(&p->disabled, scid);
-				continue;
-			}
-
-			if (!connected) {
-				paynote(p, "local channel %s disabled:"
-					" peer disconnected",
-					type_to_string(tmpctx,
-						       struct short_channel_id,
-						       &scid));
-				tal_arr_expand(&p->disabled, scid);
-				continue;
-			}
-
-			/* We know min and max capacity exactly now! */
-			chan_update_capacity(p, scid, dir, &spendable, &spendable);
+	
+		bool connected;
+		if(!json_to_bool(buf,
+				 json_get_member(buf,channel,"peer_connected"),
+				 &connected))
+			goto malformed;
+	
+		if (!connected) {
+			paynote(p, "local channel %s disabled:"
+				" peer disconnected",
+				type_to_string(tmpctx,
+					       struct short_channel_id,
+					       &scid));
+			tal_arr_expand(&p->disabled, scid);
+			continue;
 		}
+		
+		const jsmntok_t *spendabletok, *dirtok,*statetok;
+		struct amount_msat spendable;
+		int dir;
+		
+		spendabletok = json_get_member(buf, channel, "spendable_msat");
+		dirtok = json_get_member(buf, channel, "direction");
+		statetok = json_get_member(buf, channel, "state");
+		
+		if(spendabletok==NULL || dirtok==NULL || statetok==NULL)
+			goto malformed;
+		if (!json_to_msat(buf, spendabletok, &spendable))
+			goto malformed;
+		if (!json_to_int(buf, dirtok,&dir))
+			goto malformed;
+			
+		/* Don't report opening/closing channels */
+		if (!json_tok_streq(buf, statetok, "CHANNELD_NORMAL")) {
+			tal_arr_expand(&p->disabled, scid);
+			continue;
+		}
+		
+		/* We know min and max liquidity exactly now! */
+		chan_update_knowledge(p, scid, dir, &spendable, &spendable);
 	}
 	return true;
 
 malformed:
 	plugin_log(plugin, LOG_BROKEN,
-		   "listpeers malformed: %.*s",
+		   "listpeerchannels malformed: %.*s",
 		   json_tok_full_len(toks),
 		   json_tok_full(buf, toks));
 	return false;
@@ -614,7 +620,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	/* All these parts succeeded, so we know something about min
 	 * capacity! */
 	for (size_t i = 0; i < erridx; i++)
-		chan_update_capacity(p, flow->path_scids[i], flow->path_dirs[i], &flow->amounts[i],
+		chan_update_knowledge(p, flow->path_scids[i], flow->path_dirs[i], &flow->amounts[i],
 				     NULL);
 
 	switch ((enum onion_wire)onionerr) {
@@ -665,7 +671,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 		paynote(p, "... assuming that max capacity is %s",
 			type_to_string(tmpctx, struct amount_msat,
 				       &max_possible));
-		chan_update_capacity(p, errscid, flow->path_dirs[erridx], NULL, &max_possible);
+		chan_update_knowledge(p, errscid, flow->path_dirs[erridx], NULL, &max_possible);
 		goto done;
 	}
 
@@ -859,12 +865,15 @@ static struct command_result *try_paying(struct command *cmd,
 }
 
 static struct command_result *
-listpeers_done(struct command *cmd, const char *buf,
+listpeerchannels_done(struct command *cmd, const char *buf,
 	       const jsmntok_t *result, struct payment *p)
 {
-	if (!update_capacities_from_listpeers(cmd->plugin, p, buf, result))
+	// FILE *f = fopen("/tmp/afile","wb");
+	// fwrite(json_tok_full(buf,result),json_tok_full_len(result),1,f);
+	// fclose(f);
+	if (!update_capacities_from_listpeerchannels(cmd->plugin, p, buf, result))
 		return command_fail(cmd, LIGHTNINGD,
-				    "listpays malformed: %.*s",
+				    "listpeerchannels malformed: %.*s",
 				    json_tok_full_len(result),
 				    json_tok_full(buf, result));
 
@@ -1163,16 +1172,15 @@ static struct command_result *json_pay(struct command *cmd,
 	}
 	tal_free(maxfee);
 	
-	
 	if (time_now().ts.tv_sec > invexpiry)
 		return command_fail(cmd, PAY_INVOICE_EXPIRED, "Invoice expired");
 	
 	struct out_req *req;
 
 	/* Get local capacities... */
-	req = jsonrpc_request_start(cmd->plugin, cmd, "listpeers",
-				    listpeers_done,
-				    listpeers_done, p);
+	req = jsonrpc_request_start(cmd->plugin, cmd, "listpeerchannels",
+				    listpeerchannels_done,
+				    listpeerchannels_done, p);
 	return send_outreq(cmd->plugin, req);
 }
 
