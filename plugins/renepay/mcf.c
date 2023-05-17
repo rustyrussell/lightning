@@ -1315,6 +1315,9 @@ static bool is_better(
  * TODO(eduardo): notice that we don't pay fees to forward payments with local
  * channels and we can tell with absolute certainty the liquidity on them. 
  * Check that local channels have fee costs = 0 and bounds with certainty (min=max). */
+
+// TODO(eduardo): we should LOG_DBG the process of finding the MCF while
+// adjusting the frugality factor.
 struct flow** minflow(
 		const tal_t *ctx,
 		struct gossmap *gossmap,
@@ -1329,7 +1332,7 @@ struct flow** minflow(
 		double base_fee_penalty,
 		u32 prob_cost_factor )
 {
-	printf("%s: starting\n",__PRETTY_FUNCTION__);
+	// printf("%s: starting\n",__PRETTY_FUNCTION__);
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
 	struct pay_parameters *params = tal(this_ctx,struct pay_parameters);	
@@ -1379,23 +1382,23 @@ struct flow** minflow(
 	
 	init_residual_netork(linear_network,residual_network);
 	
-	printf("%s: done with allocation and initialization\n",__PRETTY_FUNCTION__);
+	// printf("%s: done with allocation and initialization\n",__PRETTY_FUNCTION__);
 	
 	struct amount_msat best_fee;
 	double best_prob_success;
 	struct flow **best_flow_paths = NULL;
 	
-	printf("%s: searching for a feasible flow\n",__PRETTY_FUNCTION__);
+	// printf("%s: searching for a feasible flow\n",__PRETTY_FUNCTION__);
 	int err = find_feasible_flow(linear_network,residual_network,source_idx,target_idx,
 	                             params->amount.millisatoshis/1000);
 	
 	if(err!=RENEPAY_ERR_OK)
 	{
 		// there is no flow that satisfy the constraints, we stop here
-		printf("%s: feasible flow not found\n",__PRETTY_FUNCTION__);
+		// printf("%s: feasible flow not found\n",__PRETTY_FUNCTION__);
 		goto finish;
 	}
-	printf("%s: found a feasible flow\n",__PRETTY_FUNCTION__);
+	// printf("%s: found a feasible flow\n",__PRETTY_FUNCTION__);
 	
 	// first flow found
 	best_flow_paths = get_flow_paths(ctx,params->gossmap,params->chan_extra_map,
@@ -1414,7 +1417,7 @@ struct flow** minflow(
 	{
 		
 		s64 mu = (mu_left + mu_right)/2;
-		printf("%s: mu=%ld\n",__PRETTY_FUNCTION__,mu);
+		// printf("%s: mu=%ld\n",__PRETTY_FUNCTION__,mu);
 		
 		combine_cost_function(linear_network,residual_network,mu);
 		
@@ -1431,8 +1434,8 @@ struct flow** minflow(
 						params->chan_extra_map);
 		struct amount_msat fee = flow_set_fee(flow_paths);
 		
-		printf("prob %.2f, fee %s\n",prob_success,
-				type_to_string(this_ctx,struct amount_msat,&fee));
+		// printf("prob %.2f, fee %s\n",prob_success,
+		//		type_to_string(this_ctx,struct amount_msat,&fee));
 		
 		// is this better than the previous one?
 		if(!best_flow_paths || 
@@ -1450,12 +1453,12 @@ struct flow** minflow(
 		{
 			// too expensive
 			mu_left = mu+1;
-			printf("%s: too expensive\n",__PRETTY_FUNCTION__);
+			// printf("%s: too expensive\n",__PRETTY_FUNCTION__);
 		}else if(prob_success < params->min_probability)
 		{
 			// too unlikely
 			mu_right = mu;
-			printf("%s: too unlikely\n",__PRETTY_FUNCTION__);
+			// printf("%s: too unlikely\n",__PRETTY_FUNCTION__);
 		}else
 		{
 			// with mu constraints are satisfied, now let's optimize
@@ -1471,7 +1474,7 @@ struct flow** minflow(
 	
 	finish:
 	
-	printf("%s: finished\n",__PRETTY_FUNCTION__);
+	// printf("%s: finished\n",__PRETTY_FUNCTION__);
 	
 	tal_free(this_ctx);
 	return best_flow_paths;
