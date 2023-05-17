@@ -207,14 +207,23 @@ static void add_localchan(struct payment *p,
 }
 
 /* Add routehints provided by bolt11 */
-static void add_routehints(struct payment *p,
-			   struct route_info **routes,
-			   const struct node_id *dest)
+static void add_routehints(struct payment *p)
 {
-	for (size_t i = 0; i < tal_count(routes); i++) {
+	struct bolt11 *b11;
+	char *fail;
+
+	b11 =
+	    bolt11_decode(tmpctx, p->invstr, plugin_feature_set(p->cmd->plugin),
+			  p->description, chainparams, &fail);
+	if (b11 == NULL)
+		plugin_log(pay_plugin->plugin, LOG_BROKEN,
+				    "add_routehints: Invalid bolt11: %s", fail);
+		
+
+	for (size_t i = 0; i < tal_count(b11->routes); i++) {
 		/* Each one, presumably, leads to the destination */
-		const struct route_info *r = routes[i];
-		const struct node_id *end = dest;
+		const struct route_info *r = b11->routes[i];
+		const struct node_id *end = & p->dest;
 		for (int j = tal_count(r)-1; j >= 0; j--) {
 			add_localchan(p, &r[j].pubkey, end,
 				      r[j].cltv_expiry_delta,
@@ -222,9 +231,7 @@ static void add_routehints(struct payment *p,
 				      r[j].fee_base_msat,
 				      r[j].fee_proportional_millionths,
 				      p->maxspend);
-			// TODO(eduardo): I think should be `end`
 			end = &r[j].pubkey;
-			// dest = &r[j].pubkey;
 		}
 	}
 }
@@ -1012,6 +1019,7 @@ static struct command_result *json_pay(struct command *cmd,
 	p->stop_time = timeabs_add(p->start_time, time_from_sec(*retryfor));
 	tal_free(retryfor);
 	
+	bool invstr_is_b11=false;
 	if (!bolt12_has_prefix(p->invstr)) {
 		struct bolt11 *b11;
 		char *fail;
@@ -1022,7 +1030,9 @@ static struct command_result *json_pay(struct command *cmd,
 		if (b11 == NULL)
 			return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
 					    "Invalid bolt11: %s", fail);
-
+		
+		invstr_is_b11=true;
+		
 		invmsat = b11->msat;
 		invexpiry = b11->timestamp + b11->expiry;
 
@@ -1034,8 +1044,7 @@ static struct command_result *json_pay(struct command *cmd,
 			p->payment_metadata = tal_dup_talarr(p, u8, b11->metadata);
 		else
 			p->payment_metadata = NULL;
-			
-		add_routehints(p, b11->routes, &p->dest);
+		
 		
 		p->final_cltv = b11->min_final_cltv_expiry;
 		/* Sanity check */
@@ -1175,6 +1184,10 @@ static struct command_result *json_pay(struct command *cmd,
 	if (time_now().ts.tv_sec > invexpiry)
 		return command_fail(cmd, PAY_INVOICE_EXPIRED, "Invoice expired");
 	
+	// TODO(eduardo): are there route hints for B12?
+	if(invstr_is_b11)
+		add_routehints(p);
+	
 	struct out_req *req;
 
 	/* Get local capacities... */
@@ -1182,6 +1195,13 @@ static struct command_result *json_pay(struct command *cmd,
 				    listpeerchannels_done,
 				    listpeerchannels_done, p);
 	return send_outreq(cmd->plugin, req);
+	
+	// struct json_stream *ret;
+	// ret = jsonrpc_stream_success(cmd);
+	// json_add_string(ret,"hello","world");
+	// json_add_amount_msat_only(ret,"maxspend_msat",p->maxspend);
+	// 
+	// return command_finished(cmd,ret);
 }
 
 static const struct plugin_command commands[] = {
