@@ -83,7 +83,7 @@ static u32 shadow_one_flow(const struct gossmap *gossmap,
 			;
 
 	/* Shouldn't happen either */
-	if (amount_msat_sub(shadow_fee, amount, f->amounts[numpath-1]))
+	if (!amount_msat_sub(shadow_fee, amount, f->amounts[numpath-1]))
 		plugin_err(pay_plugin->plugin,
 			   "Failed to calc shadow fee: %s - %s",
 			   type_to_string(tmpctx, struct amount_msat, &amount),

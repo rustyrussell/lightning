@@ -796,6 +796,7 @@ sendpay_flows(struct command *cmd,
 						  flows[i]->amounts[j]);
 			json_add_u32(req->js, "delay",
 				     flows[i]->cltv_delays[j]);
+			json_object_end(req->js);
 		}
 		json_array_end(req->js);
 
