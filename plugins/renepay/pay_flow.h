@@ -28,4 +28,7 @@ struct pay_flow **get_payflows(struct payment *p,
 			       bool unlikely_ok,
 			       bool is_entire_payment);
 
+const char* fmt_payflows(const tal_t *ctx,
+			 struct pay_flow ** flows);
+
 #endif /* LIGHTNING_PLUGINS_RENEPAY_PAY_FLOW_H */

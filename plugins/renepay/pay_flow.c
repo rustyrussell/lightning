@@ -8,6 +8,8 @@
 #include <plugins/renepay/mcf.h>
 #include <plugins/renepay/pay.h>
 #include <plugins/renepay/pay_flow.h>
+#include <ccan/tal/str/str.h>
+#include <ccan/json_out/json_out.h>
 
 /* BOLT #7:
  *
@@ -485,3 +487,47 @@ fail:
 	goto out;
 }
 
+const char* fmt_payflows(const tal_t *ctx,
+			 struct pay_flow ** flows)
+{
+	struct json_out *jout = json_out_new(ctx);
+	json_out_start(jout, NULL, '{');
+	json_out_start(jout,"Pay_flows",'[');
+	
+	for(size_t i=0;i<tal_count(flows);++i)
+	{
+		struct pay_flow *f = flows[i];
+		json_out_start(jout,NULL,'{');
+		json_out_add(jout,"success_prob",false,"%.2lf",f->success_prob);
+		json_out_start(jout,"path_scids",'[');
+		for(size_t j=0;j<tal_count(f->path_scids);++j)
+		{
+			json_out_add(jout,NULL,true,"%s",
+				type_to_string(ctx,struct short_channel_id,&f->path_scids[j]));
+		}
+		json_out_end(jout,']');
+		json_out_start(jout,"path_dirs",'[');
+		for(size_t j=0;j<tal_count(f->path_dirs);++j)
+		{
+			json_out_add(jout,NULL,false,"%d",f->path_dirs[j]);
+		}
+		json_out_end(jout,']');
+		json_out_start(jout,"amounts",'[');
+		for(size_t j=0;j<tal_count(f->amounts);++j)
+		{
+			json_out_add(jout,NULL,true,"%s",
+				type_to_string(ctx,struct amount_msat,&f->amounts[j]));
+		}
+		json_out_end(jout,']');
+		json_out_end(jout,'}');
+	}
+	
+	json_out_end(jout,']');
+	json_out_end(jout, '}');
+ 	json_out_direct(jout, 1)[0] = '\n';
+ 	json_out_direct(jout, 1)[0] = '\0';
+ 	json_out_finished(jout);
+	
+	size_t len;
+	return json_out_contents(jout,&len);
+}
