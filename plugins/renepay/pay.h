@@ -56,7 +56,6 @@ struct payment {
 	/* How much, what, where */
 	// TODO(eduardo): is it used?
 	struct node_id dest;
-	// TODO(eduardo): is it used?
 	struct sha256 payment_hash;
 	// TODO(eduardo): is it used?
 	struct amount_msat amount;

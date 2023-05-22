@@ -17,9 +17,26 @@
 #include <plugins/renepay/pay_flow.h>
 #include <stdio.h>
 #include <wire/peer_wire.h>
+#include <ccan/json_out/json_out.h>
 
 /* Set in init */
 struct pay_plugin *pay_plugin;
+
+static void debug_payflows(struct pay_flow **flows, const char* fname)
+{
+	FILE *f = fopen(fname,"a");
+	fprintf(f,"%s\n",fmt_payflows(tmpctx,flows));
+	fclose(f);
+}
+
+static void debug_outreq(const struct out_req *req, const char*fname)
+{
+	FILE *f = fopen(fname,"a");
+	size_t len;
+	const char * str =  json_out_contents(req->js->jout,&len);
+	fprintf(f,"%s\n",str);
+	fclose(f);
+}
 
 void paynote(struct payment *p, const char *fmt, ...)
 {
@@ -244,6 +261,7 @@ static bool update_capacities_from_listpeerchannels(
 		const char *buf,
 		const jsmntok_t *toks)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling update_capacities_from_listpeerchannels");
 	const jsmntok_t *channels, *channel;
 	size_t i;
 
@@ -773,6 +791,7 @@ static struct command_result *flow_sendpay_failed(struct command *cmd,
 	return flow_failed(cmd, flow);
 }
 
+// TODO(eduardo): check this
 static struct command_result *
 sendpay_flows(struct command *cmd,
 	      struct payment *p,
@@ -794,13 +813,17 @@ sendpay_flows(struct command *cmd,
 						  &flows[i]->path_scids[j]);
 			json_add_amount_msat_only(req->js, "amount_msat",
 						  flows[i]->amounts[j]);
+			json_add_num(req->js, "direction",
+						  flows[i]->path_dirs[j]);
 			json_add_u32(req->js, "delay",
 				     flows[i]->cltv_delays[j]);
+			json_add_string(req->js,"style","tlv");
 			json_object_end(req->js);
 		}
 		json_array_end(req->js);
 
 		json_add_sha256(req->js, "payment_hash", &p->payment_hash);
+		json_add_secret(req->js, "payment_secret", p->payment_secret);
 		json_add_amount_msat_only(req->js, "amount_msat", p->amount);
 		json_add_u64(req->js, "partid", flows[i]->partid);
 		json_add_u64(req->js, "groupid", p->groupid);
@@ -814,7 +837,9 @@ sendpay_flows(struct command *cmd,
 		json_add_string(req->js, "bolt11", p->invstr);
 		if (p->description)
 			json_add_string(req->js, "description", p->description);
-
+		
+		debug_outreq(req,"/tmp/dbg.txt");
+		
 		/* Flow now owned by request */
 		tal_steal(req, flows[i]);
 		send_outreq(cmd->plugin, req);
@@ -860,6 +885,9 @@ static struct command_result *try_paying(struct command *cmd,
 	 * than simply refuse.  Plus, models are not truth! */
 	pay_flows = get_payflows(p, remaining, feebudget, first_time,
 				 amount_msat_eq(p->total_delivering, AMOUNT_MSAT(0)));
+	
+	debug_payflows(pay_flows,"/tmp/dbg.txt");
+	
 	if (!pay_flows)
 		return command_fail(cmd, PAY_ROUTE_NOT_FOUND,
 				    "Failed to find a route for %s with budget %s",
@@ -876,6 +904,7 @@ static struct command_result *
 listpeerchannels_done(struct command *cmd, const char *buf,
 	       const jsmntok_t *result, struct payment *p)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling listpeerchannels_done");
 	// FILE *f = fopen("/tmp/afile","wb");
 	// fwrite(json_tok_full(buf,result),json_tok_full_len(result),1,f);
 	// fclose(f);
