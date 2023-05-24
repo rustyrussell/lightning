@@ -64,10 +64,8 @@ struct payment {
 	u32 final_cltv;
 
 	/* Total sent, including fees. */
-	// TODO(eduardo): is it used?
 	struct amount_msat total_sent;
 	/* Total that is delivering (i.e. without fees) */
-	// TODO(eduardo): is it used?
 	struct amount_msat total_delivering;
 
 	/* payment_secret, if specified by invoice. */

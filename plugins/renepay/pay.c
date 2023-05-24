@@ -18,6 +18,9 @@
 #include <stdio.h>
 #include <wire/peer_wire.h>
 #include <ccan/json_out/json_out.h>
+#include <pthread.h>
+
+#define MYLOG "/tmp/debug.txt"
 
 /* Set in init */
 struct pay_plugin *pay_plugin;
@@ -34,7 +37,18 @@ static void debug_outreq(const struct out_req *req, const char*fname)
 	FILE *f = fopen(fname,"a");
 	size_t len;
 	const char * str =  json_out_contents(req->js->jout,&len);
-	fprintf(f,"%s\n",str);
+	fprintf(f,"%s",str);
+	if (req->errcb)
+		fprintf(f,"}");
+	fprintf(f,"}\n");
+	fclose(f);
+}
+
+static void debug_call(const char* fun, const char* fname)
+{
+	pthread_t tid = pthread_self();
+	FILE *f = fopen(fname,"a");
+	fprintf(f,"calling function: %s (pthread_t %ld)\n",fun,tid);
 	fclose(f);
 }
 
@@ -104,7 +118,6 @@ static const char *init(struct plugin *p,
 	pay_plugin->chan_extra_map = tal(pay_plugin,struct chan_extra_map);
 	chan_extra_map_init(pay_plugin->chan_extra_map);
 
-	// TODO(eduardo) is it ok to use NULL or pay_plugin as `ctx`?
 	pay_plugin->gossmap = gossmap_load(pay_plugin,
 					   GOSSIP_STORE_FILENAME,
 					   &num_channel_updates_rejected);
@@ -217,6 +230,9 @@ static void add_localchan(struct payment *p,
 				 dir);
 	/* We know (assume!) something about this channel: that it has at
 	 * sufficient capacity. */
+	// TODO(eduardo): if this channel was already in our list then we need
+	// to update the knowledge accordingly. I think it would be better to
+	// handle this with an update_lower_bound function.
 	plugin_log(pay_plugin->plugin,LOG_DBG,"add_localchan: %s [maxspend %s]",
 		type_to_string(tmpctx,struct short_channel_id, &scid),
 		type_to_string(tmpctx,struct amount_msat, &p->maxspend));
@@ -261,7 +277,6 @@ static bool update_capacities_from_listpeerchannels(
 		const char *buf,
 		const jsmntok_t *toks)
 {
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling update_capacities_from_listpeerchannels");
 	const jsmntok_t *channels, *channel;
 	size_t i;
 
@@ -347,6 +362,8 @@ static struct command_result *try_paying(struct command *cmd,
 static struct command_result *flow_failed(struct command *cmd,
 					  const struct pay_flow *flow)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling flow_failed");
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	struct payment *p = flow->payment;
 
 	amount_msat_reduce(&p->total_delivering, flow_delivered(flow));
@@ -365,13 +382,15 @@ static struct command_result *flow_failed(struct command *cmd,
 /* Happens when timer goes off, but also works to arm timer if nothing to do */
 static void timer_kick(struct payment *p)
 {
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	p->rexmit_timer = tal_free(p->rexmit_timer);
 
 	/* Nothing has come back?  Re-arm timer. */
 	if (amount_msat_eq(p->total_delivering, p->amount)) {
-		p->rexmit_timer = plugin_timer(p->cmd->plugin,
-					       time_from_msec(250),
-					       timer_kick, p);
+		// TODO(eduardo): what's the purpose of this?
+		// p->rexmit_timer = plugin_timer(p->cmd->plugin,
+		// 			       time_from_msec(250),
+		// 			       timer_kick, p);
 		return;
 	}
 
@@ -383,6 +402,8 @@ static struct command_result *waitsendpay_succeeded(struct command *cmd,
 						    const jsmntok_t *result,
 						    struct pay_flow *flow)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling waitsendpay_succeeded");
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	struct payment *p = flow->payment;
 	struct json_stream *response = jsonrpc_stream_success(cmd);
 	const jsmntok_t *preimagetok;
@@ -424,6 +445,7 @@ static struct command_result *handle_unhandleable_error(struct payment *p,
 							const struct pay_flow *flow,
 							const char *what)
 {
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	size_t n = tal_count(flow);
 
 	/* We got a mangled reply.  We don't know who to penalize! */
@@ -466,6 +488,7 @@ static struct command_result *addgossip_done(struct command *cmd,
 					     const jsmntok_t *err,
 					     struct addgossip *adg)
 {
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	struct payment *p = adg->flow->payment;
 
 	/* Release this: if it's the last flow we'll retry immediately */
@@ -481,6 +504,7 @@ static struct command_result *addgossip_failure(struct command *cmd,
 						struct addgossip *adg)
 
 {
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	struct payment *p = adg->flow->payment;
 
 	paynote(p, "addgossip failed, removing channel %s (%.*s)",
@@ -491,11 +515,14 @@ static struct command_result *addgossip_failure(struct command *cmd,
 	return addgossip_done(cmd, buf, err, adg);
 }
 
+// TODO(eduardo): what is this?
 static struct command_result *submit_update(struct command *cmd,
 					    const struct pay_flow *flow,
 					    const u8 *update,
 					    struct short_channel_id errscid)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling submit_update");
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	struct payment *p = flow->payment;
 	struct out_req *req;
 	struct addgossip *adg = tal(cmd, struct addgossip);
@@ -580,6 +607,8 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 						 const jsmntok_t *err,
 						 struct pay_flow *flow)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling waitsendpay_failed");
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	struct payment *p = flow->payment;
 	u64 errcode;
 	struct command_result *ret;
@@ -746,6 +775,8 @@ static struct command_result *flow_sent(struct command *cmd,
 					const jsmntok_t *result,
 					struct pay_flow *flow)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling flow_sent");
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	struct payment *p = flow->payment;
 	struct out_req *req;
 
@@ -772,6 +803,8 @@ static struct command_result *flow_sendpay_failed(struct command *cmd,
 						  const jsmntok_t *err,
 						  struct pay_flow *flow)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling flow_sendpay_failed");
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	struct payment *p = flow->payment;
 	u64 errcode;
 	const jsmntok_t *msg = json_get_member(buf, err, "message");
@@ -791,12 +824,13 @@ static struct command_result *flow_sendpay_failed(struct command *cmd,
 	return flow_failed(cmd, flow);
 }
 
-// TODO(eduardo): check this
 static struct command_result *
 sendpay_flows(struct command *cmd,
 	      struct payment *p,
 	      struct pay_flow **flows STEALS)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling sendpay_flows");
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	paynote(p, "Sending out batch of %zu payments", tal_count(flows));
 	for (size_t i = 0; i < tal_count(flows); i++) {
 		struct out_req *req;
@@ -824,8 +858,11 @@ sendpay_flows(struct command *cmd,
 
 		json_add_sha256(req->js, "payment_hash", &p->payment_hash);
 		json_add_secret(req->js, "payment_secret", p->payment_secret);
+		
 		json_add_amount_msat_only(req->js, "amount_msat", p->amount);
+			
 		json_add_u64(req->js, "partid", flows[i]->partid);
+		
 		json_add_u64(req->js, "groupid", p->groupid);
 		if (p->payment_metadata)
 			json_add_hex_talarr(req->js, "payment_metadata",
@@ -838,27 +875,37 @@ sendpay_flows(struct command *cmd,
 		if (p->description)
 			json_add_string(req->js, "description", p->description);
 		
-		debug_outreq(req,"/tmp/dbg.txt");
+		// TODO(eduardo): remove this line
+		debug_outreq(req,MYLOG);
 		
-		/* Flow now owned by request */
-		tal_steal(req, flows[i]);
-		send_outreq(cmd->plugin, req);
 		amount_msat_accumulate(&p->total_sent, flows[i]->amounts[0]);
 		amount_msat_accumulate(&p->total_delivering,
 				       flow_delivered(flows[i]));
+		
+		/* Flow now owned by request */
+		tal_steal(req, flows[i]);
+		
+		send_outreq(cmd->plugin, req);
 	}
-
+	
 	/* Get ready to process replies */
+	// TODO(eduardo): how is the timer mechanics?
 	timer_kick(p);
-
+	
+	// TODO(eduardo): what is this actually doing?
 	return command_still_pending(cmd);
 }
 
-// TODO(eduardo): check this
 static struct command_result *try_paying(struct command *cmd,
 					 struct payment *p,
 					 bool first_time)
 {
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling try_paying");
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	
+	// TODO(eduardo): we should move on only if all rpc requests are done
+	// (all threads join)
+	
 	struct amount_msat feebudget, fees_spent, remaining;
 	struct pay_flow **pay_flows;
 
@@ -886,7 +933,8 @@ static struct command_result *try_paying(struct command *cmd,
 	pay_flows = get_payflows(p, remaining, feebudget, first_time,
 				 amount_msat_eq(p->total_delivering, AMOUNT_MSAT(0)));
 	
-	debug_payflows(pay_flows,"/tmp/dbg.txt");
+	// TODO(eduardo): remove this line
+	debug_payflows(pay_flows,MYLOG);
 	
 	if (!pay_flows)
 		return command_fail(cmd, PAY_ROUTE_NOT_FOUND,
@@ -904,7 +952,6 @@ static struct command_result *
 listpeerchannels_done(struct command *cmd, const char *buf,
 	       const jsmntok_t *result, struct payment *p)
 {
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling listpeerchannels_done");
 	// FILE *f = fopen("/tmp/afile","wb");
 	// fwrite(json_tok_full(buf,result),json_tok_full_len(result),1,f);
 	// fclose(f);
@@ -987,7 +1034,12 @@ static struct command_result *json_pay(struct command *cmd,
 	p->paynotes = tal_arr(p, const char *, 0);
 	p->disabled = tal_arr(p, struct short_channel_id, 0);
 	p->groupid = pseudorand_u64();
-	p->next_partid = 0;
+	
+	// TODO(eduardo): If the partid starts counting from 1 we can do
+	// parallel payments MPP. A single payment route is done with partid=0.
+	// Can we assume that all payments are MPP, even in the case of an MPP
+	// with a single route?
+	p->next_partid = 1;
 	p->total_sent = AMOUNT_MSAT(0);
 	p->total_delivering = AMOUNT_MSAT(0);
 	p->rexmit_timer = NULL;
