@@ -28,7 +28,7 @@ void debug_call(const char* fun, const char* fname);
 
 void debug_reply(const char* buf,const jsmntok_t *toks, const char*fname);
 
-void debug(const char* fname, const char *fmt, ...);
+void debug_info(const char* fname, const char *fmt, ...);
 
 
 #endif

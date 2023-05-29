@@ -208,7 +208,6 @@ static void add_hintchan(struct payment *p,
 	
 	struct chan_extra *ce = chan_extra_map_get(pay_plugin->chan_extra_map,
 						   scid);
-	
 	if(!ce)
 	{
 		/* this channel is not public, we don't know his capacity */
@@ -228,9 +227,10 @@ static void add_hintchan(struct payment *p,
 					 dir);
 	}
 	
-	/* We know (assume!) something about this channel: that it has at
-	 * sufficient capacity. */
-	chan_extra_can_send(pay_plugin->chan_extra_map,scid,dir,amount);
+	/* It is wrong to assume that this channel has sufficient capacity! 
+	 * Doing so leads to knowledge updates in which the known min liquidity
+	 * is greater than the channel's capacity. */
+	// chan_extra_can_send(pay_plugin->chan_extra_map,scid,dir,amount);
 }
 
 /* Add routehints provided by bolt11 */
