@@ -437,11 +437,11 @@ struct pay_flow **get_payflows(struct payment *p,
 					    disabled))
 			goto retry;
 		
-		/* Commit the flows to the chan_extra_map, 
-		 * update the htlc_total and num_htlcs. */
-		commit_flow_set(pay_plugin->gossmap,
-				pay_plugin->chan_extra_map,
-				flows);
+		// /* Commit the flows to the chan_extra_map, 
+		//  * update the htlc_total and num_htlcs. */
+		// commit_htlc_flow_set(pay_plugin->gossmap,
+		// 		pay_plugin->chan_extra_map,
+		// 		flows);
 		
 		
 		/* This can adjust amounts and final cltv for each flow,
@@ -533,4 +533,41 @@ const char* fmt_payflows(const tal_t *ctx,
 	
 	size_t len;
 	return json_out_contents(jout,&len);
+}
+
+void remove_htlc_payflow(
+		struct chan_extra_map *chan_extra_map,
+		const struct pay_flow *flow)
+{
+	for (size_t i = 0; i < tal_count(flow->path_scids); i++) {
+		struct chan_extra_half *h = get_chan_extra_half_by_scid(
+							       chan_extra_map,
+							       flow->path_scids[i],
+							       flow->path_dirs[i]);
+		if (!amount_msat_sub(&h->htlc_total, h->htlc_total, flow->amounts[i]))
+		{
+			abort();
+		}
+		if (h->num_htlcs == 0)
+		{
+			abort();
+		}
+		h->num_htlcs--;
+	}
+}
+void commit_htlc_payflow(
+		struct chan_extra_map *chan_extra_map,
+		const struct pay_flow *flow)
+{
+	for (size_t i = 0; i < tal_count(flow->path_scids); i++) {
+		struct chan_extra_half *h = get_chan_extra_half_by_scid(
+							       chan_extra_map,
+							       flow->path_scids[i],
+							       flow->path_dirs[i]);
+		if (!amount_msat_add(&h->htlc_total, h->htlc_total, flow->amounts[i]))
+		{
+			abort();
+		}
+		h->num_htlcs++;
+	}
 }

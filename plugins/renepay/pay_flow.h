@@ -28,6 +28,14 @@ struct pay_flow **get_payflows(struct payment *p,
 			       bool unlikely_ok,
 			       bool is_entire_payment);
 
+void commit_htlc_payflow(
+		struct chan_extra_map *chan_extra_map,
+		const struct pay_flow *flow);
+
+void remove_htlc_payflow(
+		struct chan_extra_map *chan_extra_map,
+		const struct pay_flow *flow);
+
 const char* fmt_payflows(const tal_t *ctx,
 			 struct pay_flow ** flows);
 

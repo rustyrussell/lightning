@@ -408,13 +408,17 @@ static struct command_result *flow_failed(struct command *cmd,
 	amount_msat_reduce(&p->total_delivering, flow_delivered(flow));
 	amount_msat_reduce(&p->total_sent, flow->amounts[0]);
 
+	/* flow failed, so we remove these HTLCs */
+	remove_htlc_payflow(pay_plugin->chan_extra_map,
+			    flow);
+
 	/* If nothing outstanding, don't wait for timer! */
 	if (amount_msat_eq(p->total_sent, AMOUNT_MSAT(0))) {
 		p->active_payment->rexmit_timer 
 			= tal_free(p->active_payment->rexmit_timer);
 		return try_paying(cmd, p, false);
 	}
-
+	
 	/* Still waiting for timer... */
 	return command_still_pending(cmd);
 }
@@ -445,6 +449,19 @@ static struct command_result *waitsendpay_succeeded(struct command *cmd,
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling waitsendpay_succeeded");
 	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	
+	/* payment succeeded, now remove the HTLCs */
+	remove_htlc_payflow(pay_plugin->chan_extra_map,
+			    flow);
+	
+	/* update the knowledge */
+	for (size_t i = 0; i < tal_count(flow->path_scids); i++)
+	{
+		chan_extra_sent_success(pay_plugin->chan_extra_map,
+					flow->path_scids[i],
+					flow->path_dirs[i],
+					flow->amounts[i]);
+	}
 	struct payment *p = flow->payment;
 	struct json_stream *response = jsonrpc_stream_success(cmd);
 	const jsmntok_t *preimagetok;
@@ -938,6 +955,8 @@ sendpay_flows(struct command *cmd,
 		/* Flow now owned by request */
 		tal_steal(req, flows[i]);
 		
+		/* record these HTLC along the flow path */
+		commit_htlc_payflow(pay_plugin->chan_extra_map,flows[i]);
 		send_outreq(cmd->plugin, req);
 	}
 	
@@ -984,6 +1003,7 @@ static struct command_result *try_paying(struct command *cmd,
 	 * than simply refuse.  Plus, models are not truth! */
 	pay_flows = get_payflows(p, remaining, feebudget, first_time,
 				 amount_msat_eq(p->total_delivering, AMOUNT_MSAT(0)));
+		
 	
 	// TODO(eduardo): remove this line
 	debug_payflows(pay_flows,MYLOG);

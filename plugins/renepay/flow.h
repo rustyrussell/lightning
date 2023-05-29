@@ -246,10 +246,14 @@ double flow_set_probability(
 		struct gossmap const*const gossmap,
 		struct chan_extra_map * chan_extra_map);
 
+// TODO(eduardo): we probably don't need this. Instead we should have payflow
+// input.
 /* Once flow is completed, this can remove it from the extra_map */
 void remove_completed_flow(const struct gossmap *gossmap,
 			   struct chan_extra_map *chan_extra_map,
 			   struct flow *flow);
+// TODO(eduardo): we probably don't need this. Instead we should have payflow
+// input.
 void remove_completed_flow_set(const struct gossmap *gossmap,
 			   struct chan_extra_map *chan_extra_map,
 			   struct flow **flows);
@@ -303,12 +307,16 @@ s64 linear_fee_cost(
 		double base_fee_penalty,
 		double delay_feefactor);
 
+// TODO(eduardo): we probably don't need this. Instead we should have payflow
+// input.
 /* Take the flows and commit them to the chan_extra's . */
 void commit_flow(
 		const struct gossmap *gossmap,
 		struct chan_extra_map *chan_extra_map,
 		struct flow *flow);
 
+// TODO(eduardo): we probably don't need this. Instead we should have payflow
+// input.
 /* Take the flows and commit them to the chan_extra's . */
 void commit_flow_set(
 		const struct gossmap *gossmap,
