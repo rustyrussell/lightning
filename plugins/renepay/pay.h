@@ -32,23 +32,40 @@ struct pay_plugin {
 /* Set in init */
 extern struct pay_plugin *pay_plugin;
 
-struct payment {
-	/* Inside pay_plugin->payments list */
-	// TODO(eduardo): is it used?
-	struct list_node list;
-
+// TODO(eduardo): does it make sense?
+/* Data only kept while the payment is being processed. */
+struct active_payment
+{
 	/* The command, and our owner (needed for timer func) */
 	// TODO(eduardo): is it used?
 	struct command *cmd;
 
+	/* Localmods to apply to gossip_map for our own use. */
+	bool localmods_applied;
+	struct gossmap_localmods *local_gossmods;
+	
+	/* Channels we decided to disable for various reasons. */
+	// TODO(eduardo): is it used?
+	struct short_channel_id *disabled;
+
+	/* Timers. */
+	// TODO(eduardo): is it used?
+	struct plugin_timer *rexmit_timer;
+};
+
+struct payment {
+	/* Data used while the payment is being processed. */
+	// TODO(eduardo): initialize this
+	// TODO(eduardo): add a destructor
+	struct active_payment *active_payment;
+
+	/* Inside pay_plugin->payments list */
+	// TODO(eduardo): is it used?
+	struct list_node list;
+
 	/* We promised this in pay() output */
 	// TODO(eduardo): is it used?
 	struct timeabs start_time;
-
-	/* Localmods to apply to gossip_map for our own use. */
-	// TODO(eduardo): shall we keep this data even after the payment
-	// ends?
-	struct gossmap_localmods *local_gossmods;
 
 	/* invstring (bolt11 or bolt12) */
 	// TODO(eduardo): is it used?
@@ -113,10 +130,6 @@ struct payment {
 	// TODO(eduardo): is it used?
 	double prob_cost_factor;
 
-	/* Channels we decided to disable for various reasons. */
-	// TODO(eduardo): is it used?
-	struct short_channel_id *disabled;
-
 	/* Chatty description of attempts. */
 	// TODO(eduardo): is it used?
 	const char **paynotes;
@@ -131,10 +144,6 @@ struct payment {
 	// TODO(eduardo): is it used?
 	// TODO(eduardo): could be NULL
 	struct sha256 *local_offer_id;
-
-	/* Timers. */
-	// TODO(eduardo): is it used?
-	struct plugin_timer *rexmit_timer;
 
 	/* DEVELOPER allows disabling shadow route */
 	// TODO(eduardo): is it used?

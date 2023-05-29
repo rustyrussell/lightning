@@ -26,7 +26,7 @@ void debug_outreq(const struct out_req *req, const char*fname);
 
 void debug_call(const char* fun, const char* fname);
 
-void debug_reply(const char* buf, const char*fname);
+void debug_reply(const char* buf,const jsmntok_t *toks, const char*fname);
 
 void debug(const char* fname, const char *fmt, ...);
 

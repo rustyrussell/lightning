@@ -21,7 +21,7 @@
 struct pay_plugin *pay_plugin;
 
 
-static void renepay_cleanup(struct payment *p);
+static void renepay_cleanup(struct active_payment *ap);
 
 // TODO(eduardo): check if knowledge is updated after payment success
 // TODO(eduardo): how do we fail a payment
@@ -216,8 +216,9 @@ static void add_hintchan(struct payment *p,
 				    scid,
 				    MAX_CAP);
 		/* FIXME: features? */
-		gossmap_local_addchan(p->local_gossmods, src, dst, &scid, NULL);
-		gossmap_local_updatechan(p->local_gossmods,
+		gossmap_local_addchan(p->active_payment->local_gossmods, 
+				      src, dst, &scid, NULL);
+		gossmap_local_updatechan(p->active_payment->local_gossmods,
 					 &scid,
 					 /* We assume any HTLC is allowed */
 					 AMOUNT_MSAT(0), MAX_CAP,
@@ -239,7 +240,8 @@ static void uncertainty_network_add_routehints(struct payment *p)
 	char *fail;
 
 	b11 =
-	    bolt11_decode(tmpctx, p->invstr, plugin_feature_set(p->cmd->plugin),
+	    bolt11_decode(tmpctx, p->invstr, 
+	    		  plugin_feature_set(p->active_payment->cmd->plugin),
 			  p->description, chainparams, &fail);
 	if (b11 == NULL)
 		plugin_log(pay_plugin->plugin, LOG_BROKEN,
@@ -306,7 +308,7 @@ static bool update_uncertainty_network_from_listpeerchannels(
 				type_to_string(tmpctx,
 					       struct short_channel_id,
 					       &scid));
-			tal_arr_expand(&p->disabled, scid);
+			tal_arr_expand(&p->active_payment->disabled, scid);
 			continue;
 		}
 		
@@ -338,7 +340,7 @@ static bool update_uncertainty_network_from_listpeerchannels(
 			
 		/* Don't report opening/closing channels */
 		if (!json_tok_streq(buf, statetok, "CHANNELD_NORMAL")) {
-			tal_arr_expand(&p->disabled, scid);
+			tal_arr_expand(&p->active_payment->disabled, scid);
 			continue;
 		}
 		
@@ -352,8 +354,9 @@ static bool update_uncertainty_network_from_listpeerchannels(
 					    scid,
 					    capacity);
 			/* FIXME: features? */
-			gossmap_local_addchan(p->local_gossmods, &src, &dst, &scid, NULL);
-			gossmap_local_updatechan(p->local_gossmods,
+			gossmap_local_addchan(p->active_payment->local_gossmods, 
+					      &src, &dst, &scid, NULL);
+			gossmap_local_updatechan(p->active_payment->local_gossmods,
 						 &scid,
 						 
 						 /* TODO(eduardo): does it
@@ -407,7 +410,8 @@ static struct command_result *flow_failed(struct command *cmd,
 
 	/* If nothing outstanding, don't wait for timer! */
 	if (amount_msat_eq(p->total_sent, AMOUNT_MSAT(0))) {
-		p->rexmit_timer = tal_free(p->rexmit_timer);
+		p->active_payment->rexmit_timer 
+			= tal_free(p->active_payment->rexmit_timer);
 		return try_paying(cmd, p, false);
 	}
 
@@ -419,7 +423,8 @@ static struct command_result *flow_failed(struct command *cmd,
 static void timer_kick(struct payment *p)
 {
 	debug_call(__PRETTY_FUNCTION__,MYLOG);
-	p->rexmit_timer = tal_free(p->rexmit_timer);
+	p->active_payment->rexmit_timer 
+		= tal_free(p->active_payment->rexmit_timer);
 
 	/* Nothing has come back?  Re-arm timer. */
 	if (amount_msat_eq(p->total_delivering, p->amount)) {
@@ -430,7 +435,7 @@ static void timer_kick(struct payment *p)
 		return;
 	}
 
-	try_paying(p->cmd, p, false);
+	try_paying(p->active_payment->cmd, p, false);
 }
 
 static struct command_result *waitsendpay_succeeded(struct command *cmd,
@@ -462,7 +467,6 @@ static struct command_result *waitsendpay_succeeded(struct command *cmd,
 				  p->total_sent);
 	json_add_string(response, "status", "complete");
 	json_add_node_id(response, "destination", &p->dest);
-	renepay_cleanup(p);
 	return command_finished(cmd, response);
 }
 
@@ -492,9 +496,8 @@ static struct command_result *handle_unhandleable_error(struct payment *p,
 		   what, flow_path_to_str(tmpctx, flow));
 
 	if (n == 1)
-		return command_fail(p->cmd, PAY_UNPARSEABLE_ONION,
+		return command_fail(p->active_payment->cmd, PAY_UNPARSEABLE_ONION,
 				    "Got %s from the destination", what);
-
 	/* FIXME: check chan_extra_map, since we might have succeeded though
 	 * this node before? */
 
@@ -506,7 +509,7 @@ static struct command_result *handle_unhandleable_error(struct payment *p,
 		/* Assume it's not the destination */
 		n = pseudorand(n-1);
 
-	tal_arr_expand(&p->disabled, flow->path_scids[n]);
+	tal_arr_expand(&p->active_payment->disabled, flow->path_scids[n]);
 	paynote(p, "... eliminated %s",
 		type_to_string(tmpctx, struct short_channel_id,
 			       &flow->path_scids[n]));
@@ -547,7 +550,7 @@ static struct command_result *addgossip_failure(struct command *cmd,
 	paynote(p, "addgossip failed, removing channel %s (%.*s)",
 		type_to_string(tmpctx, struct short_channel_id, &adg->scid),
 		err->end - err->start, buf + err->start);
-	tal_arr_expand(&p->disabled, adg->scid);
+	tal_arr_expand(&p->active_payment->disabled, adg->scid);
 
 	return addgossip_done(cmd, buf, err, adg);
 }
@@ -569,7 +572,8 @@ static struct command_result *submit_update(struct command *cmd,
 	adg->scid = errscid;
 	adg->flow = tal_steal(adg, flow);
 	/* Disable re-xmit until this returns */
-	p->rexmit_timer = tal_free(p->rexmit_timer);
+	p->active_payment->rexmit_timer 
+		= tal_free(p->active_payment->rexmit_timer);
 
 	paynote(p, "... extracted channel_update, telling gossipd");
 	plugin_log(pay_plugin->plugin, LOG_DBG, "(update = %s)", tal_hex(tmpctx, update));
@@ -646,7 +650,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling waitsendpay_failed");
 	debug_call(__PRETTY_FUNCTION__,MYLOG);
-	debug_reply(buf,MYLOG);
+	debug_reply(buf,err,MYLOG);
 	
 	struct payment *p = flow->payment;
 	u64 errcode;
@@ -662,21 +666,17 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 
 	switch (errcode) {
 	case PAY_UNPARSEABLE_ONION:
-		debug_exec_branch(__LINE__,__PRETTY_FUNCTION__,MYLOG);
 		ret = handle_unhandleable_error(p, flow, "unparsable onion reply");
 		if (ret)
 			return ret;
 		goto done;
 	case PAY_DESTINATION_PERM_FAIL:
-		debug_exec_branch(__LINE__,__PRETTY_FUNCTION__,MYLOG);
 		return command_fail(cmd, PAY_DESTINATION_PERM_FAIL,
 				    "Got an final failure from destination");
 	case PAY_TRY_OTHER_ROUTE:
-		debug_exec_branch(__LINE__,__PRETTY_FUNCTION__,MYLOG);
 		break;
 
 	default:
-		debug_exec_branch(__LINE__,__PRETTY_FUNCTION__,MYLOG);
 		plugin_err(cmd->plugin,
 			   "Unexpected errcode from waitsendpay: %.*s",
 			   json_tok_full_len(err), json_tok_full(buf, err));
@@ -747,7 +747,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	case WIRE_INVALID_ONION_BLINDING:
 	case WIRE_EXPIRY_TOO_FAR:
 		paynote(p, "... so we're removing scid");
-		tal_arr_expand(&p->disabled, errscid);
+		tal_arr_expand(&p->active_payment->disabled, errscid);
 		goto done;
 
 	/* These can be fixed (maybe) by applying the included channel_update */
@@ -761,7 +761,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 			return submit_update(cmd, flow, update, errscid);
 
 		paynote(p, "... missing an update, so we're removing scid");
-		tal_arr_expand(&p->disabled, errscid);
+		tal_arr_expand(&p->active_payment->disabled, errscid);
 		goto done;
 
 	/* Insufficient funds! */
@@ -816,7 +816,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 				  &flow->path_nodes[erridx]),
 		   erridx, tal_count(flow->path_nodes),
 		   onionerr);
-	tal_arr_expand(&p->disabled, errscid);
+	tal_arr_expand(&p->active_payment->disabled, errscid);
 
 done:
 	return flow_failed(cmd, flow);
@@ -873,7 +873,7 @@ static struct command_result *flow_sendpay_failed(struct command *cmd,
 	paynote(p,
 		"sendpay didn't like first hop, eliminated: %.*s",
 		msg->end - msg->start, buf + msg->start);
-	tal_arr_expand(&p->disabled, flow->path_scids[0]);
+	tal_arr_expand(&p->active_payment->disabled, flow->path_scids[0]);
 	return flow_failed(cmd, flow);
 }
 
@@ -964,7 +964,6 @@ static struct command_result *try_paying(struct command *cmd,
 
 	if (time_after(time_now(), p->stop_time))
 		return command_fail(cmd, PAY_STOPPED_RETRYING, "Timed out");
-
 	/* Total feebudget  */
 	if (!amount_msat_sub(&feebudget, p->maxspend, p->amount))
 		abort();
@@ -991,7 +990,6 @@ static struct command_result *try_paying(struct command *cmd,
 	
 	if (!pay_flows)
 	{
-		renepay_cleanup(p);
 		return command_fail(cmd, PAY_ROUTE_NOT_FOUND,
 				    "Failed to find a route for %s with budget %s",
 				    type_to_string(tmpctx, struct amount_msat,
@@ -1013,29 +1011,28 @@ listpeerchannels_done(struct command *cmd, const char *buf,
 				    "listpeerchannels malformed: %.*s",
 				    json_tok_full_len(result),
 				    json_tok_full(buf, result));
-	
 	// So we have all localmods data, now we apply it. Only once per
 	// payment.
 	// TODO(eduardo): check that there won't be a prob. cost associated with
 	// any gossmap local chan. The same way there aren't fees to pay for my
 	// local channels.
-	gossmap_apply_localmods(pay_plugin->gossmap,p->local_gossmods);
+	gossmap_apply_localmods(pay_plugin->gossmap,p->active_payment->local_gossmods);
+	p->active_payment->localmods_applied=true;
 	return try_paying(cmd, p, true);
 }
 
 /* Either the payment succeeded or failed, we need to cleanup/set the plugin
  * into a valid state before the next payment. */
-static void renepay_cleanup(struct payment *p)
+static void renepay_cleanup(struct active_payment *ap)
 {
 	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	/* Always remove our local mods (routehints) so others can use
 	 * gossmap. We do this only after the payment completes. */
-	gossmap_remove_localmods(pay_plugin->gossmap,
-				 p->local_gossmods);
+	if(ap->localmods_applied)
+		gossmap_remove_localmods(pay_plugin->gossmap,
+					 ap->local_gossmods);
 				 
-	// TODO(eduardo): can we really free the local_gossmods?
-	// I don't thinkg they'll be needed afterwards
-	tal_free(p->local_gossmods);
+	tal_free(ap->local_gossmods);
 	// TODO(eduardo): Am I missing other things?
 	// TODO(eduardo): When do we call this?
 }
@@ -1105,10 +1102,9 @@ static struct command_result *json_pay(struct command *cmd,
 #endif
 
  	p = tal(cmd, struct payment);
-
-	p->cmd = cmd;
+	
+	
 	p->paynotes = tal_arr(p, const char *, 0);
-	p->disabled = tal_arr(p, struct short_channel_id, 0);
 	p->groupid = pseudorand_u64();
 	
 	// TODO(eduardo): If the partid starts counting from 1 we can do
@@ -1118,8 +1114,6 @@ static struct command_result *json_pay(struct command *cmd,
 	p->next_partid = 1;
 	p->total_sent = AMOUNT_MSAT(0);
 	p->total_delivering = AMOUNT_MSAT(0);
-	p->rexmit_timer = NULL;
- 	p->local_gossmods = gossmap_localmods_new(p);
 	
 	if (!param(cmd, buf, params,
 		   p_req("invstring", param_string, &p->invstr),
@@ -1151,6 +1145,24 @@ static struct command_result *json_pay(struct command *cmd,
 #endif
 		   NULL))
 		return command_param_failed();
+	
+	
+	tal_steal(pay_plugin,p);
+	tal_add_destructor(p, destroy_payment);
+	
+	/* Owned by cmd, because this data is destroyed after the payment
+	 * completes, while p remains to get payment status history. */
+	p->active_payment = tal(cmd,struct active_payment);
+	tal_add_destructor(p->active_payment, renepay_cleanup);
+	
+	p->active_payment->cmd = cmd;
+ 	p->active_payment->local_gossmods = gossmap_localmods_new(p->active_payment);
+	p->active_payment->localmods_applied=false;
+	p->active_payment->disabled = tal_arr(p->active_payment, 
+					      struct short_channel_id, 
+					      0);
+	p->active_payment->rexmit_timer = NULL;
+	
 
 #if DEVELOPER
 	p->use_shadow = *use_shadow;
@@ -1198,7 +1210,6 @@ static struct command_result *json_pay(struct command *cmd,
 		if (b11 == NULL)
 			return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
 					    "Invalid bolt11: %s", fail);
-		
 		invstr_is_b11=true;
 		
 		invmsat = b11->msat;
@@ -1222,7 +1233,6 @@ static struct command_result *json_pay(struct command *cmd,
 			    cmd, JSONRPC2_INVALID_PARAMS,
 			    "Invalid bolt11:"
 			    " sets feature var_onion with no secret");
-
 		/* BOLT #11:
 		 * A reader:
 		 *...
@@ -1309,10 +1319,7 @@ static struct command_result *json_pay(struct command *cmd,
 				    "This payment is destined for ourselves. "
 				    "Self-payments are not supported");
 
-	/* It's now owned by the global plugin */
 	list_add_tail(&pay_plugin->payments, &p->list);
-	tal_add_destructor(p, destroy_payment);
-	tal_steal(pay_plugin, p);
 	
 	// set the payment amount
 	if (invmsat) {
@@ -1370,10 +1377,6 @@ static struct command_result *json_pay(struct command *cmd,
 					   pay_plugin->chan_extra_map);
 	
 	
-	// TODO(eduardo)
-	// we should remove local_gossmods from the uncertainty network
-	// after the payment is completed?
-	// 
 	// TODO(eduardo): are there route hints for B12?
 	// Add any extra hidden channel revealed by the routehints to the uncertainty network.
 	if(invstr_is_b11)

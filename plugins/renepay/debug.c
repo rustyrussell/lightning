@@ -58,10 +58,12 @@ void debug_call(const char* fun, const char* fname)
 	fclose(f);
 }
 
-void debug_reply(const char* buf, const char*fname)
+void debug_reply(const char* buf,const jsmntok_t *toks, const char*fname)
 {
 	FILE *f = fopen(fname,"a");
-	fprintf(f,"%.*s\n\n",(int)tal_count(buf),buf);
+	fprintf(f,"%.*s\n\n",
+		   json_tok_full_len(toks),
+		   json_tok_full(buf, toks));
 	fclose(f);
 }
 
