@@ -138,17 +138,17 @@ int main(int argc, char *argv[])
 	chan_extra_map = tal(tmpctx, struct chan_extra_map);
 	chan_extra_map_init(chan_extra_map);
 	/* The local chans have no "capacity", so set them manually. */
-	new_chan_extra_half(chan_extra_map,
-			    scid12, 0,
+	new_chan_extra(chan_extra_map,
+			    scid12,
 			    AMOUNT_MSAT(10000000));
-	new_chan_extra_half(chan_extra_map,
-			    scid24, 0,
+	new_chan_extra(chan_extra_map,
+			    scid24,
 			    AMOUNT_MSAT(10000000));
-	new_chan_extra_half(chan_extra_map,
-			    scid13, 0,
+	new_chan_extra(chan_extra_map,
+			    scid13,
 			    AMOUNT_MSAT(5000000));
-	new_chan_extra_half(chan_extra_map,
-			    scid34, 0,
+	new_chan_extra(chan_extra_map,
+			    scid34,
 			    AMOUNT_MSAT(5000000));
 
 	struct flow **flows;

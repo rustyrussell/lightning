@@ -6,6 +6,16 @@
 #include <common/amount.h>
 #include <common/gossmap.h>
 
+
+// TODO(eduardo): a hard coded constant to indicate a limit on any channel
+// capacity. Channels for which the capacity is unknown (because they are not
+// announced) use this value. It makes sense, because if we don't even know the
+// channel capacity the liquidity could be anything but it will never be greater
+// than the global number of msats.
+// It remains to be checked if this value does not lead to overflow somewhere in
+// the code.
+#define MAX_CAP (AMOUNT_MSAT(21000000*MSAT_PER_BTC))
+
 /* Any implementation needs to keep some data on channels which are
  * in-use (or about which we have extra information).  We use a hash
  * table here, since most channels are not in use. */
@@ -16,6 +26,7 @@
 // (X,dir) the knowledge of (X,!dir) is updated as well.
 struct chan_extra {
 	struct short_channel_id scid;
+	struct amount_msat capacity;
 
 	struct chan_extra_half {
 		/* How many htlcs we've directed through it */
@@ -54,15 +65,133 @@ HTABLE_DEFINE_TYPE(struct chan_extra,
 		   chan_extra_map);
 
 /* Helpers for chan_extra_map */
+/* Channel knowledge invariants:
+ * 	
+ * 	0<=a<=b<=capacity
+ * 	
+ * 	a_inv = capacity-b
+ * 	b_inv = capacity-a
+ * 
+ * where a,b are the known minimum and maximum liquidities, and a_inv and b_inv
+ * are the known minimum and maximum liquidities for the channel in the opposite
+ * direction.
+ * 
+ * Knowledge update operations can be:
+ * 
+ * 1. set liquidity (x)
+ * 	(a,b) -> (x,x)
+ * 	
+ * 	The entropy is minimum here (=0).
+ * 
+ * 2. can send (x):
+ * 	xb = min(x,capacity) 
+ * 	(a,b) -> (max(a,xb),max(b,xb))
+ * 	
+ * 	If x<=a then there is no new knowledge and the entropy remains
+ * 	the same.
+ * 	If x>a the entropy decreases.
+ * 	
+ * 
+ * 3. can't send (x):
+ * 	xb = max(0,x-1)
+ * 	(a,b) -> (min(a,xb),min(b,xb))
+ * 	
+ * 	If x>b there is no new knowledge and the entropy remains.
+ * 	If x<=b then the entropy decreases.
+ * 
+ * 4. sent success (x):
+ * 	(a,b) -> (max(0,a-x),max(0,b-x))
+ * 	
+ * 	If x<=a there is no new knowledge and the entropy remains.
+ * 	If a<x then the entropy decreases.
+ * 
+ * 5. relax (x,y):
+ * 	
+ * 	(a,b) -> (max(0,a-x),min(capacity,b+y))
+ * 	
+ * 	Entropy increases unless it is already maximum.	
+ * */
+
+/* Creates a new chan_extra and adds it to the chan_extra_map. */
+struct chan_extra *new_chan_extra(
+		struct chan_extra_map *chan_extra_map,
+		const struct short_channel_id scid,
+		struct amount_msat capacity);
+
+/* Checks for this chan_extra if the invariants are satisfied. */
+bool chan_extra_check_invariants(struct chan_extra *ce);
+
+/* Checks the entire uncertainty network for invariant violations. */
+bool uncertainty_network_check_invariants(struct chan_extra_map *chan_extra_map);
+
+/* This helper function preserves the uncertainty network invariant after the
+ * knowledge is updated. It assumes that the (channel,!dir) knowledge is
+ * correct. */
+void chan_extra_adjust_half(struct chan_extra *ce,
+			    int dir);
+
+/* Helper to find the min of two amounts */
+static inline struct amount_msat amount_msat_min(
+		struct amount_msat a,
+		struct amount_msat b)
+{
+	return a.millisatoshis < b.millisatoshis ? a : b;
+}
+/* Helper to find the max of two amounts */
+static inline struct amount_msat amount_msat_max(
+		struct amount_msat a,
+		struct amount_msat b)
+{
+	return a.millisatoshis > b.millisatoshis ? a : b;
+}
+
+/* Update the knowledge that this (channel,direction) can send x msat.*/
+void chan_extra_can_send(struct chan_extra_map *chan_extra_map,
+			 struct short_channel_id scid, 
+			 int dir,
+			 struct amount_msat x);
+
+/* Update the knowledge that this (channel,direction) cannot send x msat.*/
+void chan_extra_cannot_send(struct chan_extra_map *chan_extra_map,
+			    struct short_channel_id scid, 
+			    int dir,
+			    struct amount_msat x);
+
+/* Update the knowledge that this (channel,direction) has liquidity x.*/
+void chan_extra_set_liquidity(struct chan_extra_map *chan_extra_map,
+			      struct short_channel_id scid, 
+			      int dir,
+			      struct amount_msat x);
+
+/* Update the knowledge that this (channel,direction) has sent x msat.*/
+void chan_extra_sent_success(struct chan_extra_map *chan_extra_map,
+			     struct short_channel_id scid, 
+			     int dir,
+			     struct amount_msat x);
+			     
+/* Forget a bit about this (channel,direction) state. */
+void chan_extra_relax(struct chan_extra_map *chan_extra_map,
+		      struct short_channel_id scid, 
+		      int dir,
+		      struct amount_msat down,
+		      struct amount_msat up);
+
+/* Mirror the gossmap in the public uncertainty network.
+ * result: Every channel in gossmap must have associated data in chan_extra_map,
+ * while every channel in chan_extra_map is also registered in gossmap.
+ * */
+void uncertainty_network_update(
+		const struct gossmap *gossmap,
+		struct chan_extra_map *chan_extra_map);
+
+
+
+/* Returns either NULL, or an entry from the hash */
 struct chan_extra_half *get_chan_extra_half_by_scid(struct chan_extra_map *chan_extra_map,
 						    const struct short_channel_id scid,
 						    int dir);
-
-struct chan_extra_half *get_chan_extra_half_by_chan(const struct gossmap *gossmap,
-						    struct chan_extra_map *chan_extra_map,
-						    const struct gossmap_chan *chan,
-						    int dir);
-/* Helper to get the chan_extra_half. If it doesn't exist create a new one. */
+/* If the channel is not registered, then a new entry is created. scid must be
+ * present in the gossmap. */
 struct chan_extra_half *
 get_chan_extra_half_by_chan_verify(
 		const struct gossmap *gossmap,
@@ -70,11 +199,11 @@ get_chan_extra_half_by_chan_verify(
 		const struct gossmap_chan *chan,
 		int dir);
 
-/* tal_free() this removes it from chan_extra_map */
-struct chan_extra_half *new_chan_extra_half(struct chan_extra_map *chan_extra_map,
-					    const struct short_channel_id scid,
-					    int dir,
-					    struct amount_msat capacity);
+/* Helper if we have a gossmap_chan */
+struct chan_extra_half *get_chan_extra_half_by_chan(const struct gossmap *gossmap,
+						    struct chan_extra_map *chan_extra_map,
+						    const struct gossmap_chan *chan,
+						    int dir);
 
 /* An actual partial flow. */
 struct flow {

@@ -300,6 +300,8 @@ int main(int argc, char *argv[])
 
 	chan_extra_map = tal(tmpctx, struct chan_extra_map);
 	chan_extra_map_init(chan_extra_map);
+	uncertainty_network_update(gossmap,chan_extra_map);	
+	
 	flows = minflow(tmpctx, gossmap,
 			gossmap_find_node(gossmap, &l1),
 			gossmap_find_node(gossmap, &l3),
@@ -384,7 +386,7 @@ int main(int argc, char *argv[])
 	remove_completed_flow_set(gossmap, chan_extra_map, flows);
 
 	/* The local chans have no "capacity", so set it manually. */
-	new_chan_extra_half(chan_extra_map, scid13, 0,
+	new_chan_extra(chan_extra_map, scid13,
 			    AMOUNT_MSAT(400000000));
 
 	// flows = minflow(tmpctx, gossmap,

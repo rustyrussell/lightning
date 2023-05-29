@@ -46,7 +46,8 @@ struct payment {
 	struct timeabs start_time;
 
 	/* Localmods to apply to gossip_map for our own use. */
-	// TODO(eduardo): is it used?
+	// TODO(eduardo): shall we keep this data even after the payment
+	// ends?
 	struct gossmap_localmods *local_gossmods;
 
 	/* invstring (bolt11 or bolt12) */

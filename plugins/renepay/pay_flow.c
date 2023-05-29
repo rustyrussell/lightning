@@ -358,13 +358,6 @@ struct pay_flow **get_payflows(struct payment *p,
 		plugin_err(pay_plugin->plugin, "Failed to refresh gossmap: %s",
 			   strerror(errno));
 	
-	// TODO(eduardo): remember that local channels have
-	// know_min=know_max=liquidity. Is this related to local_gossmods?
-	// 
-	// TODO(eduardo): where is p->local_gossmods set?
-	gossmap_apply_localmods(pay_plugin->gossmap, p->local_gossmods);
-	
-	// TODO(eduardo): where is p->disabled set?
 	disabled = make_disabled_bitmap(tmpctx, pay_plugin->gossmap, p->disabled);
 	src = gossmap_find_node(pay_plugin->gossmap, &pay_plugin->my_id);
 	if (!src) {
@@ -477,9 +470,6 @@ struct pay_flow **get_payflows(struct payment *p,
 	}
 
 out:
-	/* Always remove our local mods (routehints) so others can use
-	 * gossmap */
-	gossmap_remove_localmods(pay_plugin->gossmap, p->local_gossmods);
 	return pay_flows;
 
 fail:

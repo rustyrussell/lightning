@@ -449,7 +449,9 @@ else
 PYTEST_OPTS += -x
 endif
 
-check-units:
+check-units: check-renepay
+
+check-renepay:
 
 check: check-units installcheck check-protos pytest
 

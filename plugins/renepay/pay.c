@@ -25,6 +25,35 @@
 /* Set in init */
 struct pay_plugin *pay_plugin;
 
+
+static void renepay_cleanup(struct payment *p);
+
+// TODO(eduardo): check if knowledge is updated after payment success
+// TODO(eduardo): how do we fail a payment
+
+static void debug_knowledge(
+		struct chan_extra_map* chan_extra_map,
+		const char*fname)
+{
+	FILE *f = fopen(fname,"a");
+	fprintf(f,"Knowledge:\n");
+	struct chan_extra_map_iter it;
+	for(struct chan_extra *ch = chan_extra_map_first(chan_extra_map,&it);
+	    ch;
+	    ch=chan_extra_map_next(chan_extra_map,&it))
+	{
+		const char *scid_str = 
+			type_to_string(tmpctx,struct short_channel_id,&ch->scid);
+		for(int dir=0;dir<2;++dir)
+		{
+			fprintf(f,"%s[%d]:(%s,%s)\n",scid_str,dir,
+				type_to_string(tmpctx,struct amount_msat,&ch->half[dir].known_min),
+				type_to_string(tmpctx,struct amount_msat,&ch->half[dir].known_max));
+		}
+	}
+	fclose(f);
+}
+
 static void debug_payflows(struct pay_flow **flows, const char* fname)
 {
 	FILE *f = fopen(fname,"a");
@@ -88,6 +117,7 @@ void amount_msat_reduce_(struct amount_msat *dst,
 		   dstname, type_to_string(tmpctx, struct amount_msat, dst));
 }
 
+
 #if DEVELOPER
 static void memleak_mark(struct plugin *p, struct htable *memtable)
 {
@@ -121,6 +151,7 @@ static const char *init(struct plugin *p,
 	pay_plugin->gossmap = gossmap_load(pay_plugin,
 					   GOSSIP_STORE_FILENAME,
 					   &num_channel_updates_rejected);
+	
 	if (!pay_plugin->gossmap)
 		plugin_err(p, "Could not load gossmap %s: %s",
 			   GOSSIP_STORE_FILENAME, strerror(errno));
@@ -128,7 +159,9 @@ static const char *init(struct plugin *p,
 		plugin_log(p, LOG_DBG,
 			   "gossmap ignored %zu channel updates",
 			   num_channel_updates_rejected);
-
+			   
+	uncertainty_network_update(pay_plugin->gossmap,
+				   pay_plugin->chan_extra_map);
 #if DEVELOPER
 	plugin_set_memleak_handler(p, memleak_mark);
 #endif
@@ -136,7 +169,17 @@ static const char *init(struct plugin *p,
 	return NULL;
 }
 
-// TODO(eduardo): check this
+/* Create a entry for channel knowledge. */
+// static struct chan_extra* chan_knowledge_new(
+// 		struct gossmap* gossmap,
+// 		struct chan_extra_map *chan_extra_map,
+// 		struct short_channel_id scid)
+// {
+// 	struct chan_extra *chan = chan_extra_map_get(chan_extra_map,scid);
+// 	
+// 	return chan;
+// }
+		
 // TODO(eduardo): remember that if [a,b] is fixed on (c,dir) then [cap-b,cap-a]
 // is fixed on (c,!dir)
 // TODO(eduardo): I think this function does too many things.  I would prefer to
@@ -144,103 +187,108 @@ static const char *init(struct plugin *p,
 // improves the knowledge and also checks the bounds. But we also need to have
 // the possiblity to relax the knowledge in another function.
 /* We know something about this channel!  Update it! */
-static void chan_update_knowledge(struct payment *p,
-				 struct short_channel_id scid,
-				 int dir,
-				 const struct amount_msat *min_capacity,
-				 const struct amount_msat *max_capacity)
-{
-	plugin_log(pay_plugin->plugin,LOG_DBG,"Updating channel: %s [%s, %s]",
-		type_to_string(tmpctx,struct short_channel_id, &scid),
-		min_capacity ? type_to_string(tmpctx,struct amount_msat, min_capacity) : "-",
-		max_capacity ? type_to_string(tmpctx,struct amount_msat, max_capacity) : "-");
-	
-	
-	struct chan_extra_half *h;
+// static void chan_update_knowledge(struct payment *p,
+// 				 struct short_channel_id scid,
+// 				 int dir,
+// 				 const struct amount_msat *min_capacity,
+// 				 const struct amount_msat *max_capacity)
+// {
+// 	plugin_log(pay_plugin->plugin,LOG_DBG,"Updating channel: %s [%s, %s]",
+// 		type_to_string(tmpctx,struct short_channel_id, &scid),
+// 		min_capacity ? type_to_string(tmpctx,struct amount_msat, min_capacity) : "-",
+// 		max_capacity ? type_to_string(tmpctx,struct amount_msat, max_capacity) : "-");
+// 	
+// 	
+// 	struct chan_extra_half *h;
+// 
+// 	/* This is assumed */
+// 	if (min_capacity && max_capacity)
+// 		assert(amount_msat_greater_eq(*max_capacity, *min_capacity));
+// 	
+// 	h = get_chan_extra_half_by_scid(pay_plugin->chan_extra_map, scid, dir);
+// 	if (!h)
+// 		h = new_chan_extra_half(pay_plugin->chan_extra_map, scid, dir,
+// 					*max_capacity);
+// 	if (min_capacity && amount_msat_greater(*min_capacity, h->known_min))
+// 		h->known_min = *min_capacity;
+// 	if (max_capacity && amount_msat_less(*max_capacity, h->known_max))
+// 		h->known_max = *max_capacity;
+// 
+// 	/* If we min > max, it means our previous assumptions are wrong
+// 	 * (i.e. things changed, or a we assumed full capacity for a routehint
+// 	 *  which didn't have it!) */
+// 	if (amount_msat_greater(h->known_min, h->known_max)) {
+// 		plugin_log(pay_plugin->plugin, LOG_BROKEN,
+// 			   "Updated %s capacity %s, now %s-%s! Resetting.",
+// 			   type_to_string(tmpctx, struct short_channel_id, &scid),
+// 			   min_capacity ? "min" : "max",
+// 			   type_to_string(tmpctx, struct amount_msat, &h->known_min),
+// 			   type_to_string(tmpctx, struct amount_msat, &h->known_max));
+// 
+// 		/* OK, assume *old* information is wrong: we can't have
+// 		 * just set both, since we assert() those are correct. */
+// 		if (min_capacity) {
+// 			const struct gossmap_chan *c;
+// 			struct amount_sat cap;
+// 
+// 			/* It might be a local channel; if we don't know better,
+// 			 * we reset max to infinite */
+// 			c = gossmap_find_chan(pay_plugin->gossmap, &scid);
+// 			if (!c
+// 			    || !gossmap_chan_get_capacity(pay_plugin->gossmap, c, &cap)
+// 			    || !amount_sat_to_msat(&h->known_max, cap))
+// 				h->known_max = p->maxspend;
+// 			plugin_log(pay_plugin->plugin, LOG_UNUSUAL,
+// 				   "... setting max to capacity (%s)",
+// 				   type_to_string(tmpctx, struct amount_msat,
+// 						  &h->known_max));
+// 		} else {
+// 			h->known_min = AMOUNT_MSAT(0);
+// 			plugin_log(pay_plugin->plugin, LOG_UNUSUAL,
+// 				   "... setting min to 0msat");
+// 		}
+// 	}
+// }
 
-	/* This is assumed */
-	if (min_capacity && max_capacity)
-		assert(amount_msat_greater_eq(*max_capacity, *min_capacity));
-	
-	h = get_chan_extra_half_by_scid(pay_plugin->chan_extra_map, scid, dir);
-	if (!h)
-		h = new_chan_extra_half(pay_plugin->chan_extra_map, scid, dir,
-					*max_capacity);
-	if (min_capacity && amount_msat_greater(*min_capacity, h->known_min))
-		h->known_min = *min_capacity;
-	if (max_capacity && amount_msat_less(*max_capacity, h->known_max))
-		h->known_max = *max_capacity;
-
-	/* If we min > max, it means our previous assumptions are wrong
-	 * (i.e. things changed, or a we assumed full capacity for a routehint
-	 *  which didn't have it!) */
-	if (amount_msat_greater(h->known_min, h->known_max)) {
-		plugin_log(pay_plugin->plugin, LOG_BROKEN,
-			   "Updated %s capacity %s, now %s-%s! Resetting.",
-			   type_to_string(tmpctx, struct short_channel_id, &scid),
-			   min_capacity ? "min" : "max",
-			   type_to_string(tmpctx, struct amount_msat, &h->known_min),
-			   type_to_string(tmpctx, struct amount_msat, &h->known_max));
-
-		/* OK, assume *old* information is wrong: we can't have
-		 * just set both, since we assert() those are correct. */
-		if (min_capacity) {
-			const struct gossmap_chan *c;
-			struct amount_sat cap;
-
-			/* It might be a local channel; if we don't know better,
-			 * we reset max to infinite */
-			c = gossmap_find_chan(pay_plugin->gossmap, &scid);
-			if (!c
-			    || !gossmap_chan_get_capacity(pay_plugin->gossmap, c, &cap)
-			    || !amount_sat_to_msat(&h->known_max, cap))
-				h->known_max = p->maxspend;
-			plugin_log(pay_plugin->plugin, LOG_UNUSUAL,
-				   "... setting max to capacity (%s)",
-				   type_to_string(tmpctx, struct amount_msat,
-						  &h->known_max));
-		} else {
-			h->known_min = AMOUNT_MSAT(0);
-			plugin_log(pay_plugin->plugin, LOG_UNUSUAL,
-				   "... setting min to 0msat");
-		}
-	}
-}
-
-static void add_localchan(struct payment *p,
+static void add_hintchan(struct payment *p,
 			  const struct node_id *src,
 			  const struct node_id *dst,
 			  u16 cltv_expiry_delta,
 			  const struct short_channel_id scid,
 			  u32 fee_base_msat,
 			  u32 fee_proportional_millionths,
-			  struct amount_msat maxspend)
+			  struct amount_msat amount)
 {
 	int dir = node_id_cmp(src, dst) < 0 ? 0 : 1;
-	/* FIXME: features? */
-	gossmap_local_addchan(p->local_gossmods, src, dst, &scid, NULL);
-
-	gossmap_local_updatechan(p->local_gossmods,
-				 &scid,
-				 /* We assume any HTLC is allowed */
-				 AMOUNT_MSAT(0), maxspend,
-				 fee_base_msat, fee_proportional_millionths,
-				 cltv_expiry_delta,
-				 true,
-				 dir);
+	
+	struct chan_extra *ce = chan_extra_map_get(pay_plugin->chan_extra_map,
+						   scid);
+	
+	if(!ce)
+	{
+		/* this channel is not public, we don't know his capacity */
+		ce = new_chan_extra(pay_plugin->chan_extra_map,
+				    scid,
+				    MAX_CAP);
+		/* FIXME: features? */
+		gossmap_local_addchan(p->local_gossmods, src, dst, &scid, NULL);
+		gossmap_local_updatechan(p->local_gossmods,
+					 &scid,
+					 /* We assume any HTLC is allowed */
+					 AMOUNT_MSAT(0), MAX_CAP,
+					 fee_base_msat, fee_proportional_millionths,
+					 cltv_expiry_delta,
+					 true,
+					 dir);
+	}
+	
 	/* We know (assume!) something about this channel: that it has at
 	 * sufficient capacity. */
-	// TODO(eduardo): if this channel was already in our list then we need
-	// to update the knowledge accordingly. I think it would be better to
-	// handle this with an update_lower_bound function.
-	plugin_log(pay_plugin->plugin,LOG_DBG,"add_localchan: %s [maxspend %s]",
-		type_to_string(tmpctx,struct short_channel_id, &scid),
-		type_to_string(tmpctx,struct amount_msat, &p->maxspend));
-	chan_update_knowledge(p, scid, dir, &p->maxspend, &p->maxspend);
+	chan_extra_can_send(pay_plugin->chan_extra_map,scid,dir,amount);
 }
 
 /* Add routehints provided by bolt11 */
-static void add_routehints(struct payment *p)
+static void uncertainty_network_add_routehints(struct payment *p)
 {
 	struct bolt11 *b11;
 	char *fail;
@@ -258,7 +306,10 @@ static void add_routehints(struct payment *p)
 		const struct route_info *r = b11->routes[i];
 		const struct node_id *end = & p->dest;
 		for (int j = tal_count(r)-1; j >= 0; j--) {
-			add_localchan(p, &r[j].pubkey, end,
+			// TODO(eduardo): amount to send to the add_hintchan
+			// should consider fees.
+			
+			add_hintchan(p, &r[j].pubkey, end,
 				      r[j].cltv_expiry_delta,
 				      r[j].short_channel_id,
 				      r[j].fee_base_msat,
@@ -271,7 +322,7 @@ static void add_routehints(struct payment *p)
 
 /* listpeerchannels gives us the certainty on local channels' capacity.  Of course,
  * this is racy and transient, but better than nothing! */
-static bool update_capacities_from_listpeerchannels(
+static bool update_uncertainty_network_from_listpeerchannels(
 		struct plugin *plugin,
 		struct payment *p,
 		const char *buf,
@@ -314,19 +365,30 @@ static bool update_capacities_from_listpeerchannels(
 			continue;
 		}
 		
-		const jsmntok_t *spendabletok, *dirtok,*statetok;
-		struct amount_msat spendable;
+		const jsmntok_t *spendabletok, *dirtok,*statetok, *totaltok, 
+			*peeridtok;
+		struct amount_msat spendable,capacity;
 		int dir;
+		
+		const struct node_id src=pay_plugin->my_id;
+		struct node_id dst;
 		
 		spendabletok = json_get_member(buf, channel, "spendable_msat");
 		dirtok = json_get_member(buf, channel, "direction");
 		statetok = json_get_member(buf, channel, "state");
+		totaltok = json_get_member(buf, channel, "total_msat");
+		peeridtok = json_get_member(buf,channel,"peer_id");
 		
-		if(spendabletok==NULL || dirtok==NULL || statetok==NULL)
+		if(spendabletok==NULL || dirtok==NULL || statetok==NULL || 
+		   totaltok==NULL || peeridtok==NULL)
 			goto malformed;
 		if (!json_to_msat(buf, spendabletok, &spendable))
 			goto malformed;
+		if (!json_to_msat(buf, totaltok, &capacity))
+			goto malformed;
 		if (!json_to_int(buf, dirtok,&dir))
+			goto malformed;
+		if(!json_to_node_id(buf,peeridtok,&dst))
 			goto malformed;
 			
 		/* Don't report opening/closing channels */
@@ -335,8 +397,37 @@ static bool update_capacities_from_listpeerchannels(
 			continue;
 		}
 		
+		struct chan_extra *ce = chan_extra_map_get(pay_plugin->chan_extra_map,
+							   scid);
+			  
+		if(!ce)
+		{
+			/* this channel is not public, but it belongs to us */
+			ce = new_chan_extra(pay_plugin->chan_extra_map,
+					    scid,
+					    capacity);
+			/* FIXME: features? */
+			gossmap_local_addchan(p->local_gossmods, &src, &dst, &scid, NULL);
+			gossmap_local_updatechan(p->local_gossmods,
+						 &scid,
+						 
+						 /* TODO(eduardo): does it
+						  * matter to consider HTLC
+						  * limits in our own channel? */
+						 AMOUNT_MSAT(0),capacity,
+						 
+						 /* fees = */0,0,
+						 
+						 /* TODO(eduardo): does it
+						  * matter to set this delay? */
+						 /*delay=*/0,
+						 true,
+						 dir);
+		}
+		
 		/* We know min and max liquidity exactly now! */
-		chan_update_knowledge(p, scid, dir, &spendable, &spendable);
+		chan_extra_set_liquidity(pay_plugin->chan_extra_map,
+					 scid,dir,spendable);
 	}
 	return true;
 
@@ -426,6 +517,7 @@ static struct command_result *waitsendpay_succeeded(struct command *cmd,
 				  p->total_sent);
 	json_add_string(response, "status", "complete");
 	json_add_node_id(response, "destination", &p->dest);
+	renepay_cleanup(p);
 	return command_finished(cmd, response);
 }
 
@@ -674,9 +766,12 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	/* All these parts succeeded, so we know something about min
 	 * capacity! */
 	for (size_t i = 0; i < erridx; i++)
-		chan_update_knowledge(p, flow->path_scids[i], flow->path_dirs[i], &flow->amounts[i],
-				     NULL);
-
+	{
+		chan_extra_can_send(pay_plugin->chan_extra_map,
+				    flow->path_scids[i],
+				    flow->path_dirs[i],
+				    flow->amounts[i]);
+	}
 	switch ((enum onion_wire)onionerr) {
 	/* These definitely mean eliminate channel */
 	case WIRE_PERMANENT_CHANNEL_FAILURE:
@@ -725,7 +820,10 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 		paynote(p, "... assuming that max capacity is %s",
 			type_to_string(tmpctx, struct amount_msat,
 				       &max_possible));
-		chan_update_knowledge(p, errscid, flow->path_dirs[erridx], NULL, &max_possible);
+		chan_extra_cannot_send(pay_plugin->chan_extra_map,
+				       flow->path_scids[erridx],
+				       flow->path_dirs[erridx],
+				       flow->amounts[erridx]);
 		goto done;
 	}
 
@@ -952,16 +1050,32 @@ static struct command_result *
 listpeerchannels_done(struct command *cmd, const char *buf,
 	       const jsmntok_t *result, struct payment *p)
 {
-	// FILE *f = fopen("/tmp/afile","wb");
-	// fwrite(json_tok_full(buf,result),json_tok_full_len(result),1,f);
-	// fclose(f);
-	if (!update_capacities_from_listpeerchannels(cmd->plugin, p, buf, result))
+	if (!update_uncertainty_network_from_listpeerchannels(cmd->plugin, p, buf, result))
 		return command_fail(cmd, LIGHTNINGD,
 				    "listpeerchannels malformed: %.*s",
 				    json_tok_full_len(result),
 				    json_tok_full(buf, result));
-
+	
+	// So we have all localmods data, now we apply it. Only once per
+	// payment.
+	gossmap_apply_localmods(pay_plugin->gossmap,p->local_gossmods);
 	return try_paying(cmd, p, true);
+}
+
+/* Either the payment succeeded or failed, we need to cleanup/set the plugin
+ * into a valid state before the next payment. */
+static void renepay_cleanup(struct payment *p)
+{
+	/* Always remove our local mods (routehints) so others can use
+	 * gossmap. We do this only after the payment completes. */
+	gossmap_remove_localmods(pay_plugin->gossmap,
+				 p->local_gossmods);
+				 
+	// TODO(eduardo): can we really free the local_gossmods?
+	// I don't thinkg they'll be needed afterwards
+	tal_free(p->local_gossmods);
+	// TODO(eduardo): Am I missing other things?
+	// TODO(eduardo): When do we call this?
 }
 
 static void destroy_payment(struct payment *p)
@@ -1083,7 +1197,12 @@ static struct command_result *json_pay(struct command *cmd,
 	p->use_shadow = true;
 #endif
  	
+	
 	plugin_log(pay_plugin->plugin,LOG_DBG,"Starting renepay");
+	bool gossmap_changed = gossmap_refresh(pay_plugin->gossmap, NULL);
+	
+	// TODO(eduardo): remove this
+	debug_knowledge(pay_plugin->chan_extra_map,MYLOG);
 	
 	p->base_fee_penalty=*base_fee_penalty;
 	p->prob_cost_factor= *prob_cost_factor;
@@ -1183,7 +1302,6 @@ static struct command_result *json_pay(struct command *cmd,
 		} else
 			invmsat = NULL;
 
-		gossmap_refresh(pay_plugin->gossmap, NULL);
 		node_id_from_pubkey(&p->dest, b12->offer_node_id);
 		p->payment_hash = *b12->invoice_payment_hash;
 		if (b12->invreq_recurrence_counter && !p->label)
@@ -1266,9 +1384,39 @@ static struct command_result *json_pay(struct command *cmd,
 	if (time_now().ts.tv_sec > invexpiry)
 		return command_fail(cmd, PAY_INVOICE_EXPIRED, "Invoice expired");
 	
+	
+	/* To construct the uncertainty network we need to perform the following
+	 * steps: 
+	 * 1. check that there is a 1-to-1 map between channels in gossmap
+	 * and the uncertainty network. We call `uncertainty_network_update`
+	 * 
+	 * 2. add my local channels that could be private. 
+	 * We call `update_uncertainty_network_from_listpeerchannels`.
+	 * 
+	 * 3. add hidden/private channels listed in the routehints.
+	 * We call `uncertainty_network_add_routehints`.
+	 * 
+	 * 4. check the uncertainty network invariants.
+	 * */
+	if(gossmap_changed)
+		uncertainty_network_update(pay_plugin->gossmap,
+					   pay_plugin->chan_extra_map);
+	
+	
+	// TODO(eduardo)
+	// we should remove local_gossmods from the uncertainty network
+	// after the payment is completed?
+	// 
 	// TODO(eduardo): are there route hints for B12?
+	// Add any extra hidden channel revealed by the routehints to the uncertainty network.
 	if(invstr_is_b11)
-		add_routehints(p);
+		uncertainty_network_add_routehints(p);
+	
+	if(!uncertainty_network_check_invariants(pay_plugin->chan_extra_map))
+		plugin_log(pay_plugin->plugin, 
+			   LOG_BROKEN,
+			   "uncertainty network invariants are violated");
+		
 	
 	struct out_req *req;
 

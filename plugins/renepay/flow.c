@@ -13,12 +13,399 @@
 #define SUPERVERBOSE_ENABLED 1
 #endif
 
-/* Helper to access the half chan at flow index idx */
-const struct half_chan *flow_edge(const struct flow *flow, size_t idx)
+struct chan_extra *new_chan_extra(
+		struct chan_extra_map *chan_extra_map,
+		const struct short_channel_id scid,
+		struct amount_msat capacity)
 {
-	assert(idx < tal_count(flow->path));
-	return &flow->path[idx]->half[flow->dirs[idx]];
+	struct chan_extra *ce = tal(chan_extra_map, struct chan_extra);
+
+	ce->scid = scid;
+	ce->capacity=capacity;
+	for (size_t i = 0; i <= 1; i++) {
+		ce->half[i].num_htlcs = 0;
+		ce->half[i].htlc_total = AMOUNT_MSAT(0);
+		ce->half[i].known_min = AMOUNT_MSAT(0);
+		ce->half[i].known_max = capacity;
+	}
+	chan_extra_map_add(chan_extra_map, ce);
+	
+	/* Remove self from map when done */
+	// TODO(eduardo):
+	// Is this desctructor really necessary? the chan_extra will deallocated
+	// when the chan_extra_map is freed. Anyways valgrind complains that the
+	// hash table is removing the element with a freed pointer.
+	// tal_add_destructor2(ce, destroy_chan_extra, chan_extra_map);
+	return ce;
 }
+
+bool chan_extra_check_invariants(struct chan_extra *ce)
+{
+	bool all_ok = true;
+	for(int i=0;i<2;++i)
+	{
+		all_ok &= amount_msat_less_eq(ce->half[i].known_min,
+					      ce->half[i].known_max);
+		all_ok &= amount_msat_less_eq(ce->half[i].known_max,
+					      ce->capacity);
+	}
+	struct amount_msat diff_cb,diff_ca;
+	
+	all_ok &= amount_msat_sub(&diff_cb,ce->capacity,ce->half[1].known_max);
+	all_ok &= amount_msat_sub(&diff_ca,ce->capacity,ce->half[1].known_min);
+	
+	all_ok &= amount_msat_eq(ce->half[0].known_min,diff_cb);
+	all_ok &= amount_msat_eq(ce->half[0].known_max,diff_ca);
+	return all_ok;
+}
+
+/* This helper function preserves the uncertainty network invariant after the
+ * knowledge is updated. It assumes that the (channel,!dir) knowledge is
+ * correct. */
+void chan_extra_adjust_half(struct chan_extra *ce,
+			    int dir)
+{
+	if(!amount_msat_sub(&ce->half[dir].known_max,ce->capacity,ce->half[!dir].known_min))
+		abort();
+	if(!amount_msat_sub(&ce->half[dir].known_min,ce->capacity,ce->half[!dir].known_max))
+		abort();
+}
+
+
+/* Update the knowledge that this (channel,direction) can send x msat.*/
+static void chan_extra_can_send_(
+		struct chan_extra *ce, 
+		int dir,
+		struct amount_msat x)
+{
+	if(amount_msat_greater(x,ce->capacity))
+	{
+		// It should never happen thatn x>capacity
+		abort();
+		x = ce->capacity;
+	}
+	
+	ce->half[dir].known_min = amount_msat_max(ce->half[dir].known_min,x);
+	ce->half[dir].known_max = amount_msat_max(ce->half[dir].known_max,x);
+	
+	chan_extra_adjust_half(ce,!dir);
+}
+void chan_extra_can_send(
+		struct chan_extra_map *chan_extra_map,
+		struct short_channel_id scid, 
+		int dir,
+		struct amount_msat x)
+{
+	struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
+						   scid);
+	if(!ce)
+		abort();
+	chan_extra_can_send_(ce,dir,x);
+}
+/* Update the knowledge that this (channel,direction) cannot send x msat.*/
+static void chan_extra_cannot_send_(
+		struct chan_extra *ce, 
+		int dir,
+		struct amount_msat x)
+{
+	if(!amount_msat_sub(&x,x,AMOUNT_MSAT(1)))
+	{
+		// It should never happen that x==0
+		abort();
+		x = AMOUNT_MSAT(0);
+	}
+	
+	ce->half[dir].known_min = amount_msat_min(ce->half[dir].known_min,x);
+	ce->half[dir].known_max = amount_msat_min(ce->half[dir].known_max,x);
+	
+	chan_extra_adjust_half(ce,!dir);
+}
+void chan_extra_cannot_send(
+		struct chan_extra_map *chan_extra_map,
+		struct short_channel_id scid, 
+		int dir,
+		struct amount_msat x)
+{
+	struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
+						   scid);
+	if(!ce)
+		abort();
+	chan_extra_cannot_send_(ce,dir,x);
+}
+/* Update the knowledge that this (channel,direction) has liquidity x.*/
+static void chan_extra_set_liquidity_(
+		struct chan_extra *ce, 
+		int dir,
+		struct amount_msat x)
+{
+	if(amount_msat_greater(x,ce->capacity))
+	{
+		// It should never happen thatn x>capacity
+		abort();
+		x = ce->capacity;
+	}
+	
+	ce->half[dir].known_min = x;
+	ce->half[dir].known_max = x;
+	
+	chan_extra_adjust_half(ce,!dir);
+}
+void chan_extra_set_liquidity(
+		struct chan_extra_map *chan_extra_map,
+		struct short_channel_id scid, 
+		int dir,
+		struct amount_msat x)
+{
+	struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
+						   scid);
+	if(!ce)
+		abort();
+	chan_extra_set_liquidity_(ce,dir,x);
+}
+/* Update the knowledge that this (channel,direction) has sent x msat.*/
+static void chan_extra_sent_success_(
+		struct chan_extra *ce, 
+		int dir,
+		struct amount_msat x)
+{
+	if(amount_msat_greater(x,ce->capacity))
+	{
+		// It should never happen thatn x>capacity
+		abort();
+		x = ce->capacity;
+	}
+	
+	struct amount_msat new_a, new_b;
+	
+	if(!amount_msat_sub(&new_a,ce->half[dir].known_min,x))
+		new_a = AMOUNT_MSAT(0);
+	if(!amount_msat_sub(&new_b,ce->half[dir].known_max,x))
+		new_b = AMOUNT_MSAT(0);
+	
+	ce->half[dir].known_min = new_a;
+	ce->half[dir].known_max = new_b;
+	
+	chan_extra_adjust_half(ce,!dir);
+}
+void chan_extra_sent_success(
+		struct chan_extra_map *chan_extra_map,
+		struct short_channel_id scid, 
+		int dir,
+		struct amount_msat x)
+{
+	struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
+						   scid);
+	if(!ce)
+		abort();
+	chan_extra_sent_success_(ce,dir,x);
+}
+/* Forget a bit about this (channel,direction) state. */
+static void chan_extra_relax_(
+		struct chan_extra *ce, 
+		int dir,
+		struct amount_msat down,
+		struct amount_msat up)
+{
+	struct amount_msat new_a, new_b;
+	
+	if(!amount_msat_sub(&new_a,ce->half[dir].known_min,down))
+		new_a = AMOUNT_MSAT(0);
+	if(!amount_msat_add(&new_b,ce->half[dir].known_max,up))
+		new_b = amount_msat_min(new_b,ce->capacity);
+	
+	ce->half[dir].known_min = new_a;
+	ce->half[dir].known_max = new_b;
+	
+	chan_extra_adjust_half(ce,!dir);
+}
+void chan_extra_relax(
+		struct chan_extra_map *chan_extra_map,
+		struct short_channel_id scid, 
+		int dir,
+		struct amount_msat x,
+		struct amount_msat y)
+{
+	struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
+						   scid);
+	if(!ce)
+		abort();
+	chan_extra_relax_(ce,dir,x,y);
+}
+
+/* Checks the entire uncertainty network for invariant violations. */
+bool uncertainty_network_check_invariants(struct chan_extra_map *chan_extra_map)
+{
+	bool all_ok = true;
+	
+	struct chan_extra_map_iter it;
+	for(struct chan_extra *ce = chan_extra_map_first(chan_extra_map,&it);
+	    ce && all_ok;
+	    ce=chan_extra_map_next(chan_extra_map,&it))
+	{
+		all_ok &= chan_extra_check_invariants(ce);
+	}
+		
+	return all_ok;
+}
+
+/* Mirror the gossmap in the public uncertainty network.
+ * result: Every channel in gossmap must have associated data in chan_extra_map,
+ * while every channel in chan_extra_map is also registered in gossmap.
+ * */
+void uncertainty_network_update(
+		const struct gossmap *gossmap,
+		struct chan_extra_map *chan_extra_map)
+{
+	const tal_t* this_ctx = tal(tmpctx,tal_t);
+	
+	// For each chan in chan_extra_map remove if not in the gossmap
+	struct short_channel_id *del_list
+		= tal_arr(this_ctx,struct short_channel_id,0);
+		
+	struct chan_extra_map_iter it;
+	for(struct chan_extra *ce = chan_extra_map_first(chan_extra_map,&it);
+	    ce;
+	    ce=chan_extra_map_next(chan_extra_map,&it))
+	{
+		struct gossmap_chan * chan = gossmap_find_chan(gossmap,&ce->scid);
+		if(!chan)
+		{
+			// TODO(eduardo): is this efficiently implemented?
+			// otherwise i'll use a ccan list
+			tal_arr_expand(&del_list, ce->scid);
+		}
+	}
+	
+	for(size_t i=0;i<tal_count(del_list);++i)
+	{
+ 		struct chan_extra *ce = chan_extra_map_get(chan_extra_map,del_list[i]);
+		if(!ce)
+		{
+			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
+			abort();
+		}
+		chan_extra_map_del(chan_extra_map, ce);
+		tal_free(ce);
+	}
+	
+	// For each channel in the gossmap, create a extra data in
+	// chan_extra_map
+	for(struct gossmap_chan *chan = gossmap_first_chan(gossmap);
+	    chan;
+	    chan=gossmap_next_chan(gossmap,chan))
+	{
+		struct short_channel_id scid =
+			gossmap_chan_scid(gossmap,chan);
+		struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
+							   gossmap_chan_scid(gossmap,chan));	
+		if(!ce)
+		{
+			struct amount_sat cap;
+			struct amount_msat cap_msat;
+			
+			if(!gossmap_chan_get_capacity(gossmap,chan,&cap))
+			{
+				SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
+				abort();
+			}
+			if(!amount_sat_to_msat(&cap_msat,cap))
+			{
+				SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
+				abort();
+			}
+			new_chan_extra(chan_extra_map,scid,cap_msat);
+		}
+	}
+	
+	
+	tal_free(this_ctx);
+}
+
+/* Returns either NULL, or an entry from the hash */
+struct chan_extra_half *
+get_chan_extra_half_by_scid(struct chan_extra_map *chan_extra_map,
+			    const struct short_channel_id scid,
+			    int dir)
+{
+	struct chan_extra *ce;
+
+	ce = chan_extra_map_get(chan_extra_map, scid);
+	if (!ce)
+		return NULL;
+	return &ce->half[dir];
+}
+/* Helper if we have a gossmap_chan */
+struct chan_extra_half *
+get_chan_extra_half_by_chan(const struct gossmap *gossmap,
+			    struct chan_extra_map *chan_extra_map,
+			    const struct gossmap_chan *chan,
+			    int dir)
+{
+	return get_chan_extra_half_by_scid(chan_extra_map,
+					   gossmap_chan_scid(gossmap, chan),
+					   dir);
+}
+
+
+// static void destroy_chan_extra(struct chan_extra *ce,
+// 			       struct chan_extra_map *chan_extra_map)
+// {
+// 	chan_extra_map_del(chan_extra_map, ce);
+// }
+/* Helper to get the chan_extra_half. If it doesn't exist create a new one. */
+struct chan_extra_half *
+get_chan_extra_half_by_chan_verify(
+		const struct gossmap *gossmap,
+		struct chan_extra_map *chan_extra_map,
+		const struct gossmap_chan *chan,
+		int dir)
+{
+	
+	const struct short_channel_id scid = gossmap_chan_scid(gossmap,chan);
+	struct chan_extra_half *h = get_chan_extra_half_by_scid(
+					chan_extra_map,scid,dir);
+	if (!h) {
+		struct amount_sat cap;
+		struct amount_msat cap_msat;
+
+		if (!gossmap_chan_get_capacity(gossmap,chan, &cap) || 
+		    !amount_sat_to_msat(&cap_msat, cap))
+		{
+			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
+			abort();
+		}
+		h = & new_chan_extra(chan_extra_map,scid,cap_msat)->half[dir];
+		
+	}
+	return h;
+}
+
+// // TODO(eduardo): not sure we should have this function
+// struct chan_extra_half *new_chan_extra_half(struct chan_extra_map *chan_extra_map,
+// 					    const struct short_channel_id scid,
+// 					    int dir,
+// 					    struct amount_msat capacity)
+// {
+// 	struct chan_extra *ce = tal(chan_extra_map, struct chan_extra);
+// 
+// 	ce->scid = scid;
+// 	for (size_t i = 0; i <= 1; i++) {
+// 		ce->half[i].num_htlcs = 0;
+// 		ce->half[i].htlc_total = AMOUNT_MSAT(0);
+// 		ce->half[i].known_min = AMOUNT_MSAT(0);
+// 		ce->half[i].known_max = capacity;
+// 	}
+// 	/* Remove self from map when done */
+// 	chan_extra_map_add(chan_extra_map, ce);
+// 	
+// 	// TODO(eduardo):
+// 	// Is this desctructor really necessary? the chan_extra will deallocated
+// 	// when the chan_extra_map is freed. Anyways valgrind complains that the
+// 	// hash table is removing the element with a freed pointer.
+// 	// tal_add_destructor2(ce, destroy_chan_extra, chan_extra_map);
+// 	return &ce->half[dir];
+// }
+
 
 /* Assuming a uniform distribution, what is the chance this f gets through?
  * Here we compute the conditional probability of success for a flow f, given
@@ -111,91 +498,11 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 	return amount_msat_less_eq(f,A) ? 1.0 : amount_msat_ratio(numerator,denominator);
 }
 
-// static void destroy_chan_extra(struct chan_extra *ce,
-// 			       struct chan_extra_map *chan_extra_map)
-// {
-// 	chan_extra_map_del(chan_extra_map, ce);
-// }
 
-/* Returns either NULL, or an entry from the hash */
-struct chan_extra_half *
-get_chan_extra_half_by_scid(struct chan_extra_map *chan_extra_map,
-			    const struct short_channel_id scid,
-			    int dir)
-{
-	struct chan_extra *ce;
 
-	ce = chan_extra_map_get(chan_extra_map, scid);
-	if (!ce)
-		return NULL;
-	return &ce->half[dir];
-}
 
-/* Helper if we have a gossmap_chan */
-struct chan_extra_half *
-get_chan_extra_half_by_chan(const struct gossmap *gossmap,
-			    struct chan_extra_map *chan_extra_map,
-			    const struct gossmap_chan *chan,
-			    int dir)
-{
-	return get_chan_extra_half_by_scid(chan_extra_map,
-					   gossmap_chan_scid(gossmap, chan),
-					   dir);
-}
 
-/* Helper to get the chan_extra_half. If it doesn't exist create a new one. */
-struct chan_extra_half *
-get_chan_extra_half_by_chan_verify(
-		const struct gossmap *gossmap,
-		struct chan_extra_map *chan_extra_map,
-		const struct gossmap_chan *chan,
-		int dir)
-{
-	
-	const struct short_channel_id scid = gossmap_chan_scid(gossmap,chan);
-	struct chan_extra_half *h = get_chan_extra_half_by_scid(
-					chan_extra_map,scid,dir);
-	if (!h) {
-		struct amount_sat cap;
-		struct amount_msat cap_msat;
 
-		if (!gossmap_chan_get_capacity(gossmap,chan, &cap))
-			cap = AMOUNT_SAT(0);
-		if (!amount_sat_to_msat(&cap_msat, cap))
-		{
-			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-			abort();
-		}
-		h = new_chan_extra_half(chan_extra_map,
-					scid,dir,cap_msat);
-	}
-	return h;
-}
-
-struct chan_extra_half *new_chan_extra_half(struct chan_extra_map *chan_extra_map,
-					    const struct short_channel_id scid,
-					    int dir,
-					    struct amount_msat capacity)
-{
-	struct chan_extra *ce = tal(chan_extra_map, struct chan_extra);
-
-	ce->scid = scid;
-	for (size_t i = 0; i <= 1; i++) {
-		ce->half[i].num_htlcs = 0;
-		ce->half[i].htlc_total = AMOUNT_MSAT(0);
-		ce->half[i].known_min = AMOUNT_MSAT(0);
-		ce->half[i].known_max = capacity;
-	}
-	/* Remove self from map when done */
-	chan_extra_map_add(chan_extra_map, ce);
-	
-	// TODO(eduardo):
-	// Is this desctructor really necessary? the chan_extra will deallocated
-	// when the chan_extra_map is freed. Anyways valgrind complains that the
-	// hash table is removing the element with a freed pointer.
-	// tal_add_destructor2(ce, destroy_chan_extra, chan_extra_map);
-	return &ce->half[dir];
-}
 
 void remove_completed_flow(const struct gossmap *gossmap,
 			   struct chan_extra_map *chan_extra_map,
@@ -276,10 +583,16 @@ void flow_complete(struct flow *flow,
 	flow->amounts = tal_arr(flow, struct amount_msat, tal_count(flow->path));
 	for (int i = tal_count(flow->path) - 1; i >= 0; i--) {
 		const struct chan_extra_half *h
-			= get_chan_extra_half_by_chan_verify(gossmap,
+			= get_chan_extra_half_by_chan(gossmap,
 							chan_extra_map,
 							flow->path[i],
 							flow->dirs[i]);
+		
+		if(!h)
+		{
+			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
+			abort();
+		}
 		
 		flow->amounts[i] = delivered;
 		flow->success_prob
@@ -532,6 +845,12 @@ struct amount_msat flow_set_fee(struct flow **flows)
 	return fee;
 }
 
+/* Helper to access the half chan at flow index idx */
+const struct half_chan *flow_edge(const struct flow *flow, size_t idx)
+{
+	assert(idx < tal_count(flow->path));
+	return &flow->path[idx]->half[flow->dirs[idx]];
+}
 
 #ifndef SUPERVERBOSE_ENABLED
 #undef SUPERVERBOSE

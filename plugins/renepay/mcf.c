@@ -426,11 +426,13 @@ static void linearize_channel(
 		s64 *capacity,
 		s64 *cost)
 {
-	struct chan_extra_half *extra_half = get_chan_extra_half_by_chan_verify(
+	struct chan_extra_half *extra_half = get_chan_extra_half_by_chan(
 							params->gossmap,
 							params->chan_extra_map,
 							c,
 							dir);
+	
+	assert(extra_half);
 	
 	s64 a = extra_half->known_min.millisatoshis/1000,
 	    b = 1 + extra_half->known_max.millisatoshis/1000;
@@ -463,7 +465,7 @@ static void alloc_residual_netork(
 	residual_network->cost = tal_arrz(residual_network,s64,max_num_arcs);	
 	residual_network->potential = tal_arrz(residual_network,s64,max_num_nodes);	
 }
-static void init_residual_netork(
+static void init_residual_network(
 		const struct linear_network * linear_network,
 		struct residual_network* residual_network)
 {
@@ -588,7 +590,7 @@ static void init_linear_network(
 			const struct gossmap_chan *c = gossmap_nth_chan(params->gossmap,
 			                                                node, j, &half);
 			
-			// TODO(eduardo): do we check if the channel is public?
+			// TODO(eduardo): in which case can this be triggered?
 			if (!gossmap_chan_set(c,half))
 				continue;
 				
@@ -1380,7 +1382,7 @@ struct flow** minflow(
 	const u32 target_idx = gossmap_node_idx(params->gossmap,target);
 	const u32 source_idx = gossmap_node_idx(params->gossmap,source);
 	
-	init_residual_netork(linear_network,residual_network);
+	init_residual_network(linear_network,residual_network);
 	
 	// printf("%s: done with allocation and initialization\n",__PRETTY_FUNCTION__);
 	
