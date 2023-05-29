@@ -351,13 +351,6 @@ struct pay_flow **get_payflows(struct payment *p,
 	struct pay_flow **pay_flows;
 	const struct gossmap_node *src, *dst;
 	
-	// TODO(eduardo): is it necessary to check for return value?
-	gossmap_refresh(pay_plugin->gossmap, NULL);
-	
-	if (pay_plugin->gossmap == NULL)
-		plugin_err(pay_plugin->plugin, "Failed to refresh gossmap: %s",
-			   strerror(errno));
-	
 	disabled = make_disabled_bitmap(tmpctx, pay_plugin->gossmap, p->disabled);
 	src = gossmap_find_node(pay_plugin->gossmap, &pay_plugin->my_id);
 	if (!src) {
