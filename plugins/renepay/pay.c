@@ -61,6 +61,13 @@ static void debug_payflows(struct pay_flow **flows, const char* fname)
 	fclose(f);
 }
 
+static void debug_exec_branch(int lineno, const char* fun, const char* fname)
+{
+	FILE *f = fopen(fname,"a");
+	fprintf(f,"executing line: %d (%s)\n",lineno,fun);
+	fclose(f);
+}
+
 static void debug_outreq(const struct out_req *req, const char*fname)
 {
 	FILE *f = fopen(fname,"a");
@@ -78,6 +85,26 @@ static void debug_call(const char* fun, const char* fname)
 	pthread_t tid = pthread_self();
 	FILE *f = fopen(fname,"a");
 	fprintf(f,"calling function: %s (pthread_t %ld)\n",fun,tid);
+	fclose(f);
+}
+
+static void debug_reply(const char* buf, const char*fname)
+{
+	FILE *f = fopen(fname,"a");
+	fprintf(f,"%.*s\n\n",(int)tal_count(buf),buf);
+	fclose(f);
+}
+
+static void debug(const char* fname, const char *fmt, ...)
+{
+	FILE *f = fopen(fname,"a");
+	
+	va_list args;
+	va_start(args, fmt);
+	
+	vfprintf(f,fmt,args);
+	
+	va_end(args);
 	fclose(f);
 }
 
@@ -701,6 +728,8 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling waitsendpay_failed");
 	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	debug_reply(buf,MYLOG);
+	
 	struct payment *p = flow->payment;
 	u64 errcode;
 	struct command_result *ret;
@@ -715,17 +744,21 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 
 	switch (errcode) {
 	case PAY_UNPARSEABLE_ONION:
+		debug_exec_branch(__LINE__,__PRETTY_FUNCTION__,MYLOG);
 		ret = handle_unhandleable_error(p, flow, "unparsable onion reply");
 		if (ret)
 			return ret;
 		goto done;
 	case PAY_DESTINATION_PERM_FAIL:
+		debug_exec_branch(__LINE__,__PRETTY_FUNCTION__,MYLOG);
 		return command_fail(cmd, PAY_DESTINATION_PERM_FAIL,
 				    "Got an final failure from destination");
 	case PAY_TRY_OTHER_ROUTE:
+		debug_exec_branch(__LINE__,__PRETTY_FUNCTION__,MYLOG);
 		break;
 
 	default:
+		debug_exec_branch(__LINE__,__PRETTY_FUNCTION__,MYLOG);
 		plugin_err(cmd->plugin,
 			   "Unexpected errcode from waitsendpay: %.*s",
 			   json_tok_full_len(err), json_tok_full(buf, err));
@@ -754,9 +787,13 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	failcodetok = json_get_member(buf, datatok, "failcode");
 	json_to_u32(buf, failcodetok, &onionerr);
 
-	msgtok = json_get_member(buf, datatok, "message");
+	msgtok = json_get_member(buf, err, "message");
 	rawoniontok = json_get_member(buf, datatok, "raw_message");
-
+	
+	// const char *scid_str = type_to_string(tmpctx,struct short_channel_id,&errscid);
+	// debug(MYLOG,"failcode: %d, onion error: %s, err_idx: %d, scid: %s\n",
+	// 	onionerr,onion_wire_name(onionerr),erridx,scid_str);
+	
 	paynote(p, "onion error %s from node #%u %s: %.*s",
 		onion_wire_name(onionerr),
 		erridx,
@@ -1050,6 +1087,7 @@ static struct command_result *
 listpeerchannels_done(struct command *cmd, const char *buf,
 	       const jsmntok_t *result, struct payment *p)
 {
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	if (!update_uncertainty_network_from_listpeerchannels(cmd->plugin, p, buf, result))
 		return command_fail(cmd, LIGHTNINGD,
 				    "listpeerchannels malformed: %.*s",
@@ -1058,6 +1096,9 @@ listpeerchannels_done(struct command *cmd, const char *buf,
 	
 	// So we have all localmods data, now we apply it. Only once per
 	// payment.
+	// TODO(eduardo): check that there won't be a prob. cost associated with
+	// any gossmap local chan. The same way there aren't fees to pay for my
+	// local channels.
 	gossmap_apply_localmods(pay_plugin->gossmap,p->local_gossmods);
 	return try_paying(cmd, p, true);
 }
@@ -1066,6 +1107,7 @@ listpeerchannels_done(struct command *cmd, const char *buf,
  * into a valid state before the next payment. */
 static void renepay_cleanup(struct payment *p)
 {
+	debug_call(__PRETTY_FUNCTION__,MYLOG);
 	/* Always remove our local mods (routehints) so others can use
 	 * gossmap. We do this only after the payment completes. */
 	gossmap_remove_localmods(pay_plugin->gossmap,
@@ -1200,6 +1242,11 @@ static struct command_result *json_pay(struct command *cmd,
 	
 	plugin_log(pay_plugin->plugin,LOG_DBG,"Starting renepay");
 	bool gossmap_changed = gossmap_refresh(pay_plugin->gossmap, NULL);
+	
+	if (pay_plugin->gossmap == NULL)
+		plugin_err(pay_plugin->plugin, "Failed to refresh gossmap: %s",
+			   strerror(errno));
+	
 	
 	// TODO(eduardo): remove this
 	debug_knowledge(pay_plugin->chan_extra_map,MYLOG);
@@ -1425,13 +1472,6 @@ static struct command_result *json_pay(struct command *cmd,
 				    listpeerchannels_done,
 				    listpeerchannels_done, p);
 	return send_outreq(cmd->plugin, req);
-	
-	// struct json_stream *ret;
-	// ret = jsonrpc_stream_success(cmd);
-	// json_add_string(ret,"hello","world");
-	// json_add_amount_msat_only(ret,"maxspend_msat",p->maxspend);
-	// 
-	// return command_finished(cmd,ret);
 }
 
 static const struct plugin_command commands[] = {
