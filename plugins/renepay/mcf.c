@@ -6,6 +6,7 @@
 #include <plugins/renepay/mcf.h>
 #include <plugins/renepay/flow.h>
 #include <plugins/renepay/dijkstra.h>
+#include <plugins/renepay/debug.h>
 #include <common/type_to_string.h>
 #include <stdint.h>
 #include <math.h>
@@ -1240,6 +1241,8 @@ static bool is_better(
 		struct amount_msat B_fee,
 		double B_prob)
 {
+	debug_call();
+	
 	bool A_fee_pass = amount_msat_less_eq(A_fee,max_fee);
 	bool B_fee_pass = amount_msat_less_eq(B_fee,max_fee);
 	bool A_prob_pass = A_prob >= min_probability;
@@ -1249,25 +1252,30 @@ static bool is_better(
 	if(A_fee_pass && B_fee_pass && A_prob_pass && B_prob_pass)
 	{
 		// prefer lower fees
-		return amount_msat_less_eq(A_fee,B_fee);
+		debug_info("all bounds are met\n");
+		goto fees_or_prob;
 	}
 	
 	// prefer the solution that satisfies both bounds
-	if((!A_fee_pass || !A_prob_pass) && (B_fee_pass && B_prob_pass))
+	if(!(A_fee_pass && A_prob_pass) && (B_fee_pass && B_prob_pass))
 	{
+		debug_info("B is better, satisfies all bounds\n");
 		return false;
 	}
 	// prefer the solution that satisfies both bounds
-	if((A_fee_pass && A_prob_pass) && (!B_fee_pass || !B_prob_pass))
+	if((A_fee_pass && A_prob_pass) && !(B_fee_pass && B_prob_pass))
 	{
+		debug_info("A is better, satisfies all bounds\n");
 		return true;
 	}
 	
 	// no solution satisfies both bounds
+	debug_info("Both bounds are not met.\n");	
 	
 	// bound on fee is met
 	if(A_fee_pass && B_fee_pass)
 	{
+		debug_info("Bound on fee is satisfies, select highest prob.\n");
 		// pick the highest prob.
 		return A_prob > B_prob;
 	}
@@ -1275,34 +1283,51 @@ static bool is_better(
 	// bound on prob. is met
 	if(A_prob_pass && B_prob_pass)
 	{
-		// pick the lowest fee
-		return amount_msat_less_eq(A_fee,B_fee);
+		debug_info("Bound on prob. is satisfies, select lowest fee.\n");
+		goto fees_or_prob;
 	}
 	
 	// prefer the solution that satisfies the bound on fees
-	if(A_fee_pass)
-	{
+	if(A_fee_pass && !B_fee_pass)
+	{	
+		debug_info("A satisfies bound on fees, B doesnt\n");	
 		return true;
 	}
-	if(B_fee_pass)
+	if(B_fee_pass && !A_fee_pass)
 	{
+		debug_info("B satisfies bound on fees, A doesnt\n");	
 		return false;
 	}
 	
 	// none of them satisfy the fee bound
+	debug_info("Fee bound is not met.\n");	
 	
 	// prefer the solution that satisfies the bound on prob.
-	if(A_prob_pass)
+	if(A_prob_pass && !B_prob_pass)
 	{
+		debug_info("A satisfies bound on prob., B doesnt\n");	
 		return true;
 	}
-	if(B_prob_pass)
+	if(B_prob_pass && !A_prob_pass)
 	{
+		debug_info("B satisfies bound on prob., A doesnt\n");	
 		return true;
 	}
 	
 	// no bound whatsoever is satisfied
+	debug_info("No bounds are met.\n");	
+	
+	fees_or_prob:
+	
+	// fees are the same, wins the highest prob.
+	if(amount_msat_eq(A_fee,B_fee))
+	{
+		debug_info("Fees are equal, select highest prob.\n");	
+		return A_prob > B_prob;
+	}
+	
 	// go for fees
+	debug_info("Select lowest fee.\n");	
 	return amount_msat_less_eq(A_fee,B_fee);
 }
 
@@ -1334,7 +1359,8 @@ struct flow** minflow(
 		double base_fee_penalty,
 		u32 prob_cost_factor )
 {
-	// printf("%s: starting\n",__PRETTY_FUNCTION__);
+	debug_call();
+	
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
 	struct pay_parameters *params = tal(this_ctx,struct pay_parameters);	
@@ -1419,7 +1445,7 @@ struct flow** minflow(
 	{
 		
 		s64 mu = (mu_left + mu_right)/2;
-		// printf("%s: mu=%ld\n",__PRETTY_FUNCTION__,mu);
+		debug_info("mcf: mu=%ld\n",mu);
 		
 		combine_cost_function(linear_network,residual_network,mu);
 		
@@ -1436,8 +1462,9 @@ struct flow** minflow(
 						params->chan_extra_map);
 		struct amount_msat fee = flow_set_fee(flow_paths);
 		
-		// printf("prob %.2f, fee %s\n",prob_success,
-		//		type_to_string(this_ctx,struct amount_msat,&fee));
+		debug_info("mcf: prob %.2f, fee %s\n",
+			   prob_success,
+			   type_to_string(this_ctx,struct amount_msat,&fee));
 		
 		// is this better than the previous one?
 		if(!best_flow_paths || 
@@ -1455,12 +1482,12 @@ struct flow** minflow(
 		{
 			// too expensive
 			mu_left = mu+1;
-			// printf("%s: too expensive\n",__PRETTY_FUNCTION__);
+			debug_info("mcf too expensive");
 		}else if(prob_success < params->min_probability)
 		{
 			// too unlikely
 			mu_right = mu;
-			// printf("%s: too unlikely\n",__PRETTY_FUNCTION__);
+			debug_info("mcf too unlikely");
 		}else
 		{
 			// with mu constraints are satisfied, now let's optimize
@@ -1475,8 +1502,6 @@ struct flow** minflow(
 	
 	
 	finish:
-	
-	// printf("%s: finished\n",__PRETTY_FUNCTION__);
 	
 	tal_free(this_ctx);
 	return best_flow_paths;
