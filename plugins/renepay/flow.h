@@ -112,6 +112,10 @@ HTABLE_DEFINE_TYPE(struct chan_extra,
  * 	Entropy increases unless it is already maximum.	
  * */
 
+const char *fmt_chan_extra_map(
+		const tal_t *ctx,
+		struct chan_extra_map* chan_extra_map);
+
 /* Creates a new chan_extra and adds it to the chan_extra_map. */
 struct chan_extra *new_chan_extra(
 		struct chan_extra_map *chan_extra_map,

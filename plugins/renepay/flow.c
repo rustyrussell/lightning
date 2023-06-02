@@ -1,6 +1,8 @@
 #include "config.h"
 #include <assert.h>
 #include <ccan/asort/asort.h>
+#include <ccan/tal/tal.h>
+#include <ccan/tal/str/str.h>
 #include <common/gossmap.h>
 #include <math.h>
 #include <stdio.h>
@@ -12,6 +14,30 @@
 #else
 #define SUPERVERBOSE_ENABLED 1
 #endif
+
+const char *fmt_chan_extra_map(
+		const tal_t *ctx,
+		struct chan_extra_map* chan_extra_map)
+{
+	tal_t *this_ctx = tal(ctx,tal_t);
+	char *buff = tal_fmt(ctx,"Uncertainty network:\n");	
+	struct chan_extra_map_iter it;
+	for(struct chan_extra *ch = chan_extra_map_first(chan_extra_map,&it);
+	    ch;
+	    ch=chan_extra_map_next(chan_extra_map,&it))
+	{
+		const char *scid_str = 
+			type_to_string(this_ctx,struct short_channel_id,&ch->scid);
+		for(int dir=0;dir<2;++dir)
+		{
+			tal_append_fmt(&buff,"%s[%d]:(%s,%s)\n",scid_str,dir,
+				type_to_string(this_ctx,struct amount_msat,&ch->half[dir].known_min),
+				type_to_string(this_ctx,struct amount_msat,&ch->half[dir].known_max));
+		}
+	}
+	tal_free(this_ctx);
+	return buff;
+}
 
 struct chan_extra *new_chan_extra(
 		struct chan_extra_map *chan_extra_map,
