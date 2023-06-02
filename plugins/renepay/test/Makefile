@@ -9,18 +9,9 @@ ALL_TEST_PROGRAMS += $(PLUGIN_RENEPAY_TEST_PROGRAMS)
 $(PLUGIN_RENEPAY_TEST_OBJS): $(PLUGIN_RENEPAY_SRC)
 
 PLUGIN_RENEPAY_TEST_COMMON_OBJS :=		\
-	common/amount.o				\
-	common/autodata.o			\
-	common/fp16.o				\
-	common/gossmap.o			\
-	common/node_id.o			\
-	common/pseudorand.o			\
-	common/dijkstra.o			\
-	common/setup.o				\
-	common/type_to_string.o			\
-	common/utils.o				\
-	plugins/renepay/dijkstra.o
+	plugins/renepay/dijkstra.o		\
+	plugins/renepay/debug.o
 
-$(PLUGIN_RENEPAY_TEST_PROGRAMS): $(CCAN_OBJS) $(BITCOIN_OBJS) $(WIRE_OBJS) $(PLUGIN_RENEPAY_TEST_COMMON_OBJS)
+$(PLUGIN_RENEPAY_TEST_PROGRAMS): $(PLUGIN_RENEPAY_TEST_COMMON_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS) $(CCAN_OBJS) bitcoin/chainparams.o common/gossmap.o common/fp16.o common/dijkstra.o common/bolt12.o common/bolt12_merkle.o wire/bolt12$(EXP)_wiregen.o
 
 check-renepay: $(PLUGIN_RENEPAY_TEST_PROGRAMS:%=unittest/%)
