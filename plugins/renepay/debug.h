@@ -5,8 +5,6 @@
 #include <common/json_param.h>
 #include <common/json_stream.h>
 #include <plugins/libplugin.h>
-#include <plugins/renepay/flow.h>
-#include <plugins/renepay/pay_flow.h>
 #include <stdio.h>
 #include <wire/peer_wire.h>
 #include <ccan/json_out/json_out.h>
@@ -14,21 +12,26 @@
 
 #define MYLOG "/tmp/debug.txt"
 
-void debug_knowledge(
-		struct chan_extra_map* chan_extra_map,
-		const char*fname);
-		
-void debug_payflows(struct pay_flow **flows, const char* fname);
 
-void debug_exec_branch(int lineno, const char* fun, const char* fname);
+void _debug_outreq(const char *fname, const struct out_req *req);
+#define debug_outreq(req) \
+	_debug_outreq(MYLOG,req)
 
-void debug_outreq(const struct out_req *req, const char*fname);
+void _debug_reply(const char* fname, const char* buf,const jsmntok_t *toks);
+#define debug_reply(buf,toks) \
+	_debug_reply(MYLOG,buf,toks)
 
-void debug_call(const char* fun, const char* fname);
+void _debug_info(const char* fname, const char *fmt, ...);
+#define debug_info(...) \
+	_debug_info(MYLOG,__VA_ARGS__)
+	
 
-void debug_reply(const char* buf,const jsmntok_t *toks, const char*fname);
+void _debug_call(const char* fname, const char* fun);
+#define debug_call() \
+	_debug_call(MYLOG,__PRETTY_FUNCTION__)
 
-void debug_info(const char* fname, const char *fmt, ...);
-
+void _debug_exec_branch(const char* fname,const char* fun, int lineno);
+#define debug_exec_branch() \
+	_debug_exec_branch(MYLOG,__PRETTY_FUNCTION__,__LINE__)
 
 #endif
