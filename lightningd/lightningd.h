@@ -365,6 +365,9 @@ struct lightningd {
 
 	/* --experimental-upgrade-protocol */
 	bool experimental_upgrade_protocol;
+
+	/* runes! */
+	struct runes *runes;
 };
 
 /* Turning this on allows a tal allocation to return NULL, rather than aborting.
