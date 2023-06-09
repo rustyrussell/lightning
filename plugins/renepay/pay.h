@@ -8,6 +8,20 @@
 
 #define MAX_NUM_ATTEMPTS 10
 
+// TODO(eduardo): Test ideas
+// - make a payment to a node that is hidden behind private channels, check that
+// private channels are removed from the gossmap and chan_extra_map
+// - one payment route hangs, and the rest keep waiting, eventually all MPP
+// should timeout and we retry excluding the unresponsive path (are we able to
+// identify it?)
+// - a particular route fails because fees are wrong, we update the gossip
+// information and redo the path.
+// - a MPP in which several parts have a common intermediary node 
+// 	source -MANY- o -MANY- dest
+// - a MPP in which several parts have a common intermediary channel
+// 	source -MANY- o--o -MANY- dest
+// - a payment with a direct channel to the destination
+
 enum payment_status {
         PAYMENT_PENDING, PAYMENT_SUCCESS, PAYMENT_FAIL,
 	PAYMENT_MPP_TIMEOUT
