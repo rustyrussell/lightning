@@ -3,7 +3,15 @@
 #include "config.h"
 #include <ccan/list/list.h>
 #include <common/node_id.h>
+#include <plugins/libplugin.h>
 #include <plugins/renepay/flow.h>
+
+#define MAX_NUM_ATTEMPTS 10
+
+enum payment_status {
+        PAYMENT_PENDING, PAYMENT_SUCCESS, PAYMENT_FAIL,
+	PAYMENT_MPP_TIMEOUT
+};
 
 /* Our convenient global data, here in one place. */
 struct pay_plugin {
@@ -32,12 +40,10 @@ struct pay_plugin {
 /* Set in init */
 extern struct pay_plugin *pay_plugin;
 
-// TODO(eduardo): does it make sense?
 /* Data only kept while the payment is being processed. */
 struct active_payment
 {
 	/* The command, and our owner (needed for timer func) */
-	// TODO(eduardo): is it used?
 	struct command *cmd;
 
 	/* Localmods to apply to gossip_map for our own use. */
@@ -45,110 +51,128 @@ struct active_payment
 	struct gossmap_localmods *local_gossmods;
 	
 	/* Channels we decided to disable for various reasons. */
-	// TODO(eduardo): is it used?
 	struct short_channel_id *disabled;
 
 	/* Timers. */
-	// TODO(eduardo): is it used?
 	struct plugin_timer *rexmit_timer;
+	
+	/* Keep track of the number of attempts. */
+	int last_attempt;
+	
+	/* Root to destroy pending flows */
+	tal_t *all_flows;
+	
+	/* Groupid, so listpays() can group them back together */
+	u64 groupid;
+	
+	/* Used in get_payflows to set ids to each pay_flow. */
+	u64 next_partid;
 };
 
 struct payment {
-	/* Data used while the payment is being processed. */
-	// TODO(eduardo): initialize this
-	// TODO(eduardo): add a destructor
-	struct active_payment *active_payment;
-
-	/* Inside pay_plugin->payments list */
-	// TODO(eduardo): is it used?
-	struct list_node list;
-
-	/* We promised this in pay() output */
-	// TODO(eduardo): is it used?
-	struct timeabs start_time;
-
-	/* invstring (bolt11 or bolt12) */
-	// TODO(eduardo): is it used?
-	const char *invstr;
-
-	/* How much, what, where */
-	// TODO(eduardo): is it used?
-	struct node_id dest;
-	struct sha256 payment_hash;
-	// TODO(eduardo): is it used?
-	struct amount_msat amount;
+	/* Chatty description of attempts. */
+	const char **paynotes;
 	
-	// TODO(eduardo): is it used?
-	u32 final_cltv;
-
 	/* Total sent, including fees. */
 	struct amount_msat total_sent;
+	
 	/* Total that is delivering (i.e. without fees) */
 	struct amount_msat total_delivering;
-
+	
+	/* invstring (bolt11 or bolt12) */
+	const char *invstr;
+	
+	/* How much, what, where */
+	struct amount_msat amount;
+	struct node_id dest;
+	struct sha256 payment_hash;
+	
+	
+	/* Limits on what routes we'll accept. */
+	struct amount_msat maxspend;
+	
+	// TODO(eduardo): check out how this is used by get_payflows.
+	unsigned int maxdelay;
+	
+	/* We promised this in pay() output */
+	struct timeabs start_time;
+	
+	// TODO(eduardo): notice that stop_time = start_time + 60sec by default.
+	// On the other hand I am assuming that HTLCs are removed when a payment
+	// request fails or succeeds. A fail could happen when some other part
+	// of a MPP payment fails and the current part times-out. My question is
+	// what determines this time-out of the MPP part, is it encoded in the
+	// HTLCs themselves, thus measured in block numbers or is there another
+	// timer somewhere?
+	// If this time is in seconds, it would be desirable to be less than
+	// 30sec so that we can try at least two different MPP before the
+	// payment expires. On the other hand if HTLCs expire only after a
+	// certain block number, then we should keep track of these events in the
+	// uncertainty network somehow even after the payment terminates.
+	struct timeabs stop_time;
+	
+	/* Payment preimage, in case of success. */
+	const struct preimage *preimage;
+	
 	/* payment_secret, if specified by invoice. */
-	// TODO(eduardo): is it used?
+	// TODO(eduardo): isn't the preimage the payment secret?
 	struct secret *payment_secret;
+	
 	/* Payment metadata, if specified by invoice. */
-	// TODO(eduardo): is it used?
 	const u8 *payment_metadata;
+	
+	/* To know if the last attempt failed, succeeded or is it pending. */
+	enum payment_status status;	
+
+	// TODO(eduardo):
+	// 1. what is this?
+	// 2. what is it used for?
+	// 3. notice that we don't use it.
+	u32 final_cltv;
+
+	/* Inside pay_plugin->payments list */
+	struct list_node list;
 
 	/* Description and labels, if any. */
-	// TODO(eduardo): is it used?
-	// TODO(eduardo): could be NULL
 	const char *description, *label;
 
+	
 	/* Penalty for CLTV delays */
-	// TODO(eduardo): is it used?
 	double delay_feefactor;
 	
 	/* Penalty for base fee */
-	// TODO(eduardo): is it used?
 	double base_fee_penalty;
 	
-	/* linear fee cost = 
+	/* With these the effective linear fee cost is computed as
+	 * 
+	 * linear fee cost = 
 	 * 	millionths 
 	 * 	+ base_fee* base_fee_penalty
-	 * 	+delay*delay_feefactor;*/
+	 * 	+delay*delay_feefactor;
+	 * */
 
-	/* Limits on what routes we'll accept. */
-	// TODO(eduardo): is it used?
-	struct amount_msat maxspend;
-	// TODO(eduardo): is it used?
-	unsigned int maxdelay;
-	// TODO(eduardo): is it used?
-	struct timeabs stop_time;
-	
 	/* The minimum acceptable prob. of success */
-	// TODO(eduardo): is it used?
 	double min_prob_success;
 	
+	/* Conversion from prob. cost to millionths */
+	double prob_cost_factor;
 	/* linear prob. cost = 
 	 * 	- prob_cost_factor * log prob. */
-	
-	/* Conversion from prob. cost to millionths */
-	// TODO(eduardo): is it used?
-	double prob_cost_factor;
 
-	/* Chatty description of attempts. */
-	// TODO(eduardo): is it used?
-	const char **paynotes;
 
-	/* Groupid, so listpays() can group them back together */
-	// TODO(eduardo): is it used?
-	u64 groupid;
-	// TODO(eduardo): is it used?
-	u64 next_partid;
 	/* If this is paying a local offer, this is the one (sendpay ensures we
 	 * don't pay twice for single-use offers) */
-	// TODO(eduardo): is it used?
-	// TODO(eduardo): could be NULL
+	// TODO(eduardo): this is not being used!
 	struct sha256 *local_offer_id;
 
 	/* DEVELOPER allows disabling shadow route */
-	// TODO(eduardo): is it used?
 	bool use_shadow;
+	
+	/* Data used while the payment is being processed. */
+	struct active_payment *active_payment;
 };
+
+int payment_current_attempt(const struct payment *p);
 
 void paynote(struct payment *p, const char *fmt, ...)
 	PRINTF_FMT(2,3);

@@ -1482,12 +1482,12 @@ struct flow** minflow(
 		{
 			// too expensive
 			mu_left = mu+1;
-			debug_info("mcf too expensive");
+			debug_info("mcf too expensive\n");
 		}else if(prob_success < params->min_probability)
 		{
 			// too unlikely
 			mu_right = mu;
-			debug_info("mcf too unlikely");
+			debug_info("mcf too unlikely\n");
 		}else
 		{
 			// with mu constraints are satisfied, now let's optimize

@@ -135,6 +135,7 @@ static u64 flow_delay(const struct flow *flow)
 }
 
 /* This enhances f->amounts, and returns per-flow cltvs */
+// TODO(eduardo): check out this again
 static u32 *shadow_additions(const tal_t *ctx,
 			     const struct gossmap *gossmap,
 			     struct payment *p,
@@ -239,6 +240,7 @@ static struct pay_flow **flows_to_pay_flows(struct payment *payment,
 		pf->amounts = tal_steal(pf, f->amounts);
 		pf->path_dirs = tal_steal(pf, f->dirs);
 		pf->success_prob = f->success_prob;
+		pf->attempt = payment_current_attempt(payment);
 	}
 	tal_free(flows);
 
@@ -453,7 +455,7 @@ struct pay_flow **get_payflows(struct payment *p,
 		 * pay_flows to outlive the current gossmap. */
 		pay_flows = flows_to_pay_flows(p, pay_plugin->gossmap,
 					       flows, final_cltvs,
-					       &p->next_partid);
+					       &p->active_payment->next_partid);
 		break;
 
 	retry:
@@ -536,8 +538,8 @@ const char* fmt_payflows(const tal_t *ctx,
 }
 
 void remove_htlc_payflow(
-		struct chan_extra_map *chan_extra_map,
-		const struct pay_flow *flow)
+		struct pay_flow *flow,
+		struct chan_extra_map *chan_extra_map)
 {
 	for (size_t i = 0; i < tal_count(flow->path_scids); i++) {
 		struct chan_extra_half *h = get_chan_extra_half_by_scid(

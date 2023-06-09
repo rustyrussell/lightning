@@ -8,6 +8,9 @@ struct pay_flow {
 	/* So we can be an independent object for callbacks. */
 	struct payment *payment;
 
+	/* This flow belongs to some attempt. */
+	int attempt;
+	
 	/* Part id for RPC interface */
 	u64 partid;
 	/* The series of channels and nodes to traverse. */
@@ -33,8 +36,8 @@ void commit_htlc_payflow(
 		const struct pay_flow *flow);
 
 void remove_htlc_payflow(
-		struct chan_extra_map *chan_extra_map,
-		const struct pay_flow *flow);
+		struct pay_flow *flow,
+		struct chan_extra_map *chan_extra_map);
 
 const char* fmt_payflows(const tal_t *ctx,
 			 struct pay_flow ** flows);

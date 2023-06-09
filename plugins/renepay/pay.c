@@ -22,9 +22,133 @@ struct pay_plugin *pay_plugin;
 
 
 static void renepay_cleanup(struct active_payment *ap);
+static void timer_kick(struct payment *p);
+
+static void payment_check_delivering_incomplete(struct payment *p)
+{
+	if(!amount_msat_less(p->total_delivering, p->amount))
+	{
+		plugin_err(
+			pay_plugin->plugin,
+			"Strange, delivering (%s) is not smaller than amount (%s)",
+			type_to_string(tmpctx,struct amount_msat,&p->total_delivering),
+			type_to_string(tmpctx,struct amount_msat,&p->amount));
+	}
+}
+static void payment_check_delivering_all(struct payment *p)
+{
+	if(amount_msat_less(p->total_delivering, p->amount))
+	{
+		plugin_err(
+			pay_plugin->plugin,
+			"Strange, delivering (%s) is less than amount (%s)",
+			type_to_string(tmpctx,struct amount_msat,&p->total_delivering),
+			type_to_string(tmpctx,struct amount_msat,&p->amount));
+	}
+}
+static struct command * payment_command(struct payment *p)
+{
+	return p->active_payment->cmd;
+}
+static u64 payment_parts(const struct payment *p)
+{
+	return p->active_payment->next_partid-1;
+}
+int payment_current_attempt(const struct payment *p)
+{
+	return p->active_payment->last_attempt;
+}
+static int payment_attempt_count(const struct payment *p)
+{
+	return p->active_payment->last_attempt+1;
+}
+static void payment_new_attempt(struct payment *p)
+{
+	p->status=PAYMENT_PENDING;
+	p->active_payment->last_attempt++;
+}
+static u64 payment_groupid(struct payment *p)
+{
+	return p->active_payment->groupid;
+}
+static void payment_initialize(
+		struct payment *p,
+		struct command *cmd)
+{
+	/* Owned by cmd, because this data is destroyed after the payment
+	 * completes, while p remains to get payment status history. */
+	p->active_payment = tal(cmd,struct active_payment);
+	tal_add_destructor(p->active_payment, renepay_cleanup);
+	
+	p->active_payment->cmd = cmd;
+ 	p->active_payment->local_gossmods = gossmap_localmods_new(p->active_payment);
+	p->active_payment->localmods_applied=false;
+	p->active_payment->disabled = tal_arr(p->active_payment, 
+					      struct short_channel_id, 
+					      0);
+	p->active_payment->rexmit_timer = NULL;
+	p->active_payment->last_attempt=-1;
+	p->active_payment->all_flows = tal(p->active_payment,tal_t);
+}
+// static struct amount_msat payment_fees(struct payment *p)
+// {
+// 	struct amount_msat fees;
+// 	struct amount_msat sent = payment_sent(p), 
+// 			   received = payment_amount(p);
+// 			   
+// 	if(!amount_msat_sub(&fees,sent,received))
+// 		plugin_err(payment_command(p)->plugin,
+// 			   "Strange, sent amount (%s) is less than received (%s), aborting.",
+// 			   type_to_string(tmpctx,struct amount_msat,&sent),
+// 			   type_to_string(tmpctx,struct amount_msat,&received));
+// 	return fees;
+// }
+
+static struct command_result *payment_success(struct payment *p)
+{
+	debug_call();
+	
+	payment_check_delivering_all(p);
+	
+	struct json_stream *response 
+		= jsonrpc_stream_success(payment_command(p));
+
+	/* Any one succeeding is success. */
+	json_add_preimage(response, "payment_preimage", p->preimage);
+	json_add_sha256(response, "payment_hash", &p->payment_hash);
+	json_add_timeabs(response, "created_at", p->start_time);
+	json_add_u32(response, "parts", payment_parts(p));
+	json_add_amount_msat_only(response, "amount_msat",
+				  p->amount);
+	json_add_amount_msat_only(response, "amount_sent_msat",
+				  p->total_sent);
+	json_add_string(response, "status", "complete");
+	json_add_node_id(response, "destination", &p->dest);
+	
+	return command_finished(payment_command(p), response);
+}
+
+// static struct command_result *payment_fail(struct payment *p)
+// {
+// 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
+// 	debug_call();
+// 	
+// 	p->status = PAYMENT_FAIL;
+// 	
+// 	/* In this version we do a MPP, which means either all payments fail or
+// 	 * all payments succeed. 
+// 	 * */
+// 	p->total_delivering = AMOUNT_MSAT(0);
+// 	p->total_sent = AMOUNT_MSAT(0);
+// 	
+// 	/* Still waiting for timer... */
+// 	return command_still_pending(payment_command(p));
+// }
 
 // TODO(eduardo): check if knowledge is updated after payment success
 // TODO(eduardo): how do we fail a payment
+// TODO(eduardo): improve loging
+// TODO(eduardo): handle hanging responses
 
 void paynote(struct payment *p, const char *fmt, ...)
 {
@@ -70,6 +194,36 @@ static void memleak_mark(struct plugin *p, struct htable *memtable)
 	memleak_scan_htable(memtable, &pay_plugin->chan_extra_map->raw);
 }
 #endif
+
+static void remove_htlc_payflow_and_update_knowlege(
+		struct pay_flow *flow,
+		struct chan_extra_map *chan_extra_map)
+{
+	debug_call();
+	
+	// TODO(eduardo): big assumption here, HTLCs can just simply dissapear
+	// if the MPP payment completes or the flow fails.
+	remove_htlc_payflow(flow,chan_extra_map);
+	
+	struct payment *p = flow->payment;
+	
+	switch(p->status)
+	{
+		case PAYMENT_SUCCESS:
+			for (size_t i = 0; i < tal_count(flow->path_scids); i++)
+			{
+				chan_extra_sent_success(pay_plugin->chan_extra_map,
+					flow->path_scids[i],
+					flow->path_dirs[i],
+					flow->amounts[i]);
+			}
+			break;
+		case PAYMENT_FAIL:
+		case PAYMENT_PENDING:
+		case PAYMENT_MPP_TIMEOUT:
+			break;
+	}
+}
 
 static const char *init(struct plugin *p,
 			const char *buf UNUSED, const jsmntok_t *config UNUSED)
@@ -234,6 +388,7 @@ static void add_hintchan(struct payment *p,
 }
 
 /* Add routehints provided by bolt11 */
+// TODO(eduardo): check this again
 static void uncertainty_network_add_routehints(struct payment *p)
 {
 	struct bolt11 *b11;
@@ -398,93 +553,115 @@ static struct command_result *try_paying(struct command *cmd,
 					 struct payment *p,
 					 bool first_time);
 
-static struct command_result *flow_failed(struct command *cmd,
-					  const struct pay_flow *flow)
+static struct command_result *flow_failed(
+		struct command *cmd,
+		const struct pay_flow *flow)
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling flow_failed");
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	debug_call();
 	struct payment *p = flow->payment;
-
+	
+	
 	amount_msat_reduce(&p->total_delivering, flow_delivered(flow));
 	amount_msat_reduce(&p->total_sent, flow->amounts[0]);
-
-	/* flow failed, so we remove these HTLCs */
-	remove_htlc_payflow(pay_plugin->chan_extra_map,
-			    flow);
-
-	/* If nothing outstanding, don't wait for timer! */
-	if (amount_msat_eq(p->total_sent, AMOUNT_MSAT(0))) {
-		p->active_payment->rexmit_timer 
-			= tal_free(p->active_payment->rexmit_timer);
-		return try_paying(cmd, p, false);
-	}
+	tal_free(flow);
 	
 	/* Still waiting for timer... */
 	return command_still_pending(cmd);
 }
 
+
+// // TODO(eduardo): how do we treat the knowledge from old flow attempts?
+// // TODO(eduardo
+// static struct command_result payment_success(...)
+// {
+// 	for each pending flow:
+// 		if flow is current attempt
+// 			update knowledge flow was sent
+// 		free flow
+// 	
+// 	return command_finished
+// }
+
+
+static void payment_settimer(struct payment *p)
+{
+	p->active_payment->rexmit_timer 
+		= tal_free(p->active_payment->rexmit_timer);
+	p->active_payment->rexmit_timer 
+		= plugin_timer(
+			pay_plugin->plugin,
+			time_from_msec(250),
+			timer_kick, p);
+}
+
 /* Happens when timer goes off, but also works to arm timer if nothing to do */
 static void timer_kick(struct payment *p)
 {
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
-	p->active_payment->rexmit_timer 
-		= tal_free(p->active_payment->rexmit_timer);
-
-	/* Nothing has come back?  Re-arm timer. */
-	if (amount_msat_eq(p->total_delivering, p->amount)) {
-		// TODO(eduardo): what's the purpose of this?
-		// p->rexmit_timer = plugin_timer(p->cmd->plugin,
-		// 			       time_from_msec(250),
-		// 			       timer_kick, p);
-		return;
+	debug_call();
+	
+	/* No, but payment hasn't gone through, so let's wait a bit. */
+	
+	switch(p->status)
+	{
+		/* Some flows succeeded, we finish the payment. */
+		case PAYMENT_SUCCESS:
+			payment_check_delivering_all(p);
+			payment_success(p);
+		break;
+		
+		/* Some flows failed, we retry. */
+		case PAYMENT_FAIL:
+			payment_check_delivering_incomplete(p);
+			try_paying(payment_command(p),p,false);
+		break;
+		
+		/* Nothing has returned yet, we have to wait. */
+		case PAYMENT_PENDING:
+			payment_check_delivering_all(p);
+			payment_settimer(p);
+		break;
+		/* Some flows timeout we wait until all of them have done so. */
+		case PAYMENT_MPP_TIMEOUT:
+			payment_check_delivering_incomplete(p);
+			if(amount_msat_eq(p->total_delivering,AMOUNT_MSAT(0)))
+			{
+				try_paying(payment_command(p),p,false);
+			}
+			payment_settimer(p);
+		break;
 	}
-
-	try_paying(p->active_payment->cmd, p, false);
 }
 
+/* Once this function is called we know that the payment succeeded and we
+ * terminate with payment_success. */
 static struct command_result *waitsendpay_succeeded(struct command *cmd,
 						    const char *buf,
 						    const jsmntok_t *result,
 						    struct pay_flow *flow)
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling waitsendpay_succeeded");
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	debug_call();
 	
-	/* payment succeeded, now remove the HTLCs */
-	remove_htlc_payflow(pay_plugin->chan_extra_map,
-			    flow);
-	
-	/* update the knowledge */
-	for (size_t i = 0; i < tal_count(flow->path_scids); i++)
-	{
-		chan_extra_sent_success(pay_plugin->chan_extra_map,
-					flow->path_scids[i],
-					flow->path_dirs[i],
-					flow->amounts[i]);
-	}
 	struct payment *p = flow->payment;
-	struct json_stream *response = jsonrpc_stream_success(cmd);
-	const jsmntok_t *preimagetok;
-
-	preimagetok = json_get_member(buf, result, "payment_preimage");
-	if (!preimagetok)
+	
+	/* This is a success. */
+	p->status = PAYMENT_SUCCESS;
+	
+	const jsmntok_t *preimagetok
+		= json_get_member(buf, result, "payment_preimage");
+	
+	struct preimage preimage;
+	
+	if (!preimagetok || !json_to_preimage(buf, preimagetok,&preimage))
 		plugin_err(cmd->plugin,
 			   "Strange return from waitsendpay: %.*s",
 			   json_tok_full_len(result),
 			   json_tok_full(buf, result));
-
-	/* Any one succeeding is success. */
-	json_add_tok(response, "payment_preimage", preimagetok, buf);
-	json_add_sha256(response, "payment_hash", &p->payment_hash);
-	json_add_timeabs(response, "created_at", p->start_time);
-	json_add_u32(response, "parts", p->next_partid);
-	json_add_amount_msat_only(response, "amount_msat",
-				  p->total_delivering);
-	json_add_amount_msat_only(response, "amount_sent_msat",
-				  p->total_sent);
-	json_add_string(response, "status", "complete");
-	json_add_node_id(response, "destination", &p->dest);
-	return command_finished(cmd, response);
+	
+	p->preimage = tal_dup_or_null(p, struct preimage, &preimage);
+	
+	return payment_success(p);
 }
 
 static const char *flow_path_to_str(const tal_t *ctx, const struct pay_flow *flow)
@@ -503,7 +680,7 @@ static struct command_result *handle_unhandleable_error(struct payment *p,
 							const struct pay_flow *flow,
 							const char *what)
 {
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	debug_call();
 	size_t n = tal_count(flow);
 
 	/* We got a mangled reply.  We don't know who to penalize! */
@@ -540,125 +717,125 @@ struct addgossip {
 	const struct pay_flow *flow;
 };
 
-static struct command_result *addgossip_done(struct command *cmd,
-					     const char *buf,
-					     const jsmntok_t *err,
-					     struct addgossip *adg)
-{
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
-	struct payment *p = adg->flow->payment;
+// static struct command_result *addgossip_done(struct command *cmd,
+// 					     const char *buf,
+// 					     const jsmntok_t *err,
+// 					     struct addgossip *adg)
+// {
+// 	debug_call();
+// 	struct payment *p = adg->flow->payment;
+// 
+// 	/* Release this: if it's the last flow we'll retry immediately */
+// 	tal_free(adg);
+// 	timer_kick(p);
+// 
+// 	return command_still_pending(cmd);
+// }
 
-	/* Release this: if it's the last flow we'll retry immediately */
-	tal_free(adg);
-	timer_kick(p);
+// static struct command_result *addgossip_failure(struct command *cmd,
+// 						const char *buf,
+// 						const jsmntok_t *err,
+// 						struct addgossip *adg)
+// 
+// {
+// 	debug_call();
+// 	struct payment *p = adg->flow->payment;
+// 
+// 	paynote(p, "addgossip failed, removing channel %s (%.*s)",
+// 		type_to_string(tmpctx, struct short_channel_id, &adg->scid),
+// 		err->end - err->start, buf + err->start);
+// 	tal_arr_expand(&p->active_payment->disabled, adg->scid);
+// 
+// 	return addgossip_done(cmd, buf, err, adg);
+// }
 
-	return command_still_pending(cmd);
-}
-
-static struct command_result *addgossip_failure(struct command *cmd,
-						const char *buf,
-						const jsmntok_t *err,
-						struct addgossip *adg)
-
-{
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
-	struct payment *p = adg->flow->payment;
-
-	paynote(p, "addgossip failed, removing channel %s (%.*s)",
-		type_to_string(tmpctx, struct short_channel_id, &adg->scid),
-		err->end - err->start, buf + err->start);
-	tal_arr_expand(&p->active_payment->disabled, adg->scid);
-
-	return addgossip_done(cmd, buf, err, adg);
-}
-
-// TODO(eduardo): what is this?
-static struct command_result *submit_update(struct command *cmd,
-					    const struct pay_flow *flow,
-					    const u8 *update,
-					    struct short_channel_id errscid)
-{
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling submit_update");
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
-	struct payment *p = flow->payment;
-	struct out_req *req;
-	struct addgossip *adg = tal(cmd, struct addgossip);
-
-	/* We need to stash scid in case this fails, and we need to hold flow so
-	 * we don't get a rexmit before this is complete. */
-	adg->scid = errscid;
-	adg->flow = tal_steal(adg, flow);
-	/* Disable re-xmit until this returns */
-	p->active_payment->rexmit_timer 
-		= tal_free(p->active_payment->rexmit_timer);
-
-	paynote(p, "... extracted channel_update, telling gossipd");
-	plugin_log(pay_plugin->plugin, LOG_DBG, "(update = %s)", tal_hex(tmpctx, update));
-
-	req = jsonrpc_request_start(pay_plugin->plugin, NULL, "addgossip",
-				    addgossip_done,
-				    addgossip_failure,
-				    adg);
-	json_add_hex_talarr(req->js, "message", update);
-	return send_outreq(pay_plugin->plugin, req);
-}
+// static struct command_result *submit_update(struct command *cmd,
+// 					    const struct pay_flow *flow,
+// 					    const u8 *update,
+// 					    struct short_channel_id errscid)
+// {
+// 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling submit_update");
+// 	debug_call();
+// 	struct payment *p = flow->payment;
+// 	struct out_req *req;
+// 	struct addgossip *adg = tal(cmd, struct addgossip);
+// 
+// 	/* We need to stash scid in case this fails, and we need to hold flow so
+// 	 * we don't get a rexmit before this is complete. */
+// 	adg->scid = errscid;
+// 	adg->flow = tal_steal(adg, flow);
+// 	/* Disable re-xmit until this returns */
+// 	p->active_payment->rexmit_timer 
+// 		= tal_free(p->active_payment->rexmit_timer);
+// 
+// 	paynote(p, "... extracted channel_update, telling gossipd");
+// 	plugin_log(pay_plugin->plugin, LOG_DBG, "(update = %s)", tal_hex(tmpctx, update));
+// 
+// 	req = jsonrpc_request_start(pay_plugin->plugin, NULL, "addgossip",
+// 				    addgossip_done,
+// 				    addgossip_failure,
+// 				    adg);
+// 	json_add_hex_talarr(req->js, "message", update);
+// 	return send_outreq(pay_plugin->plugin, req);
+// }
 
 /* Fix up the channel_update to include the type if it doesn't currently have
  * one. See ElementsProject/lightning#1730 and lightningnetwork/lnd#1599 for the
  * in-depth discussion on why we break message parsing here... */
-static u8 *patch_channel_update(const tal_t *ctx, u8 *channel_update TAKES)
-{
-	u8 *fixed;
-	if (channel_update != NULL &&
-	    fromwire_peektype(channel_update) != WIRE_CHANNEL_UPDATE) {
-		/* This should be a channel_update, prefix with the
-		 * WIRE_CHANNEL_UPDATE type, but isn't. Let's prefix it. */
-		fixed = tal_arr(ctx, u8, 0);
-		towire_u16(&fixed, WIRE_CHANNEL_UPDATE);
-		towire(&fixed, channel_update, tal_bytelen(channel_update));
-		if (taken(channel_update))
-			tal_free(channel_update);
-		return fixed;
-	} else {
-		return tal_dup_talarr(ctx, u8, channel_update);
-	}
-}
+// static u8 *patch_channel_update(const tal_t *ctx, u8 *channel_update TAKES)
+// {
+// 	u8 *fixed;
+// 	if (channel_update != NULL &&
+// 	    fromwire_peektype(channel_update) != WIRE_CHANNEL_UPDATE) {
+// 		/* This should be a channel_update, prefix with the
+// 		 * WIRE_CHANNEL_UPDATE type, but isn't. Let's prefix it. */
+// 		fixed = tal_arr(ctx, u8, 0);
+// 		towire_u16(&fixed, WIRE_CHANNEL_UPDATE);
+// 		towire(&fixed, channel_update, tal_bytelen(channel_update));
+// 		if (taken(channel_update))
+// 			tal_free(channel_update);
+// 		return fixed;
+// 	} else {
+// 		return tal_dup_talarr(ctx, u8, channel_update);
+// 	}
+// }
+
 
 /* Return NULL if the wrapped onion error message has no channel_update field,
  * or return the embedded channel_update message otherwise. */
-static u8 *channel_update_from_onion_error(const tal_t *ctx,
-					   const char *buf,
-					   const jsmntok_t *onionmsgtok)
-{
-	u8 *channel_update = NULL;
-	struct amount_msat unused_msat;
-	u32 unused32;
-	u8 *onion_message = json_tok_bin_from_hex(tmpctx, buf, onionmsgtok);
-
-	/* Identify failcodes that have some channel_update.
-	 *
-	 * TODO > BOLT 1.0: Add new failcodes when updating to a
-	 * new BOLT version. */
-	if (!fromwire_temporary_channel_failure(ctx,
-						onion_message,
-						&channel_update) &&
-	    !fromwire_amount_below_minimum(ctx,
-					   onion_message, &unused_msat,
-					   &channel_update) &&
-	    !fromwire_fee_insufficient(ctx,
-		    		       onion_message, &unused_msat,
-				       &channel_update) &&
-	    !fromwire_incorrect_cltv_expiry(ctx,
-		    			    onion_message, &unused32,
-					    &channel_update) &&
-	    !fromwire_expiry_too_soon(ctx,
-		    		      onion_message,
-				      &channel_update))
-		/* No channel update. */
-		return NULL;
-
-	return patch_channel_update(ctx, take(channel_update));
-}
+// static u8 *channel_update_from_onion_error(const tal_t *ctx,
+// 					   const char *buf,
+// 					   const jsmntok_t *onionmsgtok)
+// {
+// 	u8 *channel_update = NULL;
+// 	struct amount_msat unused_msat;
+// 	u32 unused32;
+// 	u8 *onion_message = json_tok_bin_from_hex(tmpctx, buf, onionmsgtok);
+// 
+// 	/* Identify failcodes that have some channel_update.
+// 	 *
+// 	 * TODO > BOLT 1.0: Add new failcodes when updating to a
+// 	 * new BOLT version. */
+// 	if (!fromwire_temporary_channel_failure(ctx,
+// 						onion_message,
+// 						&channel_update) &&
+// 	    !fromwire_amount_below_minimum(ctx,
+// 					   onion_message, &unused_msat,
+// 					   &channel_update) &&
+// 	    !fromwire_fee_insufficient(ctx,
+// 		    		       onion_message, &unused_msat,
+// 				       &channel_update) &&
+// 	    !fromwire_incorrect_cltv_expiry(ctx,
+// 		    			    onion_message, &unused32,
+// 					    &channel_update) &&
+// 	    !fromwire_expiry_too_soon(ctx,
+// 		    		      onion_message,
+// 				      &channel_update))
+// 		/* No channel update. */
+// 		return NULL;
+// 
+// 	return patch_channel_update(ctx, take(channel_update));
+// }
 
 static struct command_result *waitsendpay_failed(struct command *cmd,
 						 const char *buf,
@@ -666,16 +843,31 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 						 struct pay_flow *flow)
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling waitsendpay_failed");
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
-	debug_reply(buf,err,MYLOG);
+	debug_call();
+	debug_reply(buf,err);
 	
 	struct payment *p = flow->payment;
+	
+	/* This is a fail. */
+	p->status = PAYMENT_FAIL;
+	
+	/* An old flow attempt. Just free the HTLCs. */
+	if(flow->attempt != payment_current_attempt(p))
+	{
+		// TODO(eduardo): I guess this should not happen unless some
+		// sendpay that would eventually fail gets stuck for some
+		// reason or some MPP part times out.
+		debug_info("waitsendpay_failed: received an old failure");
+	}
+
 	u64 errcode;
 	struct command_result *ret;
-	const jsmntok_t *datatok, *msgtok, *errchantok, *erridxtok, *failcodetok, *rawoniontok;
+	const jsmntok_t *datatok, *msgtok, *errchantok, *erridxtok, *failcodetok;
 	u32 onionerr, erridx;
 	struct short_channel_id errscid;
-	const u8 *update;
+	
+	// const u8 *update;
+	// const jsmntok_t *rawoniontok;
 
 	if (!json_to_u64(buf, json_get_member(buf, err, "code"), &errcode))
 		plugin_err(cmd->plugin, "Bad errcode from waitsendpay: %.*s",
@@ -683,17 +875,22 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 
 	switch (errcode) {
 	case PAY_UNPARSEABLE_ONION:
+		// TODO(eduardo): let's check this case carefully.
+		debug_info("waitsendpay_failed: PAY_UNPARSEABLE_ONION");
 		ret = handle_unhandleable_error(p, flow, "unparsable onion reply");
 		if (ret)
 			return ret;
 		goto done;
 	case PAY_DESTINATION_PERM_FAIL:
+		debug_info("waitsendpay_failed: PAY_DESTINATION_PERM_FAIL");
 		return command_fail(cmd, PAY_DESTINATION_PERM_FAIL,
 				    "Got an final failure from destination");
 	case PAY_TRY_OTHER_ROUTE:
+		debug_info("waitsendpay_failed: PAY_TRY_OTHER_ROUTE");
 		break;
 
 	default:
+		debug_info("waitsendpay_failed: unexpected errcode");
 		plugin_err(cmd->plugin,
 			   "Unexpected errcode from waitsendpay: %.*s",
 			   json_tok_full_len(err), json_tok_full(buf, err));
@@ -712,7 +909,12 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	json_to_u32(buf, erridxtok, &erridx);
 	errchantok = json_get_member(buf, datatok, "erring_channel");
 	json_to_short_channel_id(buf, errchantok, &errscid);
-	if (!short_channel_id_eq(&errscid, &flow->path_scids[erridx]))
+	
+	/* TODO(eduardo): can we assume that if
+	 * erridx=tal_count(flow->path_scids), ie. one index past the last one, the failure 
+	 * is due to expired HTLCs? How can we handle this case? */
+	if (erridx<tal_count(flow->path_scids) 
+	    && !short_channel_id_eq(&errscid, &flow->path_scids[erridx]))
 		plugin_err(pay_plugin->plugin, "Erring channel %u/%zu was %s not %s (path %s)",
 			   erridx, tal_count(flow->path_scids),
 			   type_to_string(tmpctx, struct short_channel_id, &errscid),
@@ -723,13 +925,15 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	json_to_u32(buf, failcodetok, &onionerr);
 
 	msgtok = json_get_member(buf, err, "message");
-	rawoniontok = json_get_member(buf, datatok, "raw_message");
-	
-	// const char *scid_str = type_to_string(tmpctx,struct short_channel_id,&errscid);
-	// debug(MYLOG,"failcode: %d, onion error: %s, err_idx: %d, scid: %s\n",
-	// 	onionerr,onion_wire_name(onionerr),erridx,scid_str);
+	// rawoniontok = json_get_member(buf, datatok, "raw_message");
 	
 	paynote(p, "onion error %s from node #%u %s: %.*s",
+		onion_wire_name(onionerr),
+		erridx,
+		type_to_string(tmpctx, struct short_channel_id, &errscid),
+		msgtok->end - msgtok->start, buf + msgtok->start);
+		
+	debug_info("onion error %s from node #%u %s: %.*s",
 		onion_wire_name(onionerr),
 		erridx,
 		type_to_string(tmpctx, struct short_channel_id, &errscid),
@@ -763,6 +967,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	case WIRE_INVALID_ONION_PAYLOAD:
 	case WIRE_INVALID_ONION_BLINDING:
 	case WIRE_EXPIRY_TOO_FAR:
+		debug_info("waitsendpay_failed: removing scid");
 		paynote(p, "... so we're removing scid");
 		tal_arr_expand(&p->active_payment->disabled, errscid);
 		goto done;
@@ -772,10 +977,12 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	case WIRE_FEE_INSUFFICIENT:
 	case WIRE_INCORRECT_CLTV_EXPIRY:
 	case WIRE_EXPIRY_TOO_SOON:
+		debug_info("waitsendpay_failed: apply channel_update");
 		/* FIXME: Check scid! */
-		update = channel_update_from_onion_error(tmpctx, buf, rawoniontok);
-		if (update)
-			return submit_update(cmd, flow, update, errscid);
+		// TODO(eduardo): let's check this case carefully.
+		// update = channel_update_from_onion_error(tmpctx, buf, rawoniontok);
+		// if (update)
+		// 	return submit_update(cmd, flow, update, errscid);
 
 		paynote(p, "... missing an update, so we're removing scid");
 		tal_arr_expand(&p->active_payment->disabled, errscid);
@@ -783,6 +990,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 
 	/* Insufficient funds! */
 	case WIRE_TEMPORARY_CHANNEL_FAILURE: {
+		debug_info("waitsendpay_failed: Insufficient funds!");
 		/* OK new max is amount - 1 */
 		struct amount_msat max_possible;
 		if (!amount_msat_sub(&max_possible,
@@ -799,17 +1007,19 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 		goto done;
 	}
 
-	/* We ignore this, assuming we want to keep going. */
 	/* FIXME: We should probably pause until all parts returned, or at least
 	 * extend rexmit timer! */
 	case WIRE_MPP_TIMEOUT:
+		debug_info("waitsendpay_failed: WIRE_MPP_TIMEOUT");
 		paynote(p, "... will continue");
+		p->status = PAYMENT_MPP_TIMEOUT;
 		goto done;
 
 	/* These are from the final distination: fail */
 	case WIRE_INCORRECT_OR_UNKNOWN_PAYMENT_DETAILS:
 	case WIRE_FINAL_INCORRECT_CLTV_EXPIRY:
 	case WIRE_FINAL_INCORRECT_HTLC_AMOUNT:
+		debug_info("waitsendpay_failed: final destination fail");
 		paynote(p, "... fatal");
 		return command_fail(cmd, PAY_DESTINATION_PERM_FAIL,
 				    "Destination said %s: %.*s",
@@ -819,6 +1029,10 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	}
 	/* Unknown response? */
 	if (erridx == tal_count(flow->path_nodes)) {
+		debug_info("waitsendpay_failed: unknown error code %u: %.*s",
+				    onionerr,
+				    msgtok->end - msgtok->start,
+				    buf + msgtok->start);
 		paynote(p, "... fatal");
 		return command_fail(cmd, PAY_DESTINATION_PERM_FAIL,
 				    "Destination gave unknown error code %u: %.*s",
@@ -828,6 +1042,12 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	}
 	paynote(p, "... eliminating and continuing");
 	plugin_log(pay_plugin->plugin, LOG_BROKEN,
+		   "Node %s (%u/%zu) gave unknown error code %u",
+		   type_to_string(tmpctx, struct node_id,
+				  &flow->path_nodes[erridx]),
+		   erridx, tal_count(flow->path_nodes),
+		   onionerr);
+	debug_info(
 		   "Node %s (%u/%zu) gave unknown error code %u",
 		   type_to_string(tmpctx, struct node_id,
 				  &flow->path_nodes[erridx]),
@@ -846,7 +1066,8 @@ static struct command_result *flow_sent(struct command *cmd,
 					struct pay_flow *flow)
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling flow_sent");
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	debug_call();
+	
 	struct payment *p = flow->payment;
 	struct out_req *req;
 
@@ -855,12 +1076,10 @@ static struct command_result *flow_sent(struct command *cmd,
 				    waitsendpay_failed,
 				    cast_const(struct pay_flow *, flow));
 	json_add_sha256(req->js, "payment_hash", &p->payment_hash);
-	json_add_u64(req->js, "groupid", p->groupid);
+	json_add_u64(req->js, "groupid", payment_groupid(p));
 	json_add_u64(req->js, "partid", flow->partid);
 	/* FIXME: We don't set timeout... */
 
-	/* Now flow is owned by this request */
-	tal_steal(req, flow);
 	return send_outreq(cmd->plugin, req);
 }
 
@@ -874,8 +1093,12 @@ static struct command_result *flow_sendpay_failed(struct command *cmd,
 						  struct pay_flow *flow)
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling flow_sendpay_failed");
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	debug_call();
+	
 	struct payment *p = flow->payment;
+	/* This is a fail. */
+	p->status = PAYMENT_FAIL;
+	
 	u64 errcode;
 	const jsmntok_t *msg = json_get_member(buf, err, "message");
 
@@ -890,9 +1113,14 @@ static struct command_result *flow_sendpay_failed(struct command *cmd,
 	paynote(p,
 		"sendpay didn't like first hop, eliminated: %.*s",
 		msg->end - msg->start, buf + msg->start);
+		
+	/* There is no new knowledge from this kind of failure. 
+	 * We just disable this scid. */
 	tal_arr_expand(&p->active_payment->disabled, flow->path_scids[0]);
+	
 	return flow_failed(cmd, flow);
 }
+
 
 static struct command_result *
 sendpay_flows(struct command *cmd,
@@ -900,8 +1128,18 @@ sendpay_flows(struct command *cmd,
 	      struct pay_flow **flows STEALS)
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling sendpay_flows");
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	debug_call();
 	paynote(p, "Sending out batch of %zu payments", tal_count(flows));
+	
+	// TODO(eduardo): mark here the status of the payment parts as either:
+	// 'pending', 'success' or 'fail'. If all of them fail then `try_paying`
+	// again, if instead all of them succeed then return `command_finished`,
+	// while there is one payment pending you return
+	// `command_still_pending`. Maybe the timer could be useful here.
+	// If all of the parts are processed but some are fail and some are
+	// success, then it means there is something wrong with my understanding
+	// and we need to rethink here.
+	
 	for (size_t i = 0; i < tal_count(flows); i++) {
 		struct out_req *req;
 		req = jsonrpc_request_start(cmd->plugin, cmd, "sendpay",
@@ -929,11 +1167,13 @@ sendpay_flows(struct command *cmd,
 		json_add_sha256(req->js, "payment_hash", &p->payment_hash);
 		json_add_secret(req->js, "payment_secret", p->payment_secret);
 		
+		/* TODO(eduardo): should this be p->amount or
+		 * p->total_delivering? */
 		json_add_amount_msat_only(req->js, "amount_msat", p->amount);
 			
 		json_add_u64(req->js, "partid", flows[i]->partid);
 		
-		json_add_u64(req->js, "groupid", p->groupid);
+		json_add_u64(req->js, "groupid", payment_groupid(p));
 		if (p->payment_metadata)
 			json_add_hex_talarr(req->js, "payment_metadata",
 					    p->payment_metadata);
@@ -946,25 +1186,36 @@ sendpay_flows(struct command *cmd,
 			json_add_string(req->js, "description", p->description);
 		
 		// TODO(eduardo): remove this line
-		debug_outreq(req,MYLOG);
+		debug_outreq(req);
 		
 		amount_msat_accumulate(&p->total_sent, flows[i]->amounts[0]);
 		amount_msat_accumulate(&p->total_delivering,
 				       flow_delivered(flows[i]));
 		
-		/* Flow now owned by request */
-		tal_steal(req, flows[i]);
+		/* Flow now owned by all_flows instead of req., in this way we
+		 * can control the destruction occurs before we remove temporary
+		 * channels from chan_extra_map. */
+		tal_steal(p->active_payment->all_flows,flows[i]);
 		
 		/* record these HTLC along the flow path */
 		commit_htlc_payflow(pay_plugin->chan_extra_map,flows[i]);
+		
+		/* Remove the HTLC from the chan_extra_map after finish. */
+		tal_add_destructor2(flows[i],
+				    remove_htlc_payflow_and_update_knowlege,
+				    pay_plugin->chan_extra_map);
+		
 		send_outreq(cmd->plugin, req);
 	}
 	
-	/* Get ready to process replies */
-	// TODO(eduardo): how is the timer mechanics?
-	timer_kick(p);
+	/* Safety check. */
+	payment_check_delivering_all(p);
 	
-	// TODO(eduardo): what is this actually doing?
+	tal_free(flows);
+	
+	/* Get ready to process replies */
+	payment_settimer(p);
+	
 	return command_still_pending(cmd);
 }
 
@@ -973,16 +1224,24 @@ static struct command_result *try_paying(struct command *cmd,
 					 bool first_time)
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling try_paying");
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	debug_call();
 	
-	// TODO(eduardo): we should move on only if all rpc requests are done
-	// (all threads join)
+	// TODO(eduardo): does it make sense to have this limit on attempts?
+	/* I am classifying the flows in attempt cycles. */
+	payment_new_attempt(p);
+	/* We try only MAX_NUM_ATTEMPTS, then we give up. */
+	if ( payment_attempt_count(p) > MAX_NUM_ATTEMPTS)
+	{
+		return command_fail(cmd, PAY_STOPPED_RETRYING,
+				    "Reached maximum number of attempts (%d)",
+				    MAX_NUM_ATTEMPTS);
+	}
 	
 	struct amount_msat feebudget, fees_spent, remaining;
-	struct pay_flow **pay_flows;
 
 	if (time_after(time_now(), p->stop_time))
 		return command_fail(cmd, PAY_STOPPED_RETRYING, "Timed out");
+	
 	/* Total feebudget  */
 	if (!amount_msat_sub(&feebudget, p->maxspend, p->amount))
 		abort();
@@ -999,15 +1258,20 @@ static struct command_result *try_paying(struct command *cmd,
 	if (!amount_msat_sub(&remaining, p->amount, p->total_delivering))
 		abort();
 
+	debug_info(fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
+	
 	/* We let this return an unlikely path, as it's better to try once
 	 * than simply refuse.  Plus, models are not truth! */
-	pay_flows = get_payflows(p, remaining, feebudget, first_time,
+	// TODO(eduardo): some flows might be pending, even the flows that
+	// failed have commited some HTLCs that (?) reduce the throughput of the
+	// channels. Please do take that into account in the MCF.
+	struct pay_flow **pay_flows = get_payflows(p, remaining, feebudget, first_time,
 				 amount_msat_eq(p->total_delivering, AMOUNT_MSAT(0)));
-		
 	
-	// TODO(eduardo): remove this line
-	debug_payflows(pay_flows,MYLOG);
+	debug_info(fmt_payflows(tmpctx,pay_flows));
 	
+	/* MCF cannot find a feasible route, we stop. */
+	// TODO(eduardo): alternatively we can fallback to `pay`.
 	if (!pay_flows)
 	{
 		return command_fail(cmd, PAY_ROUTE_NOT_FOUND,
@@ -1018,6 +1282,7 @@ static struct command_result *try_paying(struct command *cmd,
 						   &feebudget));
 	}
 	/* Now begin making payments */
+	
 	return sendpay_flows(cmd, p, pay_flows);
 }
 
@@ -1025,7 +1290,7 @@ static struct command_result *
 listpeerchannels_done(struct command *cmd, const char *buf,
 	       const jsmntok_t *result, struct payment *p)
 {
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	debug_call();
 	if (!update_uncertainty_network_from_listpeerchannels(cmd->plugin, p, buf, result))
 		return command_fail(cmd, LIGHTNINGD,
 				    "listpeerchannels malformed: %.*s",
@@ -1045,16 +1310,23 @@ listpeerchannels_done(struct command *cmd, const char *buf,
  * into a valid state before the next payment. */
 static void renepay_cleanup(struct active_payment *ap)
 {
-	debug_call(__PRETTY_FUNCTION__,MYLOG);
+	debug_call();
+
+	/* Free all pending flows, release their HTLCs and update knowledge. */
+	ap->all_flows = tal_free(ap->all_flows);
+	
 	/* Always remove our local mods (routehints) so others can use
 	 * gossmap. We do this only after the payment completes. */
 	if(ap->localmods_applied)
 		gossmap_remove_localmods(pay_plugin->gossmap,
 					 ap->local_gossmods);
-				 
+	ap->localmods_applied=false;
 	tal_free(ap->local_gossmods);
-	// TODO(eduardo): Am I missing other things?
-	// TODO(eduardo): When do we call this?
+	
+	debug_info(fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
+	
+	// TODO(eduardo): what about private channels in `chan_extra_map`?
+	// Should they be removed?
 }
 
 static void destroy_payment(struct payment *p)
@@ -1096,6 +1368,12 @@ static struct command_result *json_paystatus(struct command *cmd,
 			json_add_string(ret, NULL, p->paynotes[i]);
 		json_array_end(ret);
 		json_object_end(ret);
+		
+		// TODO(eduardo): maybe we should add also:
+		// - preimage (as proof of payment)
+		// - payment_secret?
+		// - payment_metadata
+		// - status
 	}
 	json_array_end(ret);
 
@@ -1123,15 +1401,7 @@ static struct command_result *json_pay(struct command *cmd,
 
  	p = tal(cmd, struct payment);
 	
-	
 	p->paynotes = tal_arr(p, const char *, 0);
-	p->groupid = pseudorand_u64();
-	
-	// TODO(eduardo): If the partid starts counting from 1 we can do
-	// parallel payments MPP. A single payment route is done with partid=0.
-	// Can we assume that all payments are MPP, even in the case of an MPP
-	// with a single route?
-	p->next_partid = 1;
 	p->total_sent = AMOUNT_MSAT(0);
 	p->total_delivering = AMOUNT_MSAT(0);
 	
@@ -1170,18 +1440,7 @@ static struct command_result *json_pay(struct command *cmd,
 	tal_steal(pay_plugin,p);
 	tal_add_destructor(p, destroy_payment);
 	
-	/* Owned by cmd, because this data is destroyed after the payment
-	 * completes, while p remains to get payment status history. */
-	p->active_payment = tal(cmd,struct active_payment);
-	tal_add_destructor(p->active_payment, renepay_cleanup);
-	
-	p->active_payment->cmd = cmd;
- 	p->active_payment->local_gossmods = gossmap_localmods_new(p->active_payment);
-	p->active_payment->localmods_applied=false;
-	p->active_payment->disabled = tal_arr(p->active_payment, 
-					      struct short_channel_id, 
-					      0);
-	p->active_payment->rexmit_timer = NULL;
+	payment_initialize(p,cmd);
 	
 
 #if DEVELOPER
@@ -1191,6 +1450,12 @@ static struct command_result *json_pay(struct command *cmd,
 	p->use_shadow = true;
 #endif
  	
+	// TODO(eduardo): 
+	// - get time since last payment, 
+	// - forget a portion of the bounds
+	// - note that if sufficient time has passed, then we would forget
+	// everything.
+	
 	
 	plugin_log(pay_plugin->plugin,LOG_DBG,"Starting renepay");
 	bool gossmap_changed = gossmap_refresh(pay_plugin->gossmap, NULL);
@@ -1199,9 +1464,6 @@ static struct command_result *json_pay(struct command *cmd,
 		plugin_err(pay_plugin->plugin, "Failed to refresh gossmap: %s",
 			   strerror(errno));
 	
-	
-	// TODO(eduardo): remove this
-	debug_knowledge(pay_plugin->chan_extra_map,MYLOG);
 	
 	p->base_fee_penalty=*base_fee_penalty;
 	p->prob_cost_factor= *prob_cost_factor;
@@ -1217,6 +1479,7 @@ static struct command_result *json_pay(struct command *cmd,
 
 	p->start_time = time_now();
 	p->stop_time = timeabs_add(p->start_time, time_from_sec(*retryfor));
+	p->preimage=NULL;
 	tal_free(retryfor);
 	
 	bool invstr_is_b11=false;
@@ -1406,10 +1669,12 @@ static struct command_result *json_pay(struct command *cmd,
 		plugin_log(pay_plugin->plugin, 
 			   LOG_BROKEN,
 			   "uncertainty network invariants are violated");
-		
+	
+	/* We will try a single MPP payment. */
+	p->active_payment->groupid = pseudorand_u64();
+	p->active_payment->next_partid = 1;
 	
 	struct out_req *req;
-
 	/* Get local capacities... */
 	req = jsonrpc_request_start(cmd->plugin, cmd, "listpeerchannels",
 				    listpeerchannels_done,
