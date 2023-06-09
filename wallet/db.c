@@ -949,6 +949,8 @@ static struct migration dbmigrations[] = {
     {NULL, migrate_invalid_last_tx_psbts},
     {SQL("ALTER TABLE channels ADD channel_type BLOB DEFAULT NULL;"), NULL},
     {NULL, migrate_fill_in_channel_type},
+    {SQL("CREATE TABLE runes (id BIGSERIAL, rune TEXT, PRIMARY KEY (id));"), NULL},
+    {SQL("CREATE TABLE runes_blacklist (start BIGINT, end BIGINT);"), NULL},
 };
 
 /**
