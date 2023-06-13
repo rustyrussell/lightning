@@ -15,3 +15,6 @@ PLUGIN_RENEPAY_TEST_COMMON_OBJS :=		\
 $(PLUGIN_RENEPAY_TEST_PROGRAMS): $(PLUGIN_RENEPAY_TEST_COMMON_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS) $(CCAN_OBJS) bitcoin/chainparams.o common/gossmap.o common/fp16.o common/dijkstra.o common/bolt12.o common/bolt12_merkle.o wire/bolt12$(EXP)_wiregen.o
 
 check-renepay: $(PLUGIN_RENEPAY_TEST_PROGRAMS:%=unittest/%)
+	bash plugins/renepay/test/regtest1.sh 
+	bash plugins/renepay/test/regtest2.sh 
+	bash plugins/renepay/test/regtest3.sh 

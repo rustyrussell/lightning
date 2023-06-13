@@ -21,6 +21,12 @@
 // - a MPP in which several parts have a common intermediary channel
 // 	source -MANY- o--o -MANY- dest
 // - a payment with a direct channel to the destination
+// - payment failures:
+// 	- destination is not in the gossmap
+// 	- destination is offline
+// 	- with current knowledge there is no flow solution to destination
+// 	- path to destination is too expensive
+// 	- path to destination is too unlikely
 
 enum payment_status {
         PAYMENT_PENDING, PAYMENT_SUCCESS, PAYMENT_FAIL,

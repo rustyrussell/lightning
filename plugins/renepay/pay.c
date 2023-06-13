@@ -494,7 +494,7 @@ static void timer_kick(struct payment *p)
 		/* Some flows succeeded, we finish the payment. */
 		case PAYMENT_SUCCESS:
 			payment_check_delivering_all(p);
-			payment_success(p);
+			// payment_success(p);
 		break;
 		
 		/* Some flows failed, we retry. */
@@ -1197,6 +1197,8 @@ static void renepay_cleanup(struct active_payment *ap)
 	tal_free(ap->local_gossmods);
 	
 	debug_info(fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
+	
+	ap->rexmit_timer = tal_free(ap->rexmit_timer);
 	
 	// TODO(eduardo): what about private channels in `chan_extra_map`?
 	// Should they be removed?
