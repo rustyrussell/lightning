@@ -83,6 +83,7 @@ LIGHTNINGD_COMMON_OBJS :=			\
 	common/bolt11_json.o			\
 	common/bolt12.o				\
 	common/bolt12_merkle.o			\
+	common/codex32.o			\
 	common/channel_config.o			\
 	common/channel_id.o			\
 	common/channel_type.o			\
