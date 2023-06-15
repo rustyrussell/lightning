@@ -55,10 +55,15 @@ struct pay_plugin {
 
 	/* Per-channel metadata: some persists between payments */
 	struct chan_extra_map *chan_extra_map;
+
+	bool debug_mcf; 
+	bool debug_payflow; 
+	
+	tal_t *ctx;
 };
 
 /* Set in init */
-extern struct pay_plugin *pay_plugin;
+extern struct pay_plugin * const pay_plugin;
 
 /* Data only kept while the payment is being processed. */
 struct active_payment

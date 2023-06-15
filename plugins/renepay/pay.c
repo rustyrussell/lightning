@@ -14,12 +14,12 @@
 #include <errno.h>
 #include <plugins/libplugin.h>
 #include <plugins/renepay/pay.h>
-#include <plugins/renepay/debug.h>
 #include <plugins/renepay/pay_flow.h>
+#include <plugins/renepay/debug.h>
 
 /* Set in init */
-struct pay_plugin *pay_plugin;
-
+static struct pay_plugin the_pay_plugin;
+struct pay_plugin * const pay_plugin = &the_pay_plugin;
 
 static void renepay_cleanup(struct active_payment *ap);
 static void timer_kick(struct payment *p);
@@ -109,8 +109,7 @@ static void payment_initialize(
 
 static struct command_result *payment_success(struct payment *p)
 {
-	debug_call();
-	
+	debug_call();	
 	payment_check_delivering_all(p);
 	
 	struct json_stream *response 
@@ -174,7 +173,7 @@ void amount_msat_reduce_(struct amount_msat *dst,
 #if DEVELOPER
 static void memleak_mark(struct plugin *p, struct htable *memtable)
 {
-	memleak_scan_obj(memtable, pay_plugin);
+	memleak_scan_obj(memtable, pay_plugin->ctx);
 	memleak_scan_htable(memtable, &pay_plugin->chan_extra_map->raw);
 }
 #endif
@@ -214,7 +213,8 @@ static const char *init(struct plugin *p,
 {
 	size_t num_channel_updates_rejected;
 
-	pay_plugin = tal(p, struct pay_plugin);
+	// pay_plugin = tal(p, struct pay_plugin);
+	pay_plugin->ctx = tal(p,tal_t);
 	pay_plugin->plugin = p;
 
 	rpc_scan(p, "getinfo", take(json_out_obj(NULL, NULL, NULL)),
@@ -224,17 +224,18 @@ static const char *init(struct plugin *p,
 		 take(json_out_obj(NULL, NULL, NULL)),
 		 "{max-locktime-blocks:%,experimental-offers:%}",
 		 JSON_SCAN(json_to_number, &pay_plugin->maxdelay_default),
-		 JSON_SCAN(json_to_bool, &pay_plugin->exp_offers));
+		 JSON_SCAN(json_to_bool, &pay_plugin->exp_offers)
+		 );
 
 	list_head_init(&pay_plugin->payments);
 	
-	pay_plugin->chan_extra_map = tal(pay_plugin,struct chan_extra_map);
+	pay_plugin->chan_extra_map = tal(pay_plugin->ctx,struct chan_extra_map);
 	chan_extra_map_init(pay_plugin->chan_extra_map);
 
-	pay_plugin->gossmap = gossmap_load(pay_plugin,
+	pay_plugin->gossmap = gossmap_load(pay_plugin->ctx,
 					   GOSSIP_STORE_FILENAME,
 					   &num_channel_updates_rejected);
-	
+
 	if (!pay_plugin->gossmap)
 		plugin_err(p, "Could not load gossmap %s: %s",
 			   GOSSIP_STORE_FILENAME, strerror(errno));
@@ -459,7 +460,6 @@ static struct command_result *flow_failed(
 		const struct pay_flow *flow)
 {
 	plugin_log(pay_plugin->plugin,LOG_DBG,"calling flow_failed");
-	debug_call();
 	struct payment *p = flow->payment;
 	
 	amount_msat_reduce(&p->total_delivering, flow_delivered(flow));
@@ -527,7 +527,6 @@ static struct command_result *waitsendpay_succeeded(struct command *cmd,
 						    const jsmntok_t *result,
 						    struct pay_flow *flow)
 {
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling waitsendpay_succeeded");
 	debug_call();
 	
 	struct payment *p = flow->payment;
@@ -642,7 +641,6 @@ static struct command_result *submit_update(struct command *cmd,
 					    const u8 *update,
 					    struct short_channel_id errscid)
 {
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling submit_update");
 	debug_call();
 	struct payment *p = flow->payment;
 	struct out_req *req;
@@ -730,7 +728,6 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 						 const jsmntok_t *err,
 						 struct pay_flow *flow)
 {
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling waitsendpay_failed");
 	debug_call();
 	debug_reply(buf,err);
 	
@@ -949,7 +946,6 @@ static struct command_result *flow_sent(struct command *cmd,
 					const jsmntok_t *result,
 					struct pay_flow *flow)
 {
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling flow_sent");
 	debug_call();
 	
 	struct payment *p = flow->payment;
@@ -976,7 +972,6 @@ static struct command_result *flow_sendpay_failed(struct command *cmd,
 						  const jsmntok_t *err,
 						  struct pay_flow *flow)
 {
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling flow_sendpay_failed");
 	debug_call();
 	
 	struct payment *p = flow->payment;
@@ -1011,7 +1006,6 @@ sendpay_flows(struct command *cmd,
 	      struct payment *p,
 	      struct pay_flow **flows STEALS)
 {
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling sendpay_flows");
 	debug_call();
 	paynote(p, "Sending out batch of %zu payments", tal_count(flows));
 	
@@ -1059,7 +1053,7 @@ sendpay_flows(struct command *cmd,
 		if (p->description)
 			json_add_string(req->js, "description", p->description);
 		
-		debug_outreq(req);
+		// debug_outreq(req);
 		
 		amount_msat_accumulate(&p->total_sent, flows[i]->amounts[0]);
 		amount_msat_accumulate(&p->total_delivering,
@@ -1096,7 +1090,6 @@ static struct command_result *try_paying(struct command *cmd,
 					 struct payment *p,
 					 bool first_time)
 {
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling try_paying");
 	debug_call();
 	
 	// TODO(eduardo): does it make sense to have this limit on attempts?
@@ -1311,8 +1304,14 @@ static struct command_result *json_pay(struct command *cmd,
 		   NULL))
 		return command_param_failed();
 	
+	debug_info("json_pay, renepay-debug-mcf option is set to %s\n",
+		   pay_plugin->debug_mcf ? "true" : "false");
+	debug_info("json_pay, renepay-debug-payflow option is set to %s\n",
+		   pay_plugin->debug_payflow ? "true" : "false");
+
 	
-	tal_steal(pay_plugin,p);
+	
+	tal_steal(pay_plugin->ctx,p);
 	tal_add_destructor(p, destroy_payment);
 	
 	payment_initialize(p,cmd);
@@ -1577,7 +1576,21 @@ static const struct plugin_command commands[] = {
 int main(int argc, char *argv[])
 {
 	setup_locale();
-	plugin_main(argv, init, PLUGIN_RESTARTABLE, true, NULL, commands,
-		    ARRAY_SIZE(commands), NULL, 0, NULL, 0, NULL, 0,
-		    NULL);
+	plugin_main(
+		argv, 
+		init, 
+		PLUGIN_RESTARTABLE, 
+		/* init_rpc */ true, 
+		/* features */ NULL, 
+		commands, ARRAY_SIZE(commands), 
+		/* notifications */ NULL, 0, 
+		/* hooks */ NULL, 0, 
+		/* notification topics */ NULL, 0,
+		plugin_option("renepay-debug-mcf", "flag",
+			"Enable renepay MCF debug info.",
+			flag_option, &pay_plugin->debug_mcf),
+		plugin_option("renepay-debug-payflow", "flag",
+			"Enable renepay payment flows debug info.",
+			flag_option, &pay_plugin->debug_payflow),
+		NULL);
 }
