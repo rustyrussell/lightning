@@ -17,7 +17,8 @@
 #include <plugins/renepay/pay_flow.h>
 #include <plugins/renepay/debug.h>
 
-/* Set in init */
+// TODO(eduardo): the state of plugin is stored in data (instead of the heap) so
+// that we can load lightningd options directly into before `init` is called.
 static struct pay_plugin the_pay_plugin;
 struct pay_plugin * const pay_plugin = &the_pay_plugin;
 
@@ -213,8 +214,11 @@ static const char *init(struct plugin *p,
 {
 	size_t num_channel_updates_rejected;
 
-	// pay_plugin = tal(p, struct pay_plugin);
-	pay_plugin->ctx = tal(p,tal_t);
+	// TODO(eduardo): this is a weird fix I can't grasp yet. Why is it that
+	// `plugin_main` doesn't release `struct plugin *p` at shutdown?
+	// Where can I put my global state destructors now if `struct plugin *p`
+	// is not expected to free at shutdown?
+	pay_plugin->ctx = notleak_with_children(tal(p,tal_t));
 	pay_plugin->plugin = p;
 
 	rpc_scan(p, "getinfo", take(json_out_obj(NULL, NULL, NULL)),
@@ -1593,4 +1597,8 @@ int main(int argc, char *argv[])
 			"Enable renepay payment flows debug info.",
 			flag_option, &pay_plugin->debug_payflow),
 		NULL);
+	
+	// TODO(eduardo): I think this is actually never executed
+	tal_free(pay_plugin->ctx);
+	return 0;
 }
