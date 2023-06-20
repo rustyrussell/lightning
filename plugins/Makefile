@@ -100,7 +100,8 @@ C_PLUGINS :=					\
 	plugins/offers				\
 	plugins/pay				\
 	plugins/txprepare			\
-	plugins/spenderp
+	plugins/spenderp			\
+	plugins/cln-renepay
 
 ifeq ($(HAVE_SQLITE3),1)
 C_PLUGINS += plugins/sql
