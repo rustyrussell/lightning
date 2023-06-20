@@ -5,11 +5,13 @@
 #include <bitcoin/script.h>
 #include <ccan/err/err.h>
 #include <ccan/opt/opt.h>
+#include <ccan/str/hex/hex.h>
 #include <ccan/tal/str/str.h>
 #include <ccan/time/time.h>
 #include <common/bech32.h>
 #include <common/bolt11.h>
 #include <common/features.h>
+#include <common/hash_u5.h>
 #include <common/setup.h>
 #include <common/type_to_string.h>
 #include <common/version.h>
@@ -48,6 +50,33 @@ static char *fmt_time(const tal_t *ctx, u64 time)
 	return tal_fmt(ctx, "%.*s", (int)strcspn(p, "\n"), p);
 }
 
+static bool bolt11_sign(const u5 *u5bytes,
+			const u8 *hrpu8,
+			secp256k1_ecdsa_recoverable_signature *rsig,
+			struct privkey *privkey)
+{
+	struct hash_u5 hu5;
+	struct sha256 sha;
+	char *hrp;
+
+	hrp = tal_dup_arr(tmpctx, char, (char *)hrpu8, tal_count(hrpu8), 1);
+	hrp[tal_count(hrpu8)] = '\0';
+
+	hash_u5_init(&hu5, hrp);
+	hash_u5(&hu5, u5bytes, tal_count(u5bytes));
+	hash_u5_done(&hu5, &sha);
+
+	/*~ By no small coincidence, this libsecp routine uses the exact
+	 * recovery signature format mandated by BOLT 11. */
+	if (!secp256k1_ecdsa_sign_recoverable(secp256k1_ctx, rsig,
+                                              (const u8 *)&sha,
+                                              privkey->secret.data,
+                                              NULL, NULL)) {
+		abort();
+	}
+	return true;
+}
+
 int main(int argc, char *argv[])
 {
 	const tal_t *ctx = tal(NULL, char);
@@ -60,7 +89,9 @@ int main(int argc, char *argv[])
 
 	opt_set_alloc(opt_allocfn, tal_reallocfn, tal_freefn);
 	opt_register_noarg("--help|-h", opt_usage_and_exit,
-			   "<decode> <bolt11>", "Show this message");
+			   "decode <bolt11> OR\n"
+			   "encode <secretkey> <preimage> <description> [amount]",
+			   "Show this message");
 	opt_register_arg("--hashed-description", opt_set_charp, opt_show_charp,
 			 &description,
 			 "Description to check hashed description against");
@@ -73,6 +104,41 @@ int main(int argc, char *argv[])
 	if (!method)
 		errx(ERROR_USAGE, "Need at least one argument\n%s",
 		     opt_usage(argv[0], NULL));
+
+	if (streq(method, "encode")) {
+		struct privkey privkey;
+		struct secret preimage;
+		char *b11str;
+
+		if (argc < 5)
+			errx(ERROR_USAGE, "Need args\n%s",
+			     opt_usage(argv[0], NULL));
+
+		if (!hex_decode(argv[2], strlen(argv[2]), &privkey, sizeof(privkey)))
+			errx(ERROR_USAGE, "Need 32 hexbyte privkey");
+		if (!hex_decode(argv[3], strlen(argv[3]), &preimage,
+				sizeof(preimage)))
+			errx(ERROR_USAGE, "Need 32 hexbyte preimage");
+		if (argv[5]) {
+			struct amount_msat msat;
+			if (!parse_amount_msat(&msat, argv[5], strlen(argv[5])))
+				errx(ERROR_USAGE, "Need valid amount");
+			b11 = new_bolt11(tmpctx, &msat);
+		} else {
+			b11 = new_bolt11(tmpctx, NULL);
+		}
+		b11->timestamp = time_now().ts.tv_sec;
+		b11->description = argv[4];
+		b11->chain = chainparams_for_network("regtest");
+		sha256(&b11->payment_hash, &preimage, sizeof(preimage));
+		b11->payment_secret = talz(b11, struct secret);
+		b11str = bolt11_encode(tmpctx, b11, false, bolt11_sign, &privkey);
+		assert(bolt11_decode(tmpctx, b11str, NULL, NULL, NULL, NULL));
+		printf("%s\n", b11str);
+		tal_free(ctx);
+		common_shutdown();
+		return NO_ERROR;
+	}
 
 	if (!streq(method, "decode"))
 		errx(ERROR_USAGE, "Need decode argument\n%s",
