@@ -174,8 +174,19 @@ void amount_msat_reduce_(struct amount_msat *dst,
 #if DEVELOPER
 static void memleak_mark(struct plugin *p, struct htable *memtable)
 {
-	memleak_scan_obj(memtable, pay_plugin->ctx);
-	memleak_scan_htable(memtable, &pay_plugin->chan_extra_map->raw);
+	/* TODO(eduardo): understand the purpose of memleak_scan_obj, why use it
+	 * instead of tal_free?
+	 * 1st problem: this is executed before the plugin can process the
+	 * shutdown notification, 
+	 * 2nd problem: memleak_scan_obj does not propagate to children. 
+	 * For the moment let's just (incorrectly) do tal_free here
+	 * */
+	pay_plugin->ctx = tal_free(pay_plugin->ctx);
+	
+	// memleak_scan_obj(memtable, pay_plugin->ctx);
+	// memleak_scan_obj(memtable, pay_plugin->gossmap);
+	// memleak_scan_obj(memtable, pay_plugin->chan_extra_map);
+	// memleak_scan_htable(memtable, &pay_plugin->chan_extra_map->raw);
 }
 #endif
 
@@ -214,11 +225,7 @@ static const char *init(struct plugin *p,
 {
 	size_t num_channel_updates_rejected;
 
-	// TODO(eduardo): this is a weird fix I can't grasp yet. Why is it that
-	// `plugin_main` doesn't release `struct plugin *p` at shutdown?
-	// Where can I put my global state destructors now if `struct plugin *p`
-	// is not expected to free at shutdown?
-	pay_plugin->ctx = notleak_with_children(tal(p,tal_t));
+	pay_plugin->ctx = tal(p,tal_t);
 	pay_plugin->plugin = p;
 
 	rpc_scan(p, "getinfo", take(json_out_obj(NULL, NULL, NULL)),
@@ -746,7 +753,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 		// TODO(eduardo): I guess this should not happen unless some
 		// sendpay that would eventually fail gets stuck for some
 		// reason or some MPP part times out.
-		debug_info("waitsendpay_failed: received an old failure");
+		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: received an old failure");
 	}
 
 	u64 errcode;
@@ -765,24 +772,24 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	switch (errcode) {
 	case PAY_UNPARSEABLE_ONION:
 		// TODO(eduardo): when can this be triggered?
-		debug_info("waitsendpay_failed: PAY_UNPARSEABLE_ONION");
+		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: PAY_UNPARSEABLE_ONION");
 		ret = handle_unhandleable_error(p, flow, "unparsable onion reply");
 		if (ret)
 			return ret;
 		goto done;
 	case PAY_DESTINATION_PERM_FAIL:
-		debug_info("waitsendpay_failed: PAY_DESTINATION_PERM_FAIL");
+		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: PAY_DESTINATION_PERM_FAIL");
 		return command_fail(cmd, PAY_DESTINATION_PERM_FAIL,
 				    "Got an final failure from destination");
 	case PAY_TRY_OTHER_ROUTE:
-		debug_info("waitsendpay_failed: PAY_TRY_OTHER_ROUTE");
+		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: PAY_TRY_OTHER_ROUTE");
 		break;
-
+	
 	default:
-		debug_info("waitsendpay_failed: unexpected errcode");
-		plugin_err(cmd->plugin,
+		plugin_log(pay_plugin->plugin,LOG_DBG,
 			   "Unexpected errcode from waitsendpay: %.*s",
 			   json_tok_full_len(err), json_tok_full(buf, err));
+		return command_fail(cmd, errcode, "Unexpected errcode from waitsendpay.");
 	}
 
 	datatok = json_get_member(buf, err, "data");
@@ -819,7 +826,8 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 		type_to_string(tmpctx, struct short_channel_id, &errscid),
 		msgtok->end - msgtok->start, buf + msgtok->start);
 		
-	debug_info("onion error %s from node #%u %s: %.*s",
+	plugin_log(pay_plugin->plugin,LOG_DBG,
+		"onion error %s from node #%u %s: %.*s",
 		onion_wire_name(onionerr),
 		erridx,
 		type_to_string(tmpctx, struct short_channel_id, &errscid),
@@ -853,7 +861,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	case WIRE_INVALID_ONION_PAYLOAD:
 	case WIRE_INVALID_ONION_BLINDING:
 	case WIRE_EXPIRY_TOO_FAR:
-		debug_info("waitsendpay_failed: removing scid");
+		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: removing scid");
 		paynote(p, "... so we're removing scid");
 		tal_arr_expand(&p->active_payment->disabled, errscid);
 		goto done;
@@ -863,7 +871,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	case WIRE_FEE_INSUFFICIENT:
 	case WIRE_INCORRECT_CLTV_EXPIRY:
 	case WIRE_EXPIRY_TOO_SOON:
-		debug_info("waitsendpay_failed: apply channel_update");
+		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: apply channel_update");
 		/* FIXME: Check scid! */
 		update = channel_update_from_onion_error(tmpctx, buf, rawoniontok);
 		if (update)
@@ -875,7 +883,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 
 	/* Insufficient funds! */
 	case WIRE_TEMPORARY_CHANNEL_FAILURE: {
-		debug_info("waitsendpay_failed: Insufficient funds!");
+		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: Insufficient funds!");
 		/* OK new max is amount - 1 */
 		struct amount_msat max_possible;
 		if (!amount_msat_sub(&max_possible,
@@ -895,7 +903,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	/* FIXME: We should probably pause until all parts returned, or at least
 	 * extend rexmit timer! */
 	case WIRE_MPP_TIMEOUT:
-		debug_info("waitsendpay_failed: WIRE_MPP_TIMEOUT");
+		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: WIRE_MPP_TIMEOUT");
 		paynote(p, "... will continue");
 		p->status = PAYMENT_MPP_TIMEOUT;
 		goto done;
@@ -904,7 +912,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	case WIRE_INCORRECT_OR_UNKNOWN_PAYMENT_DETAILS:
 	case WIRE_FINAL_INCORRECT_CLTV_EXPIRY:
 	case WIRE_FINAL_INCORRECT_HTLC_AMOUNT:
-		debug_info("waitsendpay_failed: final destination fail");
+		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: final destination fail");
 		paynote(p, "... fatal");
 		return command_fail(cmd, PAY_DESTINATION_PERM_FAIL,
 				    "Destination said %s: %.*s",
@@ -914,7 +922,7 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	}
 	/* Unknown response? */
 	if (erridx == tal_count(flow->path_nodes)) {
-		debug_info("waitsendpay_failed: unknown error code %u: %.*s",
+		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: unknown error code %u: %.*s",
 				    onionerr,
 				    msgtok->end - msgtok->start,
 				    buf + msgtok->start);
@@ -927,12 +935,6 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	}
 	paynote(p, "... eliminating and continuing");
 	plugin_log(pay_plugin->plugin, LOG_BROKEN,
-		   "Node %s (%u/%zu) gave unknown error code %u",
-		   type_to_string(tmpctx, struct node_id,
-				  &flow->path_nodes[erridx]),
-		   erridx, tal_count(flow->path_nodes),
-		   onionerr);
-	debug_info(
 		   "Node %s (%u/%zu) gave unknown error code %u",
 		   type_to_string(tmpctx, struct node_id,
 				  &flow->path_nodes[erridx]),
@@ -1128,7 +1130,7 @@ static struct command_result *try_paying(struct command *cmd,
 	if (!amount_msat_sub(&remaining, p->amount, p->total_delivering))
 		abort();
 
-	debug_info(fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
+	plugin_log(pay_plugin->plugin,LOG_DBG,fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
 	
 	/* We let this return an unlikely path, as it's better to try once
 	 * than simply refuse.  Plus, models are not truth! */
@@ -1138,7 +1140,7 @@ static struct command_result *try_paying(struct command *cmd,
 	struct pay_flow **pay_flows = get_payflows(p, remaining, feebudget, first_time,
 				 amount_msat_eq(p->total_delivering, AMOUNT_MSAT(0)));
 	
-	debug_info(fmt_payflows(tmpctx,pay_flows));
+	plugin_log(pay_plugin->plugin,LOG_DBG,fmt_payflows(tmpctx,pay_flows));
 	
 	/* MCF cannot find a feasible route, we stop. */
 	// TODO(eduardo): alternatively we can fallback to `pay`.
@@ -1193,7 +1195,7 @@ static void renepay_cleanup(struct active_payment *ap)
 	ap->localmods_applied=false;
 	tal_free(ap->local_gossmods);
 	
-	debug_info(fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
+	plugin_log(pay_plugin->plugin,LOG_DBG,fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
 	
 	ap->rexmit_timer = tal_free(ap->rexmit_timer);
 	
@@ -1308,9 +1310,9 @@ static struct command_result *json_pay(struct command *cmd,
 		   NULL))
 		return command_param_failed();
 	
-	debug_info("json_pay, renepay-debug-mcf option is set to %s\n",
+	plugin_log(pay_plugin->plugin,LOG_DBG,"json_pay, renepay-debug-mcf option is set to %s\n",
 		   pay_plugin->debug_mcf ? "true" : "false");
-	debug_info("json_pay, renepay-debug-payflow option is set to %s\n",
+	plugin_log(pay_plugin->plugin,LOG_DBG,"json_pay, renepay-debug-payflow option is set to %s\n",
 		   pay_plugin->debug_payflow ? "true" : "false");
 
 	
@@ -1560,6 +1562,19 @@ static struct command_result *json_pay(struct command *cmd,
 	return send_outreq(cmd->plugin, req);
 }
 
+static struct command_result *json_shutdown(struct command *cmd,
+					         const char *buf,
+					         const jsmntok_t *params)
+{
+	/* TODO(eduardo): 
+	 * 1. at shutdown the `struct plugin *p` is not freed,
+	 * 2. `memleak_check` is called before we have the chance to get this
+	 * notification. */
+	plugin_log(pay_plugin->plugin,LOG_DBG,"received shutdown notification, freeing data.");
+	pay_plugin->ctx = tal_free(pay_plugin->ctx);
+	return notification_handled(cmd);
+}
+
 static const struct plugin_command commands[] = {
 	{
 		"renepaystatus",
@@ -1577,6 +1592,13 @@ static const struct plugin_command commands[] = {
 	},
 };
 
+static const struct plugin_notification notifications[] = {
+	{
+		"shutdown",
+		json_shutdown,
+	}
+};
+
 int main(int argc, char *argv[])
 {
 	setup_locale();
@@ -1587,7 +1609,7 @@ int main(int argc, char *argv[])
 		/* init_rpc */ true, 
 		/* features */ NULL, 
 		commands, ARRAY_SIZE(commands), 
-		/* notifications */ NULL, 0, 
+		notifications, ARRAY_SIZE(notifications),
 		/* hooks */ NULL, 0, 
 		/* notification topics */ NULL, 0,
 		plugin_option("renepay-debug-mcf", "flag",
