@@ -108,3 +108,36 @@ Here's a checklist for the release process.
 1. Look through PRs which were delayed for release and merge them.
 2. Close out the Milestone for the now-shipped release.
 3. Update this file with any missing or changed instructions.
+
+## Point Releases
+
+Sometimes there are regressions in a release; whether to wait for the next release or release a bugfix release is a complex question involving:
+
+1. Pain experienced by the bug (Does it lose money?  Is it experimental features only?)
+2. Difficulty of user workarounds (Is there an option to turn it off?  Does it require users to patch something?)
+3. Risk associated with fix (Is it trivial?  Is it a complete rewrite?  Is it already in master?)
+
+### Making A Point Release: Preparation
+
+(This example uses 23.05.2 as the example release)
+
+1. Create a bugfix-23.05.2 label, and apply it to any PRs you want in the new commit.
+2. Create a release-23.05.2 branch off of the previous release tag (the name matters, CI won't rebase this one!)
+3. Cherry-pick individual commits from the PRs into your release-23.05.2 branch.
+4. Add a final commit which manually updates the CHANGELOG.md file.
+5. Open a PR for the release branch for review (Note: this will not be
+   merged into master!)
+6. Advertize this widely, in case there are other fixes which people want committed.
+
+There's some license here: you may well include subsets of PRs, or even minimal subsets of commits.
+
+### Making A Point Release: Performing the Release
+
+1. Write the https://github.com/ElementsProject/lightning/releases/ draft.
+2. Create a signed tag and do a reproducible build as normal.
+3. Upload the files and SHA256SUMS / SHA256SUMS.asc
+4. Wait for at least one other person to agree on the SHA256SUMS.
+5. Push the tag and publish the releases draft.
+6. Create a PR for master, cherry-picking that final CHANGELOG.md change.
+7. Remove the bugfix-23.05.2 label.
+8. Add to SHA256SUMS.asc as they come in.
