@@ -359,7 +359,7 @@ struct pay_flow **get_payflows(struct payment *p,
 		paynote(p, "We don't have any channels?");
 		goto fail;
 	}
-	dst = gossmap_find_node(pay_plugin->gossmap, &p->dest);
+	dst = gossmap_find_node(pay_plugin->gossmap, &p->destination);
 	if (!src) {
 		paynote(p, "No trace of destination in network gossip");
 		goto fail;

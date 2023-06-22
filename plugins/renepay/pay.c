@@ -73,7 +73,7 @@ static void payment_new_attempt(struct payment *p)
 }
 static u64 payment_groupid(struct payment *p)
 {
-	return p->active_payment->groupid;
+	return p->groupid;
 }
 static void payment_initialize(
 		struct payment *p,
@@ -126,7 +126,7 @@ static struct command_result *payment_success(struct payment *p)
 	json_add_amount_msat_only(response, "amount_sent_msat",
 				  p->total_sent);
 	json_add_string(response, "status", "complete");
-	json_add_node_id(response, "destination", &p->dest);
+	json_add_node_id(response, "destination", &p->destination);
 	
 	return command_finished(payment_command(p), response);
 }
@@ -323,7 +323,7 @@ static void uncertainty_network_add_routehints(struct payment *p)
 	for (size_t i = 0; i < tal_count(b11->routes); i++) {
 		/* Each one, presumably, leads to the destination */
 		const struct route_info *r = b11->routes[i];
-		const struct node_id *end = & p->dest;
+		const struct node_id *end = & p->destination;
 		for (int j = tal_count(r)-1; j >= 0; j--) {
 			// TODO(eduardo): amount to send to the add_hintchan
 			// should consider fees.
@@ -459,7 +459,7 @@ malformed:
 	return false;
 }
 
-/* How much does this flow deliver to dest? */
+/* How much does this flow deliver to destination? */
 static struct amount_msat flow_delivered(const struct pay_flow *flow)
 {
 	return flow->amounts[tal_count(flow->amounts)-1];
@@ -1262,7 +1262,7 @@ static struct command_result *json_paystatus(struct command *cmd,
 			json_add_invstring(ret, p->invstr);
 		json_add_amount_msat_only(ret, "amount_msat", p->amount);
 
-		json_add_node_id(ret, "destination", &p->dest);
+		json_add_node_id(ret, "destination", &p->destination);
 		json_array_start(ret, "notes");
 		for (size_t i = 0; i < tal_count(p->paynotes); i++)
 			json_add_string(ret, NULL, p->paynotes[i]);
@@ -1278,6 +1278,136 @@ static struct command_result *json_paystatus(struct command *cmd,
 	json_array_end(ret);
 
 	return command_finished(cmd, ret);
+}
+
+/* Taken from ./plugins/pay.c
+ * 
+ * We are interested in any prior attempts to pay this payment_hash /
+ * invoice so we can set the `groupid` correctly and ensure we don't
+ * already have a pending payment running. We also collect the summary
+ * about an eventual previous complete payment so we can return that
+ * as a no-op. */
+static struct command_result *
+payment_listsendpays_previous(struct command *cmd, const char *buf,
+			      const jsmntok_t *result, struct payment *p)
+{
+	size_t i;
+	const jsmntok_t *t, *arr, *err;
+	/* What was the groupid of an eventual previous attempt? */
+	u64 last_group = 0;
+	/* Do we have pending sendpays for the previous attempt? */
+	bool pending = false;
+
+	/* Group ID of the first pending payment, this will be the one
+	 * who's result gets replayed if we end up suspending. */
+	u64 pending_group_id = 0;
+	/* Did a prior attempt succeed? */
+	bool completed = false;
+
+	/* Metadata for a complete payment, if one exists. */
+	struct json_stream *ret;
+	u32 parts = 0;
+	struct preimage preimage;
+	struct amount_msat sent, msat;
+	struct node_id destination;
+	u32 created_at;
+
+	err = json_get_member(buf, result, "error");
+	if (err)
+		return command_fail(
+			   cmd, LIGHTNINGD,
+			   "Error retrieving previous pay attempts: %s",
+			   json_strdup(tmpctx, buf, err));
+
+	arr = json_get_member(buf, result, "payments");
+	if (!arr || arr->type != JSMN_ARRAY)
+		return command_fail(
+		    cmd, LIGHTNINGD,
+		    "Unexpected non-array result from listsendpays");
+
+	/* We iterate through all prior sendpays, looking for the
+	 * latest group and remembering what its state is. */
+	json_for_each_arr(i, t, arr)
+	{
+		u64 groupid;
+		const jsmntok_t *status, *grouptok;
+		struct amount_msat diff_sent, diff_msat;
+		grouptok = json_get_member(buf, t, "groupid");
+		json_to_u64(buf, grouptok, &groupid);
+
+		/* New group, reset what we collected. */
+		if (last_group != groupid) {
+			completed = false;
+			pending = false;
+			last_group = groupid;
+
+			parts = 1;
+			json_scan(tmpctx, buf, t,
+				  "{destination:%"
+				  ",created_at:%"
+				  ",amount_msat:%"
+				  ",amount_sent_msat:%"
+				  ",payment_preimage:%}",
+				  JSON_SCAN(json_to_node_id, &destination),
+				  JSON_SCAN(json_to_u32, &created_at),
+				  JSON_SCAN(json_to_msat, &msat),
+				  JSON_SCAN(json_to_msat, &sent),
+				  JSON_SCAN(json_to_preimage, &preimage));
+		} else {
+			json_scan(tmpctx, buf, t,
+				  "{amount_msat:%"
+				  ",amount_sent_msat:%}",
+				  JSON_SCAN(json_to_msat, &diff_msat),
+				  JSON_SCAN(json_to_msat, &diff_sent));
+			if (!amount_msat_add(&msat, msat, diff_msat) ||
+			    !amount_msat_add(&sent, sent, diff_sent))
+				debug_err("msat overflow adding up parts");
+			parts++;
+		}
+
+		status = json_get_member(buf, t, "status");
+		completed |= json_tok_streq(buf, status, "complete");
+		pending |= json_tok_streq(buf, status, "pending");
+
+		/* Remember the group id of the first pending group so
+		 * we can replay its result later. */
+		if (!pending_group_id && pending)
+			pending_group_id = groupid;
+	}
+
+	if (completed) {
+		ret = jsonrpc_stream_success(cmd);
+		json_add_preimage(ret, "payment_preimage", &preimage);
+		json_add_string(ret, "status", "complete");
+		json_add_amount_msat_compat(ret, msat, "msatoshi",
+					    "amount_msat");
+		json_add_amount_msat_compat(ret, sent, "msatoshi_sent",
+					    "amount_sent_msat");
+		json_add_node_id(ret, "destination", &p->destination);
+		json_add_sha256(ret, "payment_hash", &p->payment_hash);
+		json_add_u32(ret, "created_at", created_at);
+		json_add_num(ret, "parts", parts);
+		return command_finished(cmd, ret);
+	} else if (pending) {
+		/* We suspend this call and wait for the
+		 * `on_payment_success` or `on_payment_failure`
+		 * handler of the currently running payment to notify
+		 * us about its completion. We latch on to the result
+		 * from the call we extracted above. */
+		p->groupid = pending_group_id;
+		
+		// TODO(eduardo): for this to work we need to subscribe to
+		// pay_success and pay_failure
+		return command_still_pending(cmd);
+	}
+	p->groupid = last_group + 1;
+	
+	struct out_req *req;
+	/* Get local capacities... */
+	req = jsonrpc_request_start(cmd->plugin, cmd, "listpeerchannels",
+				    listpeerchannels_done,
+				    listpeerchannels_done, p);
+	return send_outreq(cmd->plugin, req);
 }
 
 static struct command_result *json_pay(struct command *cmd,
@@ -1404,7 +1534,7 @@ static struct command_result *json_pay(struct command *cmd,
 		invmsat = b11->msat;
 		invexpiry = b11->timestamp + b11->expiry;
 
-		p->dest = b11->receiver_id;
+		p->destination = b11->receiver_id;
 		p->payment_hash = b11->payment_hash;
 		p->payment_secret =
 			tal_dup_or_null(p, struct secret, b11->payment_secret);
@@ -1468,7 +1598,7 @@ static struct command_result *json_pay(struct command *cmd,
 		} else
 			invmsat = NULL;
 
-		node_id_from_pubkey(&p->dest, b12->offer_node_id);
+		node_id_from_pubkey(&p->destination, b12->offer_node_id);
 		p->payment_hash = *b12->invoice_payment_hash;
 		if (b12->invreq_recurrence_counter && !p->label)
 			return command_fail(
@@ -1503,7 +1633,7 @@ static struct command_result *json_pay(struct command *cmd,
 			invexpiry = *b12->invoice_created_at + BOLT12_DEFAULT_REL_EXPIRY;
 	}
 	
-	if (node_id_eq(&pay_plugin->my_id, &p->dest))
+	if (node_id_eq(&pay_plugin->my_id, &p->destination))
 		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
 				    "This payment is destined for ourselves. "
 				    "Self-payments are not supported");
@@ -1577,14 +1707,17 @@ static struct command_result *json_pay(struct command *cmd,
 			   "uncertainty network invariants are violated");
 	
 	/* We will try a single MPP payment. */
-	p->active_payment->groupid = pseudorand_u64();
+	// p->active_payment->groupid = pseudorand_u64();
 	p->active_payment->next_partid = 1;
 	
-	struct out_req *req;
-	/* Get local capacities... */
-	req = jsonrpc_request_start(cmd->plugin, cmd, "listpeerchannels",
-				    listpeerchannels_done,
-				    listpeerchannels_done, p);
+	/* Next, request listsendpays for previous payments that use the same
+	 * hash. */
+	struct out_req *req
+		= jsonrpc_request_start(cmd->plugin, cmd, "listsendpays",
+			payment_listsendpays_previous,
+			payment_listsendpays_previous, p);
+
+	json_add_sha256(req->js, "payment_hash", &p->payment_hash);
 	return send_outreq(cmd->plugin, req);
 }
 

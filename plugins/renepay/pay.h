@@ -87,9 +87,6 @@ struct active_payment
 	/* Root to destroy pending flows */
 	tal_t *all_flows;
 	
-	/* Groupid, so listpays() can group them back together */
-	u64 groupid;
-	
 	/* Used in get_payflows to set ids to each pay_flow. */
 	u64 next_partid;
 };
@@ -109,7 +106,7 @@ struct payment {
 	
 	/* How much, what, where */
 	struct amount_msat amount;
-	struct node_id dest;
+	struct node_id destination;
 	struct sha256 payment_hash;
 	
 	
@@ -195,6 +192,10 @@ struct payment {
 	
 	/* Data used while the payment is being processed. */
 	struct active_payment *active_payment;
+	
+	/* Groupid, so listpays() can group them back together */
+	u64 groupid;
+	
 };
 
 int payment_current_attempt(const struct payment *p);
