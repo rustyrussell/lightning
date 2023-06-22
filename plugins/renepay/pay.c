@@ -110,7 +110,7 @@ static void payment_initialize(
 
 static struct command_result *payment_success(struct payment *p)
 {
-	debug_call();	
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	payment_check_delivering_all(p);
 	
 	struct json_stream *response 
@@ -194,7 +194,7 @@ static void remove_htlc_payflow_and_update_knowlege(
 		struct pay_flow *flow,
 		struct chan_extra_map *chan_extra_map)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	
 	// TODO(eduardo): big assumption here, HTLCs can just simply dissapear
 	// if the MPP payment completes or the flow fails.
@@ -225,7 +225,7 @@ static const char *init(struct plugin *p,
 {
 	size_t num_channel_updates_rejected;
 
-	pay_plugin->ctx = tal(p,tal_t);
+	pay_plugin->ctx = notleak_with_children(tal(p,tal_t));
 	pay_plugin->plugin = p;
 
 	rpc_scan(p, "getinfo", take(json_out_obj(NULL, NULL, NULL)),
@@ -496,7 +496,7 @@ static void payment_settimer(struct payment *p)
 /* Happens when timer goes off, but also works to arm timer if nothing to do */
 static void timer_kick(struct payment *p)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	
 	/* No, but payment hasn't gone through, so let's wait a bit. */
 	
@@ -538,7 +538,7 @@ static struct command_result *waitsendpay_succeeded(struct command *cmd,
 						    const jsmntok_t *result,
 						    struct pay_flow *flow)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	
 	struct payment *p = flow->payment;
 	
@@ -577,7 +577,7 @@ static struct command_result *handle_unhandleable_error(struct payment *p,
 							const struct pay_flow *flow,
 							const char *what)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	size_t n = tal_count(flow);
 
 	/* We got a mangled reply.  We don't know who to penalize! */
@@ -619,7 +619,7 @@ static struct command_result *addgossip_done(struct command *cmd,
 					     const jsmntok_t *err,
 					     struct addgossip *adg)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	struct payment *p = adg->flow->payment;
 
 	/* Release this: if it's the last flow we'll retry immediately */
@@ -636,7 +636,7 @@ static struct command_result *addgossip_failure(struct command *cmd,
 						struct addgossip *adg)
 
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	struct payment *p = adg->flow->payment;
 
 	paynote(p, "addgossip failed, removing channel %s (%.*s)",
@@ -652,7 +652,7 @@ static struct command_result *submit_update(struct command *cmd,
 					    const u8 *update,
 					    struct short_channel_id errscid)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	struct payment *p = flow->payment;
 	struct out_req *req;
 	struct addgossip *adg = tal(cmd, struct addgossip);
@@ -739,8 +739,10 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 						 const jsmntok_t *err,
 						 struct pay_flow *flow)
 {
-	debug_call();
-	debug_reply(buf,err);
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
+	plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay failed with reply %.*s",
+		   json_tok_full_len(err),
+		   json_tok_full(buf, err));
 	
 	struct payment *p = flow->payment;
 	
@@ -952,7 +954,7 @@ static struct command_result *flow_sent(struct command *cmd,
 					const jsmntok_t *result,
 					struct pay_flow *flow)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	
 	struct payment *p = flow->payment;
 	struct out_req *req;
@@ -978,7 +980,7 @@ static struct command_result *flow_sendpay_failed(struct command *cmd,
 						  const jsmntok_t *err,
 						  struct pay_flow *flow)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	
 	struct payment *p = flow->payment;
 	/* This is a fail. */
@@ -1012,7 +1014,7 @@ sendpay_flows(struct command *cmd,
 	      struct payment *p,
 	      struct pay_flow **flows STEALS)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	paynote(p, "Sending out batch of %zu payments", tal_count(flows));
 	
 	for (size_t i = 0; i < tal_count(flows); i++) {
@@ -1096,7 +1098,7 @@ static struct command_result *try_paying(struct command *cmd,
 					 struct payment *p,
 					 bool first_time)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	
 	// TODO(eduardo): does it make sense to have this limit on attempts?
 	/* I am classifying the flows in attempt cycles. */
@@ -1116,19 +1118,43 @@ static struct command_result *try_paying(struct command *cmd,
 	
 	/* Total feebudget  */
 	if (!amount_msat_sub(&feebudget, p->maxspend, p->amount))
-		abort();
+	{
+		plugin_err(pay_plugin->plugin,
+			   "%s could not substract maxspend=%s and amount=%s.",
+			   __PRETTY_FUNCTION__,
+			   type_to_string(tmpctx, struct amount_msat, &p->maxspend),
+			   type_to_string(tmpctx, struct amount_msat, &p->amount));
+	}
 
 	/* Fees spent so far */
 	if (!amount_msat_sub(&fees_spent, p->total_sent, p->total_delivering))
-		abort();
+	{
+		plugin_err(pay_plugin->plugin,
+			   "%s could not substract total_sent=%s and total_delivering=%s.",
+			   __PRETTY_FUNCTION__,
+			   type_to_string(tmpctx, struct amount_msat, &p->total_sent),
+			   type_to_string(tmpctx, struct amount_msat, &p->total_delivering));
+	}
 
 	/* Remaining fee budget. */
 	if (!amount_msat_sub(&feebudget, feebudget, fees_spent))
-		abort();
+	{
+		plugin_err(pay_plugin->plugin,
+			   "%s could not substract feebudget=%s and fees_spent=%s.",
+			   __PRETTY_FUNCTION__,
+			   type_to_string(tmpctx, struct amount_msat, &feebudget),
+			   type_to_string(tmpctx, struct amount_msat, &fees_spent));
+	}
 
 	/* How much are we still trying to send? */
 	if (!amount_msat_sub(&remaining, p->amount, p->total_delivering))
-		abort();
+	{
+		plugin_err(pay_plugin->plugin,
+			   "%s could not substract amount=%s and total_delivering=%s.",
+			   __PRETTY_FUNCTION__,
+			   type_to_string(tmpctx, struct amount_msat, &p->amount),
+			   type_to_string(tmpctx, struct amount_msat, &p->total_delivering));
+	}
 
 	plugin_log(pay_plugin->plugin,LOG_DBG,fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
 	
@@ -1162,7 +1188,7 @@ static struct command_result *
 listpeerchannels_done(struct command *cmd, const char *buf,
 	       const jsmntok_t *result, struct payment *p)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 	if (!update_uncertainty_network_from_listpeerchannels(cmd->plugin, p, buf, result))
 		return command_fail(cmd, LIGHTNINGD,
 				    "listpeerchannels malformed: %.*s",
@@ -1182,7 +1208,7 @@ listpeerchannels_done(struct command *cmd, const char *buf,
  * into a valid state before the next payment. */
 static void renepay_cleanup(struct active_payment *ap)
 {
-	debug_call();
+	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__);
 
 	/* Free all pending flows, release their HTLCs and update knowledge. */
 	ap->all_flows = tal_free(ap->all_flows);

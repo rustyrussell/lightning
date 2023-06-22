@@ -1,6 +1,9 @@
 #include "config.h"
+
+#define FLOW_UNITTEST // logs are written in /tmp/debug.txt
 #include "../flow.c"
 #include "../mcf.c"
+
 #include <ccan/array_size/array_size.h>
 #include <ccan/read_write_all/read_write_all.h>
 #include <common/bigsize.h>
@@ -225,29 +228,34 @@ static u8 canned_map[] = {
 /* not_mcf sets NDEBUG, so assert() is useless */
 #define ASSERT(x) do { if (!(x)) abort(); } while(0)
 
-static void print_flows(const char *desc,
-			const struct gossmap *gossmap,
-			struct flow **flows)
+static const char *print_flows(
+		const tal_t *ctx,
+		const char *desc,
+		const struct gossmap *gossmap,
+		struct flow **flows)
 {
-	printf("%s: %zu subflows\n", desc, tal_count(flows));
+	tal_t *this_ctx = tal(ctx,tal_t);
+	char *buff = tal_fmt(ctx,"%s: %zu subflows\n", desc, tal_count(flows));
 	for (size_t i = 0; i < tal_count(flows); i++) {
 		struct amount_msat fee, delivered;
-		printf("   ");
+		tal_append_fmt(&buff,"   ");
 		for (size_t j = 0; j < tal_count(flows[i]->path); j++) {
 			struct short_channel_id scid
 				= gossmap_chan_scid(gossmap,
 						    flows[i]->path[j]);
-			printf("%s%s", j ? "->" : "",
-			       type_to_string(tmpctx, struct short_channel_id, &scid));
+			tal_append_fmt(&buff,"%s%s", j ? "->" : "",
+			       type_to_string(this_ctx, struct short_channel_id, &scid));
 		}
 		delivered = flows[i]->amounts[tal_count(flows[i]->amounts)-1];
 		if (!amount_msat_sub(&fee, flows[i]->amounts[0], delivered))
 			abort();
-		printf(" prob %.2f, %s delivered with fee %s\n",
+		tal_append_fmt(&buff," prob %.2f, %s delivered with fee %s\n",
 		       flows[i]->success_prob,
-		       type_to_string(tmpctx, struct amount_msat, &delivered),
-		       type_to_string(tmpctx, struct amount_msat, &fee));
+		       type_to_string(this_ctx, struct amount_msat, &delivered),
+		       type_to_string(this_ctx, struct amount_msat, &fee));
 	}
+	tal_free(this_ctx);
+	return buff;
 }
 
 int main(int argc, char *argv[])
@@ -267,6 +275,7 @@ int main(int argc, char *argv[])
 
 	gossmap = gossmap_load(tmpctx, gossfile, NULL);
 	assert(gossmap);
+	remove(gossfile);
 
 	/* There is a public channel 2<->3 (103x1x0), and private
 	 * 1<->2 (110x1x1). */
@@ -292,7 +301,8 @@ int main(int argc, char *argv[])
 			 /* base fee penalty */ 1,
 			 /* prob cost factor = */ 10);
 	commit_flow_set(gossmap,chan_extra_map,flows);
-	print_flows("Flow via single path l1->l2->l3", gossmap, flows);
+	debug_info("%s\n",
+		print_flows(tmpctx,"Flow via single path l1->l2->l3", gossmap, flows));
 	
 	
 	
@@ -436,7 +446,8 @@ int main(int argc, char *argv[])
 			 /* delay fee factor = */ 1,
 			 /* base fee penalty */ 1,
 			 /* prob cost factor = */ 10);
-	print_flows("Flow via two paths, high mu", gossmap, flows2);
+	debug_info("%s\n",
+		print_flows(tmpctx,"Flow via two paths, high mu", gossmap, flows2));
 	assert(tal_count(flows2) == 2);
 	assert(tal_count(flows2[0]->path) == 1);
 	assert(tal_count(flows2[1]->path) == 2);
@@ -452,7 +463,6 @@ int main(int argc, char *argv[])
 	// /* But in total it's more expensive! */
 	assert(flows2[0]->amounts[0].millisatoshis + flows2[1]->amounts[0].millisatoshis
 	       > flows2[0]->amounts[0].millisatoshis - flows2[1]->amounts[0].millisatoshis);
-
 
 	common_shutdown();
 }

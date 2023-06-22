@@ -9,9 +9,8 @@
 #include <common/node_id.h>
 #include <ccan/read_write_all/read_write_all.h>
 
-static bool print_enable = true;
-#define SUPERVERBOSE(...) do { if (print_enable) printf(__VA_ARGS__); } while(0)
-
+#define MYLOG "/tmp/debug.txt"
+#define FLOW_UNITTEST // logs are written in MYLOG
 #include <plugins/renepay/flow.h>
 #include "../flow.c"
 

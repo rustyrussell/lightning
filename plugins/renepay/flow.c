@@ -7,6 +7,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <plugins/renepay/flow.h>
+#include <plugins/renepay/debug.h>
 #include <common/type_to_string.h>
 
 #ifndef SUPERVERBOSE
@@ -92,9 +93,21 @@ void chan_extra_adjust_half(struct chan_extra *ce,
 			    int dir)
 {
 	if(!amount_msat_sub(&ce->half[dir].known_max,ce->capacity,ce->half[!dir].known_min))
-		abort();
+	{
+		debug_err("%s cannot substract capacity=%s and known_min=%s",
+			__PRETTY_FUNCTION__,
+			type_to_string(tmpctx,struct amount_msat,&ce->capacity),
+			type_to_string(tmpctx,struct amount_msat,&ce->half[!dir].known_min)
+			);
+	}
 	if(!amount_msat_sub(&ce->half[dir].known_min,ce->capacity,ce->half[!dir].known_max))
-		abort();
+	{
+		debug_err("%s cannot substract capacity=%s and known_max=%s",
+			__PRETTY_FUNCTION__,
+			type_to_string(tmpctx,struct amount_msat,&ce->capacity),
+			type_to_string(tmpctx,struct amount_msat,&ce->half[!dir].known_max)
+			);
+	}
 }
 
 
@@ -106,8 +119,11 @@ static void chan_extra_can_send_(
 {
 	if(amount_msat_greater(x,ce->capacity))
 	{
-		// It should never happen thatn x>capacity
-		abort();
+		debug_err("%s unexpected capacity=%s is less than x=%s",
+			__PRETTY_FUNCTION__,
+			type_to_string(tmpctx,struct amount_msat,&ce->capacity),
+			type_to_string(tmpctx,struct amount_msat,&x)
+			);
 		x = ce->capacity;
 	}
 	
@@ -125,7 +141,10 @@ void chan_extra_can_send(
 	struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
 						   scid);
 	if(!ce)
-		abort();
+	{
+		debug_err("%s unexpected chan_extra ce is NULL",
+			__PRETTY_FUNCTION__);
+	}
 	chan_extra_can_send_(ce,dir,x);
 }
 /* Update the knowledge that this (channel,direction) cannot send x msat.*/
@@ -136,8 +155,10 @@ static void chan_extra_cannot_send_(
 {
 	if(!amount_msat_sub(&x,x,AMOUNT_MSAT(1)))
 	{
-		// It should never happen that x==0
-		abort();
+		debug_err("%s unexpected x=%s is less than 0msat",
+			__PRETTY_FUNCTION__,
+			type_to_string(tmpctx,struct amount_msat,&x)
+			);
 		x = AMOUNT_MSAT(0);
 	}
 	
@@ -155,7 +176,10 @@ void chan_extra_cannot_send(
 	struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
 						   scid);
 	if(!ce)
-		abort();
+	{
+		debug_err("%s unexpected chan_extra ce is NULL",
+			__PRETTY_FUNCTION__);
+	}
 	chan_extra_cannot_send_(ce,dir,x);
 }
 /* Update the knowledge that this (channel,direction) has liquidity x.*/
@@ -166,8 +190,11 @@ static void chan_extra_set_liquidity_(
 {
 	if(amount_msat_greater(x,ce->capacity))
 	{
-		// It should never happen thatn x>capacity
-		abort();
+		debug_err("%s unexpected capacity=%s is less than x=%s",
+			__PRETTY_FUNCTION__,
+			type_to_string(tmpctx,struct amount_msat,&ce->capacity),
+			type_to_string(tmpctx,struct amount_msat,&x)
+			);
 		x = ce->capacity;
 	}
 	
@@ -185,7 +212,10 @@ void chan_extra_set_liquidity(
 	struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
 						   scid);
 	if(!ce)
-		abort();
+	{
+		debug_err("%s unexpected chan_extra ce is NULL",
+			__PRETTY_FUNCTION__);
+	}
 	chan_extra_set_liquidity_(ce,dir,x);
 }
 /* Update the knowledge that this (channel,direction) has sent x msat.*/
@@ -196,8 +226,11 @@ static void chan_extra_sent_success_(
 {
 	if(amount_msat_greater(x,ce->capacity))
 	{
-		// It should never happen thatn x>capacity
-		abort();
+		debug_err("%s unexpected capacity=%s is less than x=%s",
+			__PRETTY_FUNCTION__,
+			type_to_string(tmpctx,struct amount_msat,&ce->capacity),
+			type_to_string(tmpctx,struct amount_msat,&x)
+			);
 		x = ce->capacity;
 	}
 	
@@ -222,7 +255,10 @@ void chan_extra_sent_success(
 	struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
 						   scid);
 	if(!ce)
-		abort();
+	{
+		debug_err("%s unexpected chan_extra ce is NULL",
+			__PRETTY_FUNCTION__);
+	}
 	chan_extra_sent_success_(ce,dir,x);
 }
 /* Forget a bit about this (channel,direction) state. */
@@ -254,7 +290,10 @@ void chan_extra_relax(
 	struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
 						   scid);
 	if(!ce)
-		abort();
+	{
+		debug_err("%s unexpected chan_extra ce is NULL",
+			__PRETTY_FUNCTION__);
+	}
 	chan_extra_relax_(ce,dir,x,y);
 }
 
@@ -307,8 +346,9 @@ void uncertainty_network_update(
  		struct chan_extra *ce = chan_extra_map_get(chan_extra_map,del_list[i]);
 		if(!ce)
 		{
-			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-			abort();
+			debug_err("%s (line %d) unexpected chan_extra ce is NULL",
+				__PRETTY_FUNCTION__,
+				__LINE__);
 		}
 		chan_extra_map_del(chan_extra_map, ce);
 		tal_free(ce);
@@ -331,13 +371,15 @@ void uncertainty_network_update(
 			
 			if(!gossmap_chan_get_capacity(gossmap,chan,&cap))
 			{
-				SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-				abort();
+				debug_err("%s (line %d) unable to fetch channel capacity",
+					__PRETTY_FUNCTION__,
+					__LINE__);
 			}
 			if(!amount_sat_to_msat(&cap_msat,cap))
 			{
-				SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-				abort();
+				debug_err("%s (line %d) unable convert sat to msat",
+					__PRETTY_FUNCTION__,
+					__LINE__);
 			}
 			new_chan_extra(chan_extra_map,scid,cap_msat);
 		}
@@ -397,8 +439,10 @@ get_chan_extra_half_by_chan_verify(
 		if (!gossmap_chan_get_capacity(gossmap,chan, &cap) || 
 		    !amount_sat_to_msat(&cap_msat, cap))
 		{
-			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-			abort();
+			debug_err("%s (line %d) unable convert sat to msat or "
+				"get channel capacity",
+				__PRETTY_FUNCTION__,
+				__LINE__);
 		}
 		h = & new_chan_extra(chan_extra_map,scid,cap_msat)->half[dir];
 		
@@ -487,18 +531,20 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 	// one past the last known value, makes computations simpler
 	if(!amount_msat_add(&B,B,one))
 	{
-		SUPERVERBOSE("%s: aborting, cannot add %s + %s\n",__PRETTY_FUNCTION__,
-			   type_to_string(this_ctx, struct amount_msat, &B),
-			   type_to_string(this_ctx, struct amount_msat, &one));
-		abort();
+		debug_err("%s (line %d) cannot add B=%s and %s",
+			__PRETTY_FUNCTION__,
+			__LINE__,
+			type_to_string(this_ctx, struct amount_msat, &B),
+			type_to_string(this_ctx, struct amount_msat, &one));
 	}	
 	// in_flight cannot be greater than max
 	if(!amount_msat_sub(&B,B,in_flight))
 	{
-		SUPERVERBOSE("%s: aborting, cannot substract %s - %s\n",__PRETTY_FUNCTION__,
-			   type_to_string(this_ctx, struct amount_msat, &B),
-			   type_to_string(this_ctx, struct amount_msat, &in_flight));
-		abort();
+		debug_err("%s (line %d) in_flight=%s cannot be greater than B=%s",
+			__PRETTY_FUNCTION__,
+			__LINE__,
+			type_to_string(this_ctx, struct amount_msat, &in_flight),
+			type_to_string(this_ctx, struct amount_msat, &B));
 	}	
 	struct amount_msat A=min; // = MAX(0,min-in_flight);
 	
@@ -510,10 +556,11 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 	// B cannot be smaller than or equal A
 	if(!amount_msat_sub(&denominator,B,A) || amount_msat_less_eq(B,A))
 	{
-		SUPERVERBOSE("%s: aborting, cannot substract %s - %s\n",__PRETTY_FUNCTION__,
-			   type_to_string(this_ctx, struct amount_msat, &B),
-			   type_to_string(this_ctx, struct amount_msat, &A));
-		abort();
+		debug_err("%s (line %d) B=%s must be greater than A=%s",
+			__PRETTY_FUNCTION__,
+			__LINE__,
+			type_to_string(this_ctx, struct amount_msat, &B),
+			type_to_string(this_ctx, struct amount_msat, &A));
 	}
 	struct amount_msat numerator; // MAX(0,B-f)
 	
@@ -529,7 +576,7 @@ static double edge_probability(struct amount_msat min, struct amount_msat max,
 
 
 
-
+// TODO(eduardo): remove this function, is a duplicate
 void remove_completed_flow(const struct gossmap *gossmap,
 			   struct chan_extra_map *chan_extra_map,
 			   struct flow *flow)
@@ -541,17 +588,23 @@ void remove_completed_flow(const struct gossmap *gossmap,
 							       flow->dirs[i]);
 		if (!amount_msat_sub(&h->htlc_total, h->htlc_total, flow->amounts[i]))
 		{
-			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-			abort();
+			debug_err("%s could not substract HTLC amounts, "
+				   "half total htlc amount = %s, "
+				   "flow->amounts[%lld] = %s.",
+				   __PRETTY_FUNCTION__,
+				   type_to_string(tmpctx, struct amount_msat, &h->htlc_total),
+				   i,
+				   type_to_string(tmpctx, struct amount_msat, &flow->amounts[i]));
 		}
 		if (h->num_htlcs == 0)
 		{
-			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-			abort();
+			debug_err("%s could not decrease HTLC count.",
+				   __PRETTY_FUNCTION__);
 		}
 		h->num_htlcs--;
 	}
 }
+// TODO(eduardo): remove this function, is a duplicate
 void remove_completed_flow_set(
 		const struct gossmap *gossmap,
 		struct chan_extra_map *chan_extra_map,
@@ -563,6 +616,7 @@ void remove_completed_flow_set(
 	}
 }
 
+// TODO(eduardo): remove this function, is a duplicate
 void commit_flow(
 		const struct gossmap *gossmap,
 		struct chan_extra_map *chan_extra_map,
@@ -575,12 +629,16 @@ void commit_flow(
 							       flow->dirs[i]);
 		if (!amount_msat_add(&h->htlc_total, h->htlc_total, flow->amounts[i]))
 		{
-			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-			abort();
+			debug_err("%s could not add HTLC amounts, "
+				   "flow->amounts[%lld] = %s.",
+				   __PRETTY_FUNCTION__,
+				   i,
+				   type_to_string(tmpctx, struct amount_msat, &flow->amounts[i]));
 		}
 		h->num_htlcs++;
 	}
 }
+// TODO(eduardo): remove this function, is a duplicate
 void commit_flow_set(
 		const struct gossmap *gossmap,
 		struct chan_extra_map *chan_extra_map,
@@ -616,8 +674,8 @@ void flow_complete(struct flow *flow,
 		
 		if(!h)
 		{
-			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-			abort();
+			debug_err("%s unexpected chan_extra_half is NULL",
+				__PRETTY_FUNCTION__);
 		}
 		
 		flow->amounts[i] = delivered;
@@ -630,8 +688,8 @@ void flow_complete(struct flow *flow,
 					 flow_edge(flow, i)->base_fee,
 					 flow_edge(flow, i)->proportional_fee))
 		{
-			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-			abort();
+			debug_err("%s fee overflow",
+				__PRETTY_FUNCTION__);
 		}
 	}
 }
@@ -701,8 +759,9 @@ double flow_set_probability(
 			struct amount_msat prev_flow;
 			if(!amount_msat_add(&prev_flow,h->htlc_total,in_flight[c_idx].half[c_dir]))
 			{
-				SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-				abort();
+				debug_err("%s (line %d) in-flight amount_msat overflow",
+					__PRETTY_FUNCTION__,
+					__LINE__);
 			}
 			
 			prob *= edge_probability(h->known_min,h->known_max,
@@ -712,8 +771,9 @@ double flow_set_probability(
 					in_flight[c_idx].half[c_dir],
 					deliver))
 			{
-				SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-				abort();
+				debug_err("%s (line %d) in-flight amount_msat overflow",
+					__PRETTY_FUNCTION__,
+					__LINE__);
 			}
 		}
 	}
@@ -793,8 +853,9 @@ static void get_medians(const struct gossmap *gossmap,
 		*median_capacity = amount;
 	else if (!amount_sat_to_msat(median_capacity, caps[num_caps / 2]))
 	{
-		SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-		abort();
+		debug_err("%s (line %d) amount_msat overflow",
+			__PRETTY_FUNCTION__,
+			__LINE__);
 	}
 	asort(fees, num_fees, cmp_amount_msat, NULL);
 	if (!num_caps)
@@ -859,13 +920,15 @@ struct amount_msat flow_set_fee(struct flow **flows)
 				     flows[i]->amounts[0],
 				     flows[i]->amounts[n-1]))
 		{
-			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-			abort();
+			debug_err("%s (line %d) amount_msat overflow",
+				__PRETTY_FUNCTION__,
+				__LINE__);
 		}
 		if(!amount_msat_add(&fee, this_fee,fee))
 		{
-			SUPERVERBOSE("%s: aborting\n",__PRETTY_FUNCTION__);
-			abort();
+			debug_err("%s (line %d) amount_msat overflow",
+				__PRETTY_FUNCTION__,
+				__LINE__);
 		}
 	}
 	return fee;

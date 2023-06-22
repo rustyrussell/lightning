@@ -548,11 +548,20 @@ void remove_htlc_payflow(
 							       flow->path_dirs[i]);
 		if (!amount_msat_sub(&h->htlc_total, h->htlc_total, flow->amounts[i]))
 		{
-			abort();
+			plugin_err(pay_plugin->plugin,
+				   "%s could not substract HTLC amounts, "
+				   "half total htlc amount = %s, "
+				   "flow->amounts[%lld] = %s.",
+				   __PRETTY_FUNCTION__,
+				   type_to_string(tmpctx, struct amount_msat, &h->htlc_total),
+				   i,
+				   type_to_string(tmpctx, struct amount_msat, &flow->amounts[i]));
 		}
 		if (h->num_htlcs == 0)
 		{
-			abort();
+			plugin_err(pay_plugin->plugin,
+				   "%s could not decrease HTLC count.",
+				   __PRETTY_FUNCTION__);
 		}
 		h->num_htlcs--;
 	}
@@ -568,7 +577,12 @@ void commit_htlc_payflow(
 							       flow->path_dirs[i]);
 		if (!amount_msat_add(&h->htlc_total, h->htlc_total, flow->amounts[i]))
 		{
-			abort();
+			plugin_err(pay_plugin->plugin,
+				   "%s could not add HTLC amounts, "
+				   "flow->amounts[%lld] = %s.",
+				   __PRETTY_FUNCTION__,
+				   i,
+				   type_to_string(tmpctx, struct amount_msat, &flow->amounts[i]));
 		}
 		h->num_htlcs++;
 	}

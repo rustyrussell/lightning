@@ -16,45 +16,29 @@ void _debug_info(const char* fname, const char *fmt, ...);
 void _debug_call(const char* fname, const char* fun);
 void _debug_exec_branch(const char* fname,const char* fun, int lineno);
 
-#ifndef MYLOCALDEBUG
-
-#define debug_reply(buf,toks) \
-	if(pay_plugin->debug_payflow) \
-	plugin_log(pay_plugin->plugin,LOG_DBG,\
-	"%.*s",json_tok_full_len(toks),json_tok_full(buf,toks))
-
-#define debug_info(...) \
-	if(pay_plugin->debug_payflow) \
-	plugin_log(pay_plugin->plugin,LOG_DBG,__VA_ARGS__)
-	
-#define debug_call() \
-	if(pay_plugin->debug_payflow) \
-	plugin_log(pay_plugin->plugin,LOG_DBG,"calling %s",__PRETTY_FUNCTION__)
-
-#define debug_exec_branch() \
-	if(pay_plugin->debug_payflow) \
-	plugin_log(pay_plugin->plugin,LOG_DBG,"executing line: %d (%s)",\
-		__LINE__,__PRETTY_FUNCTION__)
-
-#else
-
+#ifndef MYLOG
 #define MYLOG "/tmp/debug.txt"
-#define debug_outreq(req) \
-	_debug_outreq(MYLOG,req)
+#endif
 
-#define debug_reply(buf,toks) \
-	_debug_reply(MYLOG,buf,toks)
+#ifdef FLOW_UNITTEST
 
 #define debug_info(...) \
 	_debug_info(MYLOG,__VA_ARGS__)
-	
 
-#define debug_call() \
-	_debug_call(MYLOG,__PRETTY_FUNCTION__)
+#define debug_err(...) \
+	_debug_info(MYLOG,__VA_ARGS__); abort()
 
-#define debug_exec_branch() \
-	_debug_exec_branch(MYLOG,__PRETTY_FUNCTION__,__LINE__)
+#else
 
+#include <plugins/renepay/pay.h>
+
+#define debug_info(...) \
+	plugin_log(pay_plugin->plugin,LOG_DBG,__VA_ARGS__)
+
+#define debug_err(...) \
+	plugin_err(pay_plugin->plugin,__VA_ARGS__)
 
 #endif
+
+	
 #endif
