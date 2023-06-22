@@ -1374,7 +1374,7 @@ payment_listsendpays_previous(struct command *cmd, const char *buf,
 		if (!pending_group_id && pending)
 			pending_group_id = groupid;
 	}
-
+	
 	if (completed) {
 		ret = jsonrpc_stream_success(cmd);
 		json_add_preimage(ret, "payment_preimage", &preimage);
@@ -1387,19 +1387,23 @@ payment_listsendpays_previous(struct command *cmd, const char *buf,
 		json_add_sha256(ret, "payment_hash", &p->payment_hash);
 		json_add_u32(ret, "created_at", created_at);
 		json_add_num(ret, "parts", parts);
+		
+		/* This payment was already completed, we don't keep record of
+		 * it twice. */
+		tal_free(p);
+		
 		return command_finished(cmd, ret);
 	} else if (pending) {
-		/* We suspend this call and wait for the
-		 * `on_payment_success` or `on_payment_failure`
-		 * handler of the currently running payment to notify
-		 * us about its completion. We latch on to the result
-		 * from the call we extracted above. */
 		p->groupid = pending_group_id;
+		/* Someone else is trying to get this payment through. I'll fail
+		 * this attempt. */
+		tal_free(p);
 		
-		// TODO(eduardo): for this to work we need to subscribe to
-		// pay_success and pay_failure
-		return command_still_pending(cmd);
+		// TODO(eduardo): is this an acceptable behaviour?
+		return command_fail(cmd, PAY_IN_PROGRESS,
+				    "Payment is pending by some other request.");
 	}
+	
 	p->groupid = last_group + 1;
 	
 	struct out_req *req;
