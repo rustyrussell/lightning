@@ -6,6 +6,9 @@
 #include <plugins/libplugin.h>
 #include <plugins/renepay/flow.h>
 
+// TODO(eduardo): check if paynotes are meaningful
+// TODO(eduardo): remove assertions, introduce LOG_BROKEN messages
+
 #define MAX_NUM_ATTEMPTS 10
 
 // TODO(eduardo): Test ideas
@@ -113,7 +116,7 @@ struct payment {
 	/* Limits on what routes we'll accept. */
 	struct amount_msat maxspend;
 	
-	// TODO(eduardo): check out how this is used by get_payflows.
+	/* Max accepted HTLC delay.*/
 	unsigned int maxdelay;
 	
 	/* We promised this in pay() output */
@@ -137,7 +140,6 @@ struct payment {
 	const struct preimage *preimage;
 	
 	/* payment_secret, if specified by invoice. */
-	// TODO(eduardo): isn't the preimage the payment secret?
 	struct secret *payment_secret;
 	
 	/* Payment metadata, if specified by invoice. */
@@ -146,10 +148,6 @@ struct payment {
 	/* To know if the last attempt failed, succeeded or is it pending. */
 	enum payment_status status;	
 
-	// TODO(eduardo):
-	// 1. what is this?
-	// 2. what is it used for?
-	// 3. notice that we don't use it.
 	u32 final_cltv;
 
 	/* Inside pay_plugin->payments list */

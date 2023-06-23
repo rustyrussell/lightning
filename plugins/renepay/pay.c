@@ -1454,7 +1454,7 @@ static struct command_result *json_pay(struct command *cmd,
 		   	&min_prob_success_millionths,100000), // default is 10%
 	
 		   p_opt_def("riskfactor", param_millionths,
-			     &riskfactor_millionths, 1.0),
+			     &riskfactor_millionths, 1),
 
 		   p_opt_def("maxdelay", param_number, &maxdelay,
 			     /* We're initially called to probe usage, before init! */

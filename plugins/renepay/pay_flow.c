@@ -135,7 +135,6 @@ static u64 flow_delay(const struct flow *flow)
 }
 
 /* This enhances f->amounts, and returns per-flow cltvs */
-// TODO(eduardo): check out this again
 static u32 *shadow_additions(const tal_t *ctx,
 			     const struct gossmap *gossmap,
 			     struct payment *p,
@@ -330,16 +329,6 @@ static bool disable_htlc_violations(struct payment *p,
 	return disabled_some;
 }
 
-// /* We're not using these flows after all: clean up chan_extra_map */
-// static void remove_flows(const struct gossmap *gossmap,
-// 			 struct chan_extra_map *chan_extra_map,
-// 			 struct flow **flows)
-// {
-// 	for (size_t i = 0; i < tal_count(flows); i++)
-// 		remove_completed_flow(gossmap, chan_extra_map, flows[i]);
-// }
-
-// TODO(eduardo): check this
 /* Get some payment flows to get this amount to destination, or NULL. */
 struct pay_flow **get_payflows(struct payment *p,
 			       struct amount_msat amount,
@@ -373,8 +362,6 @@ struct pay_flow **get_payflows(struct payment *p,
 		bool too_unlikely, too_expensive, too_delayed;
 		const u32 *final_cltvs;
 		
-		/* Note!  This actually puts flows in chan_extra_map, so
-		 * flows must be removed if not used! */
 		flows = minflow(tmpctx, pay_plugin->gossmap, src, dst,
 				pay_plugin->chan_extra_map, disabled,
 				amount, 
@@ -400,7 +387,7 @@ struct pay_flow **get_payflows(struct payment *p,
 		if (too_unlikely && !unlikely_ok)
 		{
 			paynote(p, "Flows too unlikely, P() = %f%%", prob * 100);
-			goto fail_path;
+			goto fail;
 		}
 		too_expensive = amount_msat_greater(fee, feebudget);
 		if (too_expensive)
@@ -408,28 +395,26 @@ struct pay_flow **get_payflows(struct payment *p,
 			paynote(p, "Flows too expensive, fee = %s (max %s)",
 				type_to_string(tmpctx, struct amount_msat, &fee),
 				type_to_string(tmpctx, struct amount_msat, &feebudget));
-			goto fail_path;
+			goto fail;
 		}
 		too_delayed = (delay > p->maxdelay);
 		if (too_delayed) {
 			paynote(p, "Flows too delayed, delay = %"PRIu64" (max %u)",
 				delay, p->maxdelay);
-			// /* FIXME: What is a sane limit? */
-			// if (p->delay_feefactor > 1000) {
-			// 	paynote(p, "Giving up!");
-			// 	goto fail_path;
-			// }
-
-			// p->delay_feefactor *= 2;
-			// paynote(p, "Doubling delay_feefactor to %f",
-			// 	p->delay_feefactor);
-			// 
-			// goto retry;
 			
-			goto fail_path;
+			/* FIXME: What is a sane limit? */
+			if (p->delay_feefactor > 1000) {
+				paynote(p, "Giving up!");
+				goto fail;
+			}
+
+			p->delay_feefactor *= 2;
+			paynote(p, "Doubling delay_feefactor to %f",
+				p->delay_feefactor);
+			
+			continue; // retry
 		}
 
-	// seems_ok:
 		/* Now we check for min/max htlc violations, and
 		 * excessive htlc counts.  It would be more efficient
 		 * to do this inside minflow(), but the diagnostics here
@@ -437,39 +422,26 @@ struct pay_flow **get_payflows(struct payment *p,
 		 * *actually* made us reconsider. */
 		if (disable_htlc_violations(p, flows, pay_plugin->gossmap,
 					    disabled))
-			goto retry;
-		
-		// /* Commit the flows to the chan_extra_map, 
-		//  * update the htlc_total and num_htlcs. */
-		// commit_htlc_flow_set(pay_plugin->gossmap,
-		// 		pay_plugin->chan_extra_map,
-		// 		flows);
-		
+		{
+			continue; // retry
+		}
 		
 		/* This can adjust amounts and final cltv for each flow,
 		 * to make it look like it's going elsewhere */
 		final_cltvs = shadow_additions(tmpctx, pay_plugin->gossmap,
 					       p, flows, is_entire_payment);
-
 		/* OK, we are happy with these flows: convert to
 		 * pay_flows to outlive the current gossmap. */
 		pay_flows = flows_to_pay_flows(p, pay_plugin->gossmap,
 					       flows, final_cltvs,
 					       &p->active_payment->next_partid);
 		break;
-
-	retry:
-		continue;
-	fail_path:
-		goto fail;
 	}
 
-out:
 	return pay_flows;
 
 fail:
-	pay_flows = NULL;
-	goto out;
+	return NULL;
 }
 
 const char* fmt_payflows(const tal_t *ctx,
@@ -546,6 +518,12 @@ void remove_htlc_payflow(
 							       chan_extra_map,
 							       flow->path_scids[i],
 							       flow->path_dirs[i]);
+		if(!h)
+		{
+			plugin_err(pay_plugin->plugin,
+				   "%s could not resolve chan_extra_half",
+				   __PRETTY_FUNCTION__);
+		}
 		if (!amount_msat_sub(&h->htlc_total, h->htlc_total, flow->amounts[i]))
 		{
 			plugin_err(pay_plugin->plugin,
@@ -575,6 +553,12 @@ void commit_htlc_payflow(
 							       chan_extra_map,
 							       flow->path_scids[i],
 							       flow->path_dirs[i]);
+		if(!h)
+		{
+			plugin_err(pay_plugin->plugin,
+				   "%s could not resolve chan_extra_half",
+				   __PRETTY_FUNCTION__);
+		}
 		if (!amount_msat_add(&h->htlc_total, h->htlc_total, flow->amounts[i]))
 		{
 			plugin_err(pay_plugin->plugin,
