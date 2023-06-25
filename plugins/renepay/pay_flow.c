@@ -334,7 +334,8 @@ struct pay_flow **get_payflows(struct payment *p,
 			       struct amount_msat amount,
 			       struct amount_msat feebudget,
 			       bool unlikely_ok,
-			       bool is_entire_payment)
+			       bool is_entire_payment,
+			       char const ** err_msg)
 {
 	bitmap *disabled;
 	struct pay_flow **pay_flows;
@@ -344,11 +345,13 @@ struct pay_flow **get_payflows(struct payment *p,
 	src = gossmap_find_node(pay_plugin->gossmap, &pay_plugin->my_id);
 	if (!src) {
 		paynote(p, "We don't have any channels?");
+		*err_msg = tal_fmt(tmpctx,"We don't have any channels.");
 		goto fail;
 	}
 	dst = gossmap_find_node(pay_plugin->gossmap, &p->destination);
 	if (!src) {
 		paynote(p, "No trace of destination in network gossip");
+		*err_msg = tal_fmt(tmpctx,"Destination is unreacheable in the network gossip.");
 		goto fail;
 	}
 
@@ -381,10 +384,15 @@ struct pay_flow **get_payflows(struct payment *p,
 		fee = flow_set_fee(flows);
 		delay = flows_worst_delay(flows) + p->final_cltv;
 
-		too_unlikely = (prob < 0.01);
+		too_unlikely = (prob < p->min_prob_success);
 		if (too_unlikely && !unlikely_ok)
 		{
 			paynote(p, "Flows too unlikely, P() = %f%%", prob * 100);
+			*err_msg = tal_fmt(tmpctx,
+					  "Probability is too small, "
+					  "Prob = %f%% (min = %f%%)",
+					  prob*100,
+					  p->min_prob_success*100);
 			goto fail;
 		}
 		too_expensive = amount_msat_greater(fee, feebudget);
@@ -393,6 +401,11 @@ struct pay_flow **get_payflows(struct payment *p,
 			paynote(p, "Flows too expensive, fee = %s (max %s)",
 				type_to_string(tmpctx, struct amount_msat, &fee),
 				type_to_string(tmpctx, struct amount_msat, &feebudget));
+			*err_msg = tal_fmt(tmpctx,
+					  "Fee exceeds our fee budget, "
+					  "fee = %s (maxfee = %s)",
+					  type_to_string(tmpctx, struct amount_msat, &fee),
+					  type_to_string(tmpctx, struct amount_msat, &feebudget));
 			goto fail;
 		}
 		too_delayed = (delay > p->maxdelay);
@@ -403,6 +416,10 @@ struct pay_flow **get_payflows(struct payment *p,
 			/* FIXME: What is a sane limit? */
 			if (p->delay_feefactor > 1000) {
 				paynote(p, "Giving up!");
+				*err_msg = tal_fmt(tmpctx,
+						  "CLTV delay exceeds our CLTV budget, "
+						  "delay = %"PRIu64" (maxdelay = %u)",
+						  delay,p->maxdelay);
 				goto fail;
 			}
 

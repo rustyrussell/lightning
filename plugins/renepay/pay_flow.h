@@ -29,7 +29,8 @@ struct pay_flow **get_payflows(struct payment *p,
 			       struct amount_msat amount,
 			       struct amount_msat feebudget,
 			       bool unlikely_ok,
-			       bool is_entire_payment);
+			       bool is_entire_payment,
+			       char const ** err_msg);
 
 void commit_htlc_payflow(
 		struct chan_extra_map *chan_extra_map,

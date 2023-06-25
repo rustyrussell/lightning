@@ -123,76 +123,72 @@ def test_pay(node_factory):
 @pytest.mark.developer("needs to deactivate shadow routing")
 def test_amounts(node_factory):
     l1, l2 = node_factory.line_graph(2)
-    inv = l2.rpc.invoice(Millisatoshi("123sat"), 'test_pay_amounts', 'description')['bolt11']
+    inv = l2.rpc.invoice(Millisatoshi(123456), 'test_pay_amounts', 'description')['bolt11']
 
     invoice = only_one(l2.rpc.listinvoices('test_pay_amounts')['invoices'])
 
     assert isinstance(invoice['amount_msat'], Millisatoshi)
-    assert invoice['amount_msat'] == Millisatoshi(123000)
+    assert invoice['amount_msat'] == Millisatoshi(123456)
 
     l1.rpc.call('renepay',{'invstring':inv, 'use_shadow':False})
 
     invoice = only_one(l2.rpc.listinvoices('test_pay_amounts')['invoices'])
     assert isinstance(invoice['amount_received_msat'], Millisatoshi)
-    assert invoice['amount_received_msat'] >= Millisatoshi(123000)
+    assert invoice['amount_received_msat'] >= Millisatoshi(123456)
 
 
 @pytest.mark.developer("needs to deactivate shadow routing")
 def test_limits(node_factory):
-    """Test that we enforce fee max percentage and max delay"""
-    l1, l2, l3 = node_factory.line_graph(3, wait_for_announce=True)
-
+    '''
+    Topology:
+    1----2----4
+    |         |
+    3----5----6
+    '''
+    opts = [
+        {'disable-mpp': None, 'fee-base':0, 'fee-per-satoshi':100},
+    ]
+    l1, l2, l3, l4, l5,l6 = node_factory.get_nodes(6, opts=opts*6)
+    node_factory.join_nodes([l1, l2, l4, l6],
+        wait_for_announce=True,fundamount=1000000)
+    node_factory.join_nodes([l1, l3, l5, l6], 
+        wait_for_announce=True,fundamount=1000000)
+    
+    inv = l4.rpc.invoice('any','any','description')
+    l2.rpc.call('pay', {'bolt11': inv['bolt11'], 'amount_msat':500000000})
+    inv = l5.rpc.invoice('any','any','description')
+    l3.rpc.call('pay', {'bolt11': inv['bolt11'], 'amount_msat':500000000})
+    
     # FIXME: pylightning should define these!
     # PAY_STOPPED_RETRYING = 210
     PAY_ROUTE_NOT_FOUND=205
 
-    inv = l3.rpc.invoice("any", "any", 'description')
+    inv = l6.rpc.invoice("any", "any", 'description')
 
     # Fee too high.
-    err = r'Failed to find a route for 100000msat with budget 1msat'
-    with pytest.raises(RpcError, match=err) as err:
-        l1.rpc.call('renepay', {'invstring': inv['bolt11'], 'amount_msat': 100000, 'maxfee': 1})
-
-    # TODO(eduardo): which error code shall we use here?
+    failmsg = r'Fee exceeds our fee budget'
+    with pytest.raises(RpcError, match=failmsg) as err:
+        l1.rpc.call('renepay', {'invstring': inv['bolt11'], 'amount_msat': 1000000, 'maxfee': 1})
     assert err.value.error['code'] == PAY_ROUTE_NOT_FOUND
-    # assert err.value.error['code'] == PAY_STOPPED_RETRYING
+    # TODO(eduardo): which error code shall we use here?
 
     # TODO(eduardo): shall we list attempts in renepay?
-    # It should have retried two more times (one without routehint and one with routehint)
     # status = l1.rpc.call('renepaystatus', {'invstring':inv['bolt11']})['paystatus'][0]['attempts']
 
-    # We have an internal test to see if we can reach the destination directly
-    # without a routehint, that will enable a NULL-routehint. We will then try
-    # with the provided routehint, and the NULL routehint, resulting in 2
-    # attempts.
-    # assert(len(status) == 1)
-    # assert(status[0]['failure']['code'] == 205)
+    failmsg = r'CLTV delay exceeds our CLTV budget'
+    # Delay too high.
+    with pytest.raises(RpcError, match=failmsg) as err:
+        l1.rpc.call('renepay', {'invstring': inv['bolt11'], 'amount_msat': 1000000, 'maxdelay': 0})
+    assert err.value.error['code'] == PAY_ROUTE_NOT_FOUND
+    
+    failmsg = r'Probability is too small'
+    # Delay too high.
+    with pytest.raises(RpcError, match=failmsg) as err:
+        l1.rpc.call('renepay', {'invstring': inv['bolt11'], 
+            'amount_msat': 800000000, 
+            'min_prob_success': '0.5'})
+    assert err.value.error['code'] == PAY_ROUTE_NOT_FOUND
 
-#     failmsg = r'CLTV delay exceeds our CLTV budget'
-#     # Delay too high.
-#     with pytest.raises(RpcError, match=failmsg) as err:
-#         l1.rpc.call('pay', {'bolt11': inv['bolt11'], 'amount_msat': 100000, 'maxdelay': 0})
-# 
-#     assert err.value.error['code'] == PAY_STOPPED_RETRYING
-#     # Should also have retried two more times.
-#     status = l1.rpc.call('paystatus', {'bolt11': inv['bolt11']})['pay'][1]['attempts']
-# 
-#     assert(len(status) == 2)
-#     assert(status[0]['failure']['code'] == 205)
-# 
-#     # This fails!
-#     err = r'Fee exceeds our fee budget: 2msat > 1msat, discarding route'
-#     with pytest.raises(RpcError, match=err) as err:
-#         l1.rpc.pay(bolt11=inv['bolt11'], amount_msat=100000, maxfee=1)
-# 
-#     # This works, because fee is less than exemptfee.
-#     l1.dev_pay(inv['bolt11'], amount_msat=100000, maxfeepercent=0.0001,
-#                exemptfee=2000, use_shadow=False)
-#     status = l1.rpc.call('paystatus', {'bolt11': inv['bolt11']})['pay'][3]['attempts']
-#     assert len(status) == 1
-#     assert status[0]['strategy'] == "Initial attempt"
-# 
-# 
 # @pytest.mark.developer("Gossip is too slow without developer")
 # def test_pay_exclude_node(node_factory, bitcoind):
 #     """Test excluding the node if there's the NODE-level error in the failure_code

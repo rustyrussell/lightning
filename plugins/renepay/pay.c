@@ -1158,10 +1158,13 @@ static struct command_result *try_paying(struct command *cmd,
 
 	// plugin_log(pay_plugin->plugin,LOG_DBG,fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
 	
+	char const * err_msg;
+	
 	/* We let this return an unlikely path, as it's better to try once
 	 * than simply refuse.  Plus, models are not truth! */
 	struct pay_flow **pay_flows = get_payflows(p, remaining, feebudget, first_time,
-				 amount_msat_eq(p->total_delivering, AMOUNT_MSAT(0)));
+				 		   amount_msat_eq(p->total_delivering, AMOUNT_MSAT(0)),
+						   &err_msg);
 	
 	plugin_log(pay_plugin->plugin,LOG_DBG,fmt_payflows(tmpctx,pay_flows));
 	
@@ -1170,11 +1173,8 @@ static struct command_result *try_paying(struct command *cmd,
 	if (!pay_flows)
 	{
 		return command_fail(cmd, PAY_ROUTE_NOT_FOUND,
-				    "Failed to find a route for %s with budget %s",
-				    type_to_string(tmpctx, struct amount_msat,
-						   &remaining),
-				    type_to_string(tmpctx, struct amount_msat,
-						   &feebudget));
+				    "Failed to find a route, %s",
+				    err_msg);
 	}
 	/* Now begin making payments */
 	
@@ -1501,10 +1501,9 @@ static struct command_result *json_pay(struct command *cmd,
 		plugin_err(pay_plugin->plugin, "Failed to refresh gossmap: %s",
 			   strerror(errno));
 	
-	
 	p->base_fee_penalty=*base_fee_penalty;
 	p->prob_cost_factor= *prob_cost_factor;
-	p->min_prob_success=*min_prob_success_millionths * 1e-6;
+	p->min_prob_success = *min_prob_success_millionths / 1000000.0;
  	p->delay_feefactor = *riskfactor_millionths / 1000000.0;
 	p->maxdelay = *maxdelay;
 	
