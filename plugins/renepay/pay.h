@@ -6,6 +6,9 @@
 #include <plugins/libplugin.h>
 #include <plugins/renepay/flow.h>
 
+// TODO(eduardo): add an option entry for maxfeepercent
+// TODO(eduardo): I think this plugin can't handle a msat accuracy payment.
+// TODO(eduardo): write a man entry for renepay
 // TODO(eduardo): check if paynotes are meaningful
 // TODO(eduardo): remove assertions, introduce LOG_BROKEN messages
 
@@ -122,18 +125,7 @@ struct payment {
 	/* We promised this in pay() output */
 	struct timeabs start_time;
 	
-	// TODO(eduardo): notice that stop_time = start_time + 60sec by default.
-	// On the other hand I am assuming that HTLCs are removed when a payment
-	// request fails or succeeds. A fail could happen when some other part
-	// of a MPP payment fails and the current part times-out. My question is
-	// what determines this time-out of the MPP part, is it encoded in the
-	// HTLCs themselves, thus measured in block numbers or is there another
-	// timer somewhere?
-	// If this time is in seconds, it would be desirable to be less than
-	// 30sec so that we can try at least two different MPP before the
-	// payment expires. On the other hand if HTLCs expire only after a
-	// certain block number, then we should keep track of these events in the
-	// uncertainty network somehow even after the payment terminates.
+	/* We stop trying after this time is reached. */
 	struct timeabs stop_time;
 	
 	/* Payment preimage, in case of success. */

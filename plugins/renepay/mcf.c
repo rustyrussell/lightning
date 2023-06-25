@@ -6,6 +6,7 @@
 #include <plugins/renepay/mcf.h>
 #include <plugins/renepay/flow.h>
 #include <plugins/renepay/dijkstra.h>
+#include <plugins/renepay/debug.h>
 #include <common/type_to_string.h>
 #include <stdint.h>
 #include <math.h>
@@ -432,7 +433,12 @@ static void linearize_channel(
 							c,
 							dir);
 	
-	assert(extra_half);
+	if(!extra_half)
+	{
+		debug_err("%s (line %d) unexpected, extra_half is NULL",
+			__PRETTY_FUNCTION__,
+			__LINE__);
+	}
 	
 	s64 a = extra_half->known_min.millisatoshis/1000,
 	    b = 1 + extra_half->known_max.millisatoshis/1000;
@@ -446,11 +452,6 @@ static void linearize_channel(
 		cost[i] = params->cost_fraction[i]
 		          *params->amount.millisatoshis
 		          *params->prob_cost_factor*1.0/(b-a);
-		
-		// printf("channel part: %ld, cost_fraction: %lf, cost: %ld\n",
-		// 	i,params->cost_fraction[i],cost[i]);
-		// printf("prob_cost_factor: %d, amount_msat: %ld\n",
-		// 	params->prob_cost_factor,params->amount.millisatoshis);
 	}
 }
 
@@ -495,7 +496,6 @@ static void combine_cost_function(
 		struct residual_network *residual_network,
 		s64 mu)
 {
-	// printf("Report on arcs cost\n");
 	for(u32 arc_idx=0;arc_idx<linear_network->max_num_arcs;++arc_idx)
 	{
 		arc_t arc = (arc_t){.idx=arc_idx};
@@ -511,17 +511,7 @@ static void combine_cost_function(
 		residual_network->cost[arc_idx]
 			= mu==0 ? pcost : 
 			          (mu==(MU_MAX-1) ? fcost : combined);
-		
-		// printf("arc_idx: %d, comb. cost: %ld, res. cap: %ld\n",arc_idx,
-		// 	residual_network->cost[arc_idx],
-		// 	residual_network->cap[arc_idx]);
-		// printf("cap: %ld, prob_cost: %ld, fee_cost: %ld, mu: %ld\n\n",
-		// 	linear_network->capacity[arc_idx],
-		// 	linear_network->arc_prob_cost[arc_idx],
-		// 	linear_network->arc_fee_cost[arc_idx],
-		// 	mu);
 	}
-	// printf("\n\n");
 }
 
 static void linear_network_add_adjacenct_arc(
@@ -983,15 +973,16 @@ static int optimize_mcf(
 			// see page 323 of Ahuja-Magnanti-Orlin
 			residual_network->potential[n] -= MIN(distance[target],distance[n]);
 			
-			// Notice:
-			// if node i is permanently labeled we have
-			// 	d_i<=d_t 
-			// which implies
-			// 	MIN(d_i,d_t) = d_i
-			// if node i is temporarily labeled we have
-			// 	d_i>=d_t
-			// which implies
-			// 	MIN(d_i,d_t) = d_t
+			/* Notice:
+			 * if node i is permanently labeled we have
+			 * 	d_i<=d_t 
+			 * which implies
+			 * 	MIN(d_i,d_t) = d_i
+			 * if node i is temporarily labeled we have
+			 * 	d_i>=d_t
+			 * which implies
+			 * 	MIN(d_i,d_t) = d_t 
+			 * */
 		}
 	}
 	tal_free(this_ctx);
@@ -1040,7 +1031,6 @@ static u32 find_positive_balance(
 				= gossmap_nth_chan(gossmap,
 				                   cur,i,&dir);
 			
-			// TODO(eduardo): do we check if the channel is public?
 			if (!gossmap_chan_set(c,dir))
 				continue;
 			
@@ -1065,8 +1055,6 @@ static u32 find_positive_balance(
 		
 		assert(updated_idx!=INVALID_INDEX);
 		assert(updated_idx!=final_idx);
-		// printf("%s: balance[%d] = %ld\n",__PRETTY_FUNCTION__,
-		//	updated_idx,balance[updated_idx]);
 		
 		final_idx = updated_idx;
 	}
@@ -1091,9 +1079,14 @@ static struct flow **
 		// track of htlcs and in_flight sats.
 		struct chan_extra_map *chan_extra_map,
 		const struct linear_network *linear_network,
-		const struct residual_network *residual_network)
+		const struct residual_network *residual_network,
+		
+		// how many msats in excess we paid for not having msat accuracy
+		// in the MCF solver
+		struct amount_msat excess)
 {
-	// printf("%s: starting\n",__PRETTY_FUNCTION__);
+	assert(excess.millisatoshis < 1000);
+	
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 	
 	const size_t max_num_chans = gossmap_max_chan_idx(gossmap);
@@ -1172,7 +1165,9 @@ static struct flow **
 				
 				// TODO(eduardo) does htlc_max has any relevance
 				// here?
-				delta = MIN(delta,chan_flow[c_idx].half[dir]);
+				// HINT: delta=MIN(delta,htlc_max);
+				// however this might not work because often we
+				// move delta+fees
 			}
 			
 			
@@ -1203,9 +1198,22 @@ static struct flow **
 				chan_flow[c_idx].half[prev_dir[cur_idx]]-=delta;
 			}
 			
+			assert(delta>0);
+			
+			// substract the excess of msats for not having msat
+			// accuracy
+			struct amount_msat delivered = amount_msat(delta*1000);
+			if(!amount_msat_sub(&delivered,delivered,excess))
+			{
+				debug_err("%s (line %d) unable to substract excess.",
+					__PRETTY_FUNCTION__,
+					__LINE__);
+			}
+			excess = amount_msat(0);
+			
 			// complete the flow path by adding real fees and
 			// probabilities.
-			flow_complete(fp,gossmap,chan_extra_map,amount_msat(delta*1000));
+			flow_complete(fp,gossmap,chan_extra_map,delivered);
 			
 			// add fp to list
 			ld = tal(list_ctx,struct list_data);
@@ -1224,7 +1232,6 @@ static struct flow **
 	}
 	
 	tal_free(this_ctx);
-	// printf("%s: done\n",__PRETTY_FUNCTION__);
 	return flows;
 }
 
@@ -1391,27 +1398,43 @@ struct flow** minflow(
 	
 	init_residual_network(linear_network,residual_network);
 	
-	// printf("%s: done with allocation and initialization\n",__PRETTY_FUNCTION__);
-	
 	struct amount_msat best_fee;
 	double best_prob_success;
 	struct flow **best_flow_paths = NULL;
 	
-	// printf("%s: searching for a feasible flow\n",__PRETTY_FUNCTION__);
+	/* TODO(eduardo):
+	 * Some MCF algorithms' performance depend on the size of maxflow. If we
+	 * were to work in units of msats we 1. risking overflow when computing
+	 * costs and 2. we risk a performance overhead for no good reason. 
+	 * 
+	 * Working in units of sats was my first choice, but maybe working in
+	 * units of 10, or 100 sats could be even better. 
+	 * 
+	 * IDEA: define the size of our precision as some parameter got at
+	 * runtime that depends on the size of the payment and adjust the MCF
+	 * accordingly. 
+	 * For example if we are trying to pay 1M sats our precision could be
+	 * set to 1000sat, then channels that had capacity for 3M sats become 3k
+	 * flow units. */
+	const u64 pay_amount_msats = params->amount.millisatoshis % 1000;
+	const u64 pay_amount_sats = params->amount.millisatoshis/1000 
+			+ (pay_amount_msats ? 1 : 0);
+	const struct amount_msat excess 
+		= amount_msat(pay_amount_msats ? 1000 - pay_amount_msats : 0);
+	
 	int err = find_feasible_flow(linear_network,residual_network,source_idx,target_idx,
-	                             params->amount.millisatoshis/1000);
+	                             pay_amount_sats);
 	
 	if(err!=RENEPAY_ERR_OK)
 	{
 		// there is no flow that satisfy the constraints, we stop here
-		// printf("%s: feasible flow not found\n",__PRETTY_FUNCTION__);
 		goto finish;
 	}
-	// printf("%s: found a feasible flow\n",__PRETTY_FUNCTION__);
 	
 	// first flow found
 	best_flow_paths = get_flow_paths(ctx,params->gossmap,params->chan_extra_map,
-	                            linear_network,residual_network);
+	                            linear_network,residual_network,
+				    excess);
 	best_prob_success = flow_set_probability(best_flow_paths,
 						params->gossmap,
 						params->chan_extra_map);
@@ -1430,11 +1453,12 @@ struct flow** minflow(
 		combine_cost_function(linear_network,residual_network,mu);
 		
 		optimize_mcf(linear_network,residual_network,
-				source_idx,target_idx,params->amount.millisatoshis/1000);
+				source_idx,target_idx,pay_amount_sats);
 		
 		struct flow **flow_paths;
 		flow_paths = get_flow_paths(this_ctx,params->gossmap,params->chan_extra_map,
-		                            linear_network,residual_network);
+		                            linear_network,residual_network,
+					    excess);
 		
 		double prob_success = flow_set_probability(
 						flow_paths,

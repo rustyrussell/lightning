@@ -336,8 +336,6 @@ struct pay_flow **get_payflows(struct payment *p,
 			       bool unlikely_ok,
 			       bool is_entire_payment)
 {
-	// double frugality = 1.0;
-	// bool was_too_expensive = false;
 	bitmap *disabled;
 	struct pay_flow **pay_flows;
 	const struct gossmap_node *src, *dst;

@@ -1156,13 +1156,10 @@ static struct command_result *try_paying(struct command *cmd,
 			   type_to_string(tmpctx, struct amount_msat, &p->total_delivering));
 	}
 
-	plugin_log(pay_plugin->plugin,LOG_DBG,fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
+	// plugin_log(pay_plugin->plugin,LOG_DBG,fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
 	
 	/* We let this return an unlikely path, as it's better to try once
 	 * than simply refuse.  Plus, models are not truth! */
-	// TODO(eduardo): some flows might be pending, even the flows that
-	// failed have commited some HTLCs that (?) reduce the throughput of the
-	// channels. Please do take that into account in the MCF.
 	struct pay_flow **pay_flows = get_payflows(p, remaining, feebudget, first_time,
 				 amount_msat_eq(p->total_delivering, AMOUNT_MSAT(0)));
 	
