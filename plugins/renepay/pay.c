@@ -17,6 +17,9 @@
 #include <plugins/renepay/pay_flow.h>
 #include <plugins/renepay/debug.h>
 
+#define INVALID_ID UINT64_MAX 
+#define MAX(a,b) ((a)>(b)? (a) : (b))
+
 // TODO(eduardo): the state of plugin is stored in data (instead of the heap) so
 // that we can load lightningd options directly into before `init` is called.
 static struct pay_plugin the_pay_plugin;
@@ -1044,7 +1047,6 @@ sendpay_flows(struct command *cmd,
 		json_add_sha256(req->js, "payment_hash", &p->payment_hash);
 		json_add_secret(req->js, "payment_secret", p->payment_secret);
 		
-		// TODO(eduardo): should this be p->amount or p->total_delivering? 
 		json_add_amount_msat_only(req->js, "amount_msat", p->amount);
 			
 		json_add_u64(req->js, "partid", flows[i]->partid);
@@ -1060,8 +1062,6 @@ sendpay_flows(struct command *cmd,
 		json_add_string(req->js, "bolt11", p->invstr);
 		if (p->description)
 			json_add_string(req->js, "description", p->description);
-		
-		// debug_outreq(req);
 		
 		amount_msat_accumulate(&p->total_sent, flows[i]->amounts[0]);
 		amount_msat_accumulate(&p->total_delivering,
@@ -1120,8 +1120,9 @@ static struct command_result *try_paying(struct command *cmd,
 	if (!amount_msat_sub(&feebudget, p->maxspend, p->amount))
 	{
 		plugin_err(pay_plugin->plugin,
-			   "%s could not substract maxspend=%s and amount=%s.",
+			   "%s (line %d) could not substract maxspend=%s and amount=%s.",
 			   __PRETTY_FUNCTION__,
+			   __LINE__,
 			   type_to_string(tmpctx, struct amount_msat, &p->maxspend),
 			   type_to_string(tmpctx, struct amount_msat, &p->amount));
 	}
@@ -1130,8 +1131,9 @@ static struct command_result *try_paying(struct command *cmd,
 	if (!amount_msat_sub(&fees_spent, p->total_sent, p->total_delivering))
 	{
 		plugin_err(pay_plugin->plugin,
-			   "%s could not substract total_sent=%s and total_delivering=%s.",
+			   "%s (line %d) could not substract total_sent=%s and total_delivering=%s.",
 			   __PRETTY_FUNCTION__,
+			   __LINE__,
 			   type_to_string(tmpctx, struct amount_msat, &p->total_sent),
 			   type_to_string(tmpctx, struct amount_msat, &p->total_delivering));
 	}
@@ -1140,8 +1142,9 @@ static struct command_result *try_paying(struct command *cmd,
 	if (!amount_msat_sub(&feebudget, feebudget, fees_spent))
 	{
 		plugin_err(pay_plugin->plugin,
-			   "%s could not substract feebudget=%s and fees_spent=%s.",
+			   "%s (line %d) could not substract feebudget=%s and fees_spent=%s.",
 			   __PRETTY_FUNCTION__,
+			   __LINE__,
 			   type_to_string(tmpctx, struct amount_msat, &feebudget),
 			   type_to_string(tmpctx, struct amount_msat, &fees_spent));
 	}
@@ -1150,8 +1153,9 @@ static struct command_result *try_paying(struct command *cmd,
 	if (!amount_msat_sub(&remaining, p->amount, p->total_delivering))
 	{
 		plugin_err(pay_plugin->plugin,
-			   "%s could not substract amount=%s and total_delivering=%s.",
+			   "%s (line %d) could not substract amount=%s and total_delivering=%s.",
 			   __PRETTY_FUNCTION__,
+			   __LINE__,
 			   type_to_string(tmpctx, struct amount_msat, &p->amount),
 			   type_to_string(tmpctx, struct amount_msat, &p->total_delivering));
 	}
@@ -1218,7 +1222,7 @@ static void renepay_cleanup(struct active_payment *ap)
 	ap->localmods_applied=false;
 	tal_free(ap->local_gossmods);
 	
-	plugin_log(pay_plugin->plugin,LOG_DBG,fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
+	// plugin_log(pay_plugin->plugin,LOG_DBG,fmt_chan_extra_map(tmpctx,pay_plugin->chan_extra_map));
 	
 	ap->rexmit_timer = tal_free(ap->rexmit_timer);
 	
@@ -1297,7 +1301,9 @@ payment_listsendpays_previous(struct command *cmd, const char *buf,
 
 	/* Group ID of the first pending payment, this will be the one
 	 * who's result gets replayed if we end up suspending. */
-	u64 pending_group_id = 0;
+	u64 first_pending_group_id = INVALID_ID;
+	u64 last_pending_group_id = INVALID_ID;
+	u64 last_partid=0;
 	/* Did a prior attempt succeed? */
 	bool completed = false;
 
@@ -1326,12 +1332,23 @@ payment_listsendpays_previous(struct command *cmd, const char *buf,
 	 * latest group and remembering what its state is. */
 	json_for_each_arr(i, t, arr)
 	{
-		u64 groupid;
-		const jsmntok_t *status, *grouptok;
+		bool this_pending = false;
+		u64 partid, groupid;
+		struct amount_msat this_delivering, this_sent;
+		
+		const jsmntok_t *status;
 		struct amount_msat diff_sent, diff_msat;
-		grouptok = json_get_member(buf, t, "groupid");
-		json_to_u64(buf, grouptok, &groupid);
-
+		
+		json_scan(tmpctx,buf,t,
+			  "{partid:%"
+			  ",groupid:%"
+			  ",amount_msat:%"
+			  ",amount_sent_msat:%}",
+			  JSON_SCAN(json_to_u64,&partid),
+			  JSON_SCAN(json_to_u64,&groupid),
+			  JSON_SCAN(json_to_msat,&this_delivering),
+			  JSON_SCAN(json_to_msat,&this_sent));
+		
 		/* New group, reset what we collected. */
 		if (last_group != groupid) {
 			completed = false;
@@ -1365,11 +1382,42 @@ payment_listsendpays_previous(struct command *cmd, const char *buf,
 		status = json_get_member(buf, t, "status");
 		completed |= json_tok_streq(buf, status, "complete");
 		pending |= json_tok_streq(buf, status, "pending");
+		
+		this_pending |= json_tok_streq(buf, status, "pending");
 
-		/* Remember the group id of the first pending group so
-		 * we can replay its result later. */
-		if (!pending_group_id && pending)
-			pending_group_id = groupid;
+		if(this_pending)
+		{
+			if(first_pending_group_id==INVALID_ID || 
+			   last_pending_group_id==INVALID_ID)
+				first_pending_group_id = last_pending_group_id = groupid;
+			
+			if(groupid > last_pending_group_id)
+			{
+				last_pending_group_id = groupid;
+				p->total_sent = AMOUNT_MSAT(0);
+				p->total_delivering = AMOUNT_MSAT(0);
+				last_partid = partid;
+			}
+			if(groupid < first_pending_group_id)
+			{
+				first_pending_group_id = groupid;
+			}
+			if(groupid == last_pending_group_id)
+			{
+				amount_msat_accumulate(&p->total_sent, 
+						       this_sent);
+				amount_msat_accumulate(&p->total_delivering,
+						       this_delivering);
+				plugin_log(pay_plugin->plugin,LOG_DBG,
+					"pending deliver increased by %s",
+					type_to_string(tmpctx,struct amount_msat,&this_delivering));
+			}
+		}
+		
+		/* Let's get the very last id in the last pending group. */
+		if(groupid == last_pending_group_id)		
+			last_partid = MAX(last_partid,partid);
+				
 	}
 	
 	if (completed) {
@@ -1391,14 +1439,32 @@ payment_listsendpays_previous(struct command *cmd, const char *buf,
 		
 		return command_finished(cmd, ret);
 	} else if (pending) {
-		p->groupid = pending_group_id;
-		/* Someone else is trying to get this payment through. I'll fail
-		 * this attempt. */
-		tal_free(p);
+		p->groupid = last_pending_group_id;
+		p->active_payment->next_partid = last_partid+1;	
 		
-		// TODO(eduardo): is this an acceptable behaviour?
-		return command_fail(cmd, PAY_IN_PROGRESS,
-				    "Payment is pending by some other request.");
+		plugin_log(pay_plugin->plugin,LOG_DBG,
+			   "There are pending sendpays to this invoice. "
+			   "groupids = %ld or %ld, "
+			   "delivering = %s, "
+			   "last_partid = %ld",
+			   first_pending_group_id,
+			   last_pending_group_id,
+			   type_to_string(tmpctx,struct amount_msat,&p->total_delivering),
+			   last_partid);
+		
+		if( 
+		/* TODO(eduardo): If two group_id are trying to complete the
+		 * payment, could this lead to overpayment? */
+		first_pending_group_id != last_pending_group_id
+			|| 
+		amount_msat_greater_eq(p->total_delivering,p->amount))
+		{
+			tal_free(p);
+			return command_fail(cmd, PAY_IN_PROGRESS,
+					    "Payment is pending by some other request.");
+		}
+		
+		return try_paying(cmd,p,true);
 	}
 	
 	p->groupid = last_group + 1;
@@ -1466,13 +1532,6 @@ static struct command_result *json_pay(struct command *cmd,
 #endif
 		   NULL))
 		return command_param_failed();
-	
-	plugin_log(pay_plugin->plugin,LOG_DBG,"json_pay, renepay-debug-mcf option is set to %s\n",
-		   pay_plugin->debug_mcf ? "true" : "false");
-	plugin_log(pay_plugin->plugin,LOG_DBG,"json_pay, renepay-debug-payflow option is set to %s\n",
-		   pay_plugin->debug_payflow ? "true" : "false");
-
-	
 	
 	tal_steal(pay_plugin->ctx,p);
 	tal_add_destructor(p, destroy_payment);

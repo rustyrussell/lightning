@@ -6,8 +6,12 @@
 #include <plugins/libplugin.h>
 #include <plugins/renepay/flow.h>
 
+// TODO(eduardo): check if we are doing correctly the knowledge update: if a
+// channel is not able to forward X it doesn't mean MAX<X, it means that MAX<X+Y
+// where Y is the sum of all HTLCs.
+// TODO(eduardo): check a problem with param_millionths(), if I input an integer
+// should or shouldn't be multiplied by 10^6?
 // TODO(eduardo): add an option entry for maxfeepercent
-// TODO(eduardo): I think this plugin can't handle a msat accuracy payment.
 // TODO(eduardo): write a man entry for renepay
 // TODO(eduardo): check if paynotes are meaningful
 // TODO(eduardo): remove assertions, introduce LOG_BROKEN messages
@@ -31,8 +35,6 @@
 // 	- destination is not in the gossmap
 // 	- destination is offline
 // 	- with current knowledge there is no flow solution to destination
-// 	- path to destination is too expensive
-// 	- path to destination is too unlikely
 
 enum payment_status {
         PAYMENT_PENDING, PAYMENT_SUCCESS, PAYMENT_FAIL,

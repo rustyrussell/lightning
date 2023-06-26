@@ -181,13 +181,18 @@ def test_limits(node_factory):
         l1.rpc.call('renepay', {'invstring': inv['bolt11'], 'amount_msat': 1000000, 'maxdelay': 0})
     assert err.value.error['code'] == PAY_ROUTE_NOT_FOUND
     
+    inv2 = l6.rpc.invoice("800000sat", "inv2", 'description')
     failmsg = r'Probability is too small'
     # Delay too high.
     with pytest.raises(RpcError, match=failmsg) as err:
-        l1.rpc.call('renepay', {'invstring': inv['bolt11'], 
-            'amount_msat': 800000000, 
-            'min_prob_success': '0.5'})
+        l1.rpc.call('renepay', {'invstring': inv2['bolt11'],'min_prob_success': '0.5'})
     assert err.value.error['code'] == PAY_ROUTE_NOT_FOUND
+    
+    # if we try again we can finish this payment
+    l1.rpc.call('renepay', {'invstring': inv2['bolt11']})
+    invoice = only_one(l6.rpc.listinvoices('inv2')['invoices'])
+    assert isinstance(invoice['amount_received_msat'], Millisatoshi)
+    assert invoice['amount_received_msat'] >= Millisatoshi('800000sat')
 
 # @pytest.mark.developer("Gossip is too slow without developer")
 # def test_pay_exclude_node(node_factory, bitcoind):
