@@ -28,6 +28,9 @@ void _debug_exec_branch(const char* fname,const char* fun, int lineno);
 #define debug_err(...) \
 	_debug_info(MYLOG,__VA_ARGS__); abort()
 
+#define debug_paynote(p,...) \
+	_debug_info(MYLOG,__VA_ARGS__);
+
 #else
 
 #include <plugins/renepay/pay.h>
@@ -37,6 +40,9 @@ void _debug_exec_branch(const char* fname,const char* fun, int lineno);
 
 #define debug_err(...) \
 	plugin_err(pay_plugin->plugin,__VA_ARGS__)
+
+#define debug_paynote(p,...) \
+	paynote(p,__VA_ARGS__);
 
 #endif
 

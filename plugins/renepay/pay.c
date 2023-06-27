@@ -845,7 +845,12 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 		chan_extra_can_send(pay_plugin->chan_extra_map,
 				    flow->path_scids[i],
 				    flow->path_dirs[i],
-				    flow->amounts[i]);
+				    
+				    /* This channel can send all that was
+				     * commited in HTLCs.
+				     * Had we removed the commited amount then
+				     * we would have to put here flow->amounts[i]. */
+				    AMOUNT_MSAT(0));
 	}
 	switch ((enum onion_wire)onionerr) {
 	/* These definitely mean eliminate channel */
@@ -889,19 +894,15 @@ static struct command_result *waitsendpay_failed(struct command *cmd,
 	/* Insufficient funds! */
 	case WIRE_TEMPORARY_CHANNEL_FAILURE: {
 		plugin_log(pay_plugin->plugin,LOG_DBG,"waitsendpay_failed: Insufficient funds!");
-		/* OK new max is amount - 1 */
-		struct amount_msat max_possible;
-		if (!amount_msat_sub(&max_possible,
-				     flow->amounts[erridx],
-				     AMOUNT_MSAT(1)))
-			max_possible = AMOUNT_MSAT(0);
-		paynote(p, "... assuming that max capacity is %s",
-			type_to_string(tmpctx, struct amount_msat,
-				       &max_possible));
-		chan_extra_cannot_send(pay_plugin->chan_extra_map,
+		
+		chan_extra_cannot_send(p,pay_plugin->chan_extra_map,
 				       flow->path_scids[erridx],
 				       flow->path_dirs[erridx],
-				       flow->amounts[erridx]);
+				    /* This channel can't send all that was
+				     * commited in HTLCs.
+				     * Had we removed the commited amount then
+				     * we would have to put here flow->amounts[erridx]. */
+				       AMOUNT_MSAT(0));
 		goto done;
 	}
 

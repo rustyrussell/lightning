@@ -145,29 +145,19 @@ void chan_extra_can_send(
 		debug_err("%s unexpected chan_extra ce is NULL",
 			__PRETTY_FUNCTION__);
 	}
+	if(!amount_msat_add(&x,x,ce->half[dir].htlc_total))
+	{
+		debug_err("%s (line %d) cannot add x=%s and htlc_total=%s",
+			__PRETTY_FUNCTION__,__LINE__,
+			type_to_string(tmpctx,struct amount_msat,&x),
+			type_to_string(tmpctx,struct amount_msat,&ce->half[dir].htlc_total));
+	}
 	chan_extra_can_send_(ce,dir,x);
 }
+
 /* Update the knowledge that this (channel,direction) cannot send x msat.*/
-static void chan_extra_cannot_send_(
-		struct chan_extra *ce, 
-		int dir,
-		struct amount_msat x)
-{
-	if(!amount_msat_sub(&x,x,AMOUNT_MSAT(1)))
-	{
-		debug_err("%s unexpected x=%s is less than 0msat",
-			__PRETTY_FUNCTION__,
-			type_to_string(tmpctx,struct amount_msat,&x)
-			);
-		x = AMOUNT_MSAT(0);
-	}
-	
-	ce->half[dir].known_min = amount_msat_min(ce->half[dir].known_min,x);
-	ce->half[dir].known_max = amount_msat_min(ce->half[dir].known_max,x);
-	
-	chan_extra_adjust_half(ce,!dir);
-}
 void chan_extra_cannot_send(
+		struct payment *p,
 		struct chan_extra_map *chan_extra_map,
 		struct short_channel_id scid, 
 		int dir,
@@ -177,10 +167,39 @@ void chan_extra_cannot_send(
 						   scid);
 	if(!ce)
 	{
-		debug_err("%s unexpected chan_extra ce is NULL",
-			__PRETTY_FUNCTION__);
+		debug_err("%s (line %d) unexpected chan_extra ce is NULL",
+			__PRETTY_FUNCTION__,__LINE__);
 	}
-	chan_extra_cannot_send_(ce,dir,x);
+	
+	/* If a channel cannot send x it means that the upper bound for the
+	 * liquidity is MAX_L < x + htlc_total */
+	if(!amount_msat_add(&x,x,ce->half[dir].htlc_total))
+	{
+		debug_err("%s (line %d) cannot add x=%s and htlc_total=%s",
+			__PRETTY_FUNCTION__,__LINE__,
+			type_to_string(tmpctx,struct amount_msat,&x),
+			type_to_string(tmpctx,struct amount_msat,&ce->half[dir].htlc_total));
+	}
+	
+	if(!amount_msat_sub(&x,x,AMOUNT_MSAT(1)))
+	{
+		debug_err("%s (line %d) unexpected x=%s is less than 0msat",
+			__PRETTY_FUNCTION__,__LINE__,
+			type_to_string(tmpctx,struct amount_msat,&x)
+			);
+		x = AMOUNT_MSAT(0);
+	}
+	
+	ce->half[dir].known_min = amount_msat_min(ce->half[dir].known_min,x);
+	ce->half[dir].known_max = amount_msat_min(ce->half[dir].known_max,x);
+	
+	debug_paynote(p,"Update chan knowledge scid=%s, dir=%d: [%s,%s]",
+		type_to_string(tmpctx,struct short_channel_id,&scid),
+		dir,
+		type_to_string(tmpctx,struct amount_msat,&ce->half[dir].known_min),
+		type_to_string(tmpctx,struct amount_msat,&ce->half[dir].known_max));
+	
+	chan_extra_adjust_half(ce,!dir);
 }
 /* Update the knowledge that this (channel,direction) has liquidity x.*/
 static void chan_extra_set_liquidity_(

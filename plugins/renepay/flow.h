@@ -6,6 +6,7 @@
 #include <common/amount.h>
 #include <common/gossmap.h>
 
+struct payment;
 
 // TODO(eduardo): a hard coded constant to indicate a limit on any channel
 // capacity. Channels for which the capacity is unknown (because they are not
@@ -156,7 +157,8 @@ void chan_extra_can_send(struct chan_extra_map *chan_extra_map,
 			 struct amount_msat x);
 
 /* Update the knowledge that this (channel,direction) cannot send x msat.*/
-void chan_extra_cannot_send(struct chan_extra_map *chan_extra_map,
+void chan_extra_cannot_send(struct payment* p,
+			    struct chan_extra_map *chan_extra_map,
 			    struct short_channel_id scid, 
 			    int dir,
 			    struct amount_msat x);

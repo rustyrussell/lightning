@@ -6,9 +6,18 @@
 #include <plugins/libplugin.h>
 #include <plugins/renepay/flow.h>
 
-// TODO(eduardo): check if we are doing correctly the knowledge update: if a
-// channel is not able to forward X it doesn't mean MAX<X, it means that MAX<X+Y
-// where Y is the sum of all HTLCs.
+// TODO(eduardo): renepaystatus should be similar to paystatus
+
+// TODO(eduardo): notice that payment must outlive the command!
+
+// TODO(eduardo): MCF should consider pending HTLCs occupy some capacity in the
+// routing channels.
+
+// TODO(eduardo): renepaystatus sometimes shows a truncated invoice string
+// 
+// TODO(eduardo): for some reason cln-renepay does not terminate inmediately:
+// 2023-06-26T07:32:36.064Z DEBUG   lightningd: cln-renepay: failed to self-terminate in time, killing.
+// 
 // TODO(eduardo): check a problem with param_millionths(), if I input an integer
 // should or shouldn't be multiplied by 10^6?
 // TODO(eduardo): add an option entry for maxfeepercent
