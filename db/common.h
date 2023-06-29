@@ -99,6 +99,9 @@ struct db_stmt {
 	/* Our entry in the list of pending statements. */
 	struct list_node list;
 
+	/* Bind counter */
+	int bind_pos;
+
 	/* Database we are querying */
 	struct db *db;
 

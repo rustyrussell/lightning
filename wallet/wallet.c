@@ -2737,7 +2737,6 @@ void wallet_htlc_update(struct wallet *wallet, const u64 htlc_dbid,
 			    " WHERE id=?"));
 
 	db_bind_int(stmt, 0, htlc_state_in_db(new_state));
-	db_bind_u64(stmt, 7, htlc_dbid);
 
 	if (payment_key)
 		db_bind_preimage(stmt, 1, payment_key);
@@ -2764,6 +2763,7 @@ void wallet_htlc_update(struct wallet *wallet, const u64 htlc_dbid,
 	else
 		db_bind_null(stmt, 6);
 
+	db_bind_u64(stmt, 7, htlc_dbid);
 	db_exec_prepared_v2(take(stmt));
 
 	if (terminal) {
@@ -3279,6 +3279,7 @@ void wallet_payment_delete(struct wallet *wallet,
 					 "   AND groupid = ?"
 					 "   AND partid = ?"
 					 "   AND status = ?"));
+		db_bind_sha256(stmt, 0, payment_hash);
 		db_bind_u64(stmt, 1, *groupid);
 		db_bind_u64(stmt, 2, *partid);
 		db_bind_u64(stmt, 3, *status);
@@ -3288,9 +3289,9 @@ void wallet_payment_delete(struct wallet *wallet,
 				     SQL("DELETE FROM payments"
 					 " WHERE payment_hash = ?"
 					 "     AND status = ?"));
+		db_bind_sha256(stmt, 0, payment_hash);
 		db_bind_u64(stmt, 1, *status);
 	}
-	db_bind_sha256(stmt, 0, payment_hash);
 	db_exec_prepared_v2(take(stmt));
 }
 
@@ -3573,9 +3574,9 @@ void wallet_payment_set_failinfo(struct wallet *wallet,
 					     "     , failcode=?"
 					     "     , failnode=?"
 					     "     , failscid=?"
+					     "     , faildirection=?"
 					     "     , failupdate=?"
 					     "     , faildetail=?"
-					     "     , faildirection=?"
 					     " WHERE payment_hash=?"
 					     " AND partid=?;"));
 	if (failonionreply)
@@ -3593,18 +3594,18 @@ void wallet_payment_set_failinfo(struct wallet *wallet,
 
 	if (failchannel) {
 		db_bind_short_channel_id(stmt, 5, failchannel);
-		db_bind_int(stmt, 8, faildirection);
+		db_bind_int(stmt, 6, faildirection);
 	} else {
 		db_bind_null(stmt, 5);
-		db_bind_null(stmt, 8);
+		db_bind_null(stmt, 6);
 	}
 
-	db_bind_talarr(stmt, 6, failupdate);
+	db_bind_talarr(stmt, 7, failupdate);
 
 	if (faildetail != NULL)
-		db_bind_text(stmt, 7, faildetail);
+		db_bind_text(stmt, 8, faildetail);
 	else
-		db_bind_null(stmt, 7);
+		db_bind_null(stmt, 8);
 
 	db_bind_sha256(stmt, 9, payment_hash);
 	db_bind_u64(stmt, 10, partid);
