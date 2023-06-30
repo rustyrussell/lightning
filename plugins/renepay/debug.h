@@ -20,20 +20,24 @@ void _debug_exec_branch(const char* fname,const char* fun, int lineno);
 #define MYLOG "/tmp/debug.txt"
 #endif
 
-#ifdef FLOW_UNITTEST
+
+/* All debug information goes to a file. */
+#ifdef RENEPAY_UNITTEST
 
 #define debug_info(...) \
 	_debug_info(MYLOG,__VA_ARGS__)
 
 #define debug_err(...) \
-	_debug_info(MYLOG,__VA_ARGS__); abort()
+	{_debug_info(MYLOG,__VA_ARGS__); abort();}
 
 #define debug_paynote(p,...) \
-	_debug_info(MYLOG,__VA_ARGS__);
+	{payment_note(p,__VA_ARGS__);_debug_info(MYLOG,__VA_ARGS__);}
 
 #else
+/* Debugin information goes either to payment notes or to lightningd log. */
 
 #include <plugins/renepay/pay.h>
+#include <plugins/renepay/payment.h>
 
 #define debug_info(...) \
 	plugin_log(pay_plugin->plugin,LOG_DBG,__VA_ARGS__)
@@ -42,9 +46,12 @@ void _debug_exec_branch(const char* fname,const char* fun, int lineno);
 	plugin_err(pay_plugin->plugin,__VA_ARGS__)
 
 #define debug_paynote(p,...) \
-	paynote(p,__VA_ARGS__);
+	payment_note(p,__VA_ARGS__);
 
 #endif
+
+#define debug_assert(expr) \
+	if(!(expr)) debug_err("Assertion failed %s, file: %s, line %d", #expr,__FILE__,__LINE__)
 
 	
 #endif

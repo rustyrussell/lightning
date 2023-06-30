@@ -10,9 +10,11 @@
 #include <ccan/read_write_all/read_write_all.h>
 
 #define MYLOG "/tmp/debug.txt"
-#define FLOW_UNITTEST // logs are written in MYLOG
-#include <plugins/renepay/flow.h>
+#define RENEPAY_UNITTEST // logs are written in MYLOG
+#include "../payment.c"
 #include "../flow.c"
+#include "../uncertainty_network.c"
+#include "../mcf.c"
 
 static const u8 canned_map[] = {
 0x0c, 0x80, 0x00, 0x01, 0xbc, 0x86, 0xe4, 0xbf, 0x95, 0x00, 0x00, 0x00, 0x00, 0x10, 0x08, 0x00, 

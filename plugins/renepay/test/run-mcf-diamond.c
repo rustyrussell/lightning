@@ -1,7 +1,9 @@
 #include "config.h"
 
-#define FLOW_UNITTEST // logs are written in /tmp/debug.txt
+#define RENEPAY_UNITTEST // logs are written in /tmp/debug.txt
+#include "../payment.c"
 #include "../flow.c"
+#include "../uncertainty_network.c"
 #include "../mcf.c"
 
 #include <ccan/array_size/array_size.h>

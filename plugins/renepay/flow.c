@@ -16,6 +16,12 @@
 #define SUPERVERBOSE_ENABLED 1
 #endif
 
+bool chan_extra_is_busy(struct chan_extra const * const ce)
+{
+	if(ce==NULL)return false;
+	return ce->half[0].num_htlcs || ce->half[1].num_htlcs;
+}
+
 const char *fmt_chan_extra_map(
 		const tal_t *ctx,
 		struct chan_extra_map* chan_extra_map)
@@ -64,26 +70,6 @@ struct chan_extra *new_chan_extra(
 	// hash table is removing the element with a freed pointer.
 	// tal_add_destructor2(ce, destroy_chan_extra, chan_extra_map);
 	return ce;
-}
-
-bool chan_extra_check_invariants(struct chan_extra *ce)
-{
-	bool all_ok = true;
-	for(int i=0;i<2;++i)
-	{
-		all_ok &= amount_msat_less_eq(ce->half[i].known_min,
-					      ce->half[i].known_max);
-		all_ok &= amount_msat_less_eq(ce->half[i].known_max,
-					      ce->capacity);
-	}
-	struct amount_msat diff_cb,diff_ca;
-	
-	all_ok &= amount_msat_sub(&diff_cb,ce->capacity,ce->half[1].known_max);
-	all_ok &= amount_msat_sub(&diff_ca,ce->capacity,ce->half[1].known_min);
-	
-	all_ok &= amount_msat_eq(ce->half[0].known_min,diff_cb);
-	all_ok &= amount_msat_eq(ce->half[0].known_max,diff_ca);
-	return all_ok;
 }
 
 /* This helper function preserves the uncertainty network invariant after the
@@ -316,97 +302,6 @@ void chan_extra_relax(
 	chan_extra_relax_(ce,dir,x,y);
 }
 
-/* Checks the entire uncertainty network for invariant violations. */
-bool uncertainty_network_check_invariants(struct chan_extra_map *chan_extra_map)
-{
-	bool all_ok = true;
-	
-	struct chan_extra_map_iter it;
-	for(struct chan_extra *ce = chan_extra_map_first(chan_extra_map,&it);
-	    ce && all_ok;
-	    ce=chan_extra_map_next(chan_extra_map,&it))
-	{
-		all_ok &= chan_extra_check_invariants(ce);
-	}
-		
-	return all_ok;
-}
-
-/* Mirror the gossmap in the public uncertainty network.
- * result: Every channel in gossmap must have associated data in chan_extra_map,
- * while every channel in chan_extra_map is also registered in gossmap.
- * */
-void uncertainty_network_update(
-		const struct gossmap *gossmap,
-		struct chan_extra_map *chan_extra_map)
-{
-	const tal_t* this_ctx = tal(tmpctx,tal_t);
-	
-	// For each chan in chan_extra_map remove if not in the gossmap
-	struct short_channel_id *del_list
-		= tal_arr(this_ctx,struct short_channel_id,0);
-		
-	struct chan_extra_map_iter it;
-	for(struct chan_extra *ce = chan_extra_map_first(chan_extra_map,&it);
-	    ce;
-	    ce=chan_extra_map_next(chan_extra_map,&it))
-	{
-		struct gossmap_chan * chan = gossmap_find_chan(gossmap,&ce->scid);
-		if(!chan)
-		{
-			// TODO(eduardo): is this efficiently implemented?
-			// otherwise i'll use a ccan list
-			tal_arr_expand(&del_list, ce->scid);
-		}
-	}
-	
-	for(size_t i=0;i<tal_count(del_list);++i)
-	{
- 		struct chan_extra *ce = chan_extra_map_get(chan_extra_map,del_list[i]);
-		if(!ce)
-		{
-			debug_err("%s (line %d) unexpected chan_extra ce is NULL",
-				__PRETTY_FUNCTION__,
-				__LINE__);
-		}
-		chan_extra_map_del(chan_extra_map, ce);
-		tal_free(ce);
-	}
-	
-	// For each channel in the gossmap, create a extra data in
-	// chan_extra_map
-	for(struct gossmap_chan *chan = gossmap_first_chan(gossmap);
-	    chan;
-	    chan=gossmap_next_chan(gossmap,chan))
-	{
-		struct short_channel_id scid =
-			gossmap_chan_scid(gossmap,chan);
-		struct chan_extra *ce = chan_extra_map_get(chan_extra_map,
-							   gossmap_chan_scid(gossmap,chan));	
-		if(!ce)
-		{
-			struct amount_sat cap;
-			struct amount_msat cap_msat;
-			
-			if(!gossmap_chan_get_capacity(gossmap,chan,&cap))
-			{
-				debug_err("%s (line %d) unable to fetch channel capacity",
-					__PRETTY_FUNCTION__,
-					__LINE__);
-			}
-			if(!amount_sat_to_msat(&cap_msat,cap))
-			{
-				debug_err("%s (line %d) unable convert sat to msat",
-					__PRETTY_FUNCTION__,
-					__LINE__);
-			}
-			new_chan_extra(chan_extra_map,scid,cap_msat);
-		}
-	}
-	
-	
-	tal_free(this_ctx);
-}
 
 /* Returns either NULL, or an entry from the hash */
 struct chan_extra_half *

@@ -5,8 +5,7 @@
 #include <ccan/htable/htable_type.h>
 #include <common/amount.h>
 #include <common/gossmap.h>
-
-struct payment;
+#include <plugins/renepay/payment.h>
 
 // TODO(eduardo): a hard coded constant to indicate a limit on any channel
 // capacity. Channels for which the capacity is unknown (because they are not
@@ -40,6 +39,8 @@ struct chan_extra {
 		struct amount_msat known_min, known_max;
 	} half[2];
 };
+
+bool chan_extra_is_busy(struct chan_extra const * const ce);
 
 static inline const struct short_channel_id
 chan_extra_scid(const struct chan_extra *cd)
@@ -123,11 +124,6 @@ struct chan_extra *new_chan_extra(
 		const struct short_channel_id scid,
 		struct amount_msat capacity);
 
-/* Checks for this chan_extra if the invariants are satisfied. */
-bool chan_extra_check_invariants(struct chan_extra *ce);
-
-/* Checks the entire uncertainty network for invariant violations. */
-bool uncertainty_network_check_invariants(struct chan_extra_map *chan_extra_map);
 
 /* This helper function preserves the uncertainty network invariant after the
  * knowledge is updated. It assumes that the (channel,!dir) knowledge is
@@ -181,15 +177,6 @@ void chan_extra_relax(struct chan_extra_map *chan_extra_map,
 		      int dir,
 		      struct amount_msat down,
 		      struct amount_msat up);
-
-/* Mirror the gossmap in the public uncertainty network.
- * result: Every channel in gossmap must have associated data in chan_extra_map,
- * while every channel in chan_extra_map is also registered in gossmap.
- * */
-void uncertainty_network_update(
-		const struct gossmap *gossmap,
-		struct chan_extra_map *chan_extra_map);
-
 
 
 /* Returns either NULL, or an entry from the hash */

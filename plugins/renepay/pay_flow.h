@@ -1,12 +1,14 @@
 #ifndef LIGHTNING_PLUGINS_RENEPAY_PAY_FLOW_H
 #define LIGHTNING_PLUGINS_RENEPAY_PAY_FLOW_H
 #include <ccan/short_types/short_types.h>
+#include <plugins/renepay/payment.h>
+#include <plugins/renepay/debug.h>
 
 /* This is like a struct flow, but independent of gossmap, and contains
  * all we need to actually send the part payment. */
 struct pay_flow {
 	/* So we can be an independent object for callbacks. */
-	struct payment *payment;
+	struct payment * payment;
 
 	/* This flow belongs to some attempt. */
 	int attempt;
@@ -25,7 +27,7 @@ struct pay_flow {
 	double success_prob;
 };
 
-struct pay_flow **get_payflows(struct payment *p,
+struct pay_flow **get_payflows(struct renepay * renepay,
 			       struct amount_msat amount,
 			       struct amount_msat feebudget,
 			       bool unlikely_ok,
@@ -40,7 +42,17 @@ void remove_htlc_payflow(
 		struct pay_flow *flow,
 		struct chan_extra_map *chan_extra_map);
 
+const char *flow_path_to_str(const tal_t *ctx, const struct pay_flow *flow);
+
 const char* fmt_payflows(const tal_t *ctx,
 			 struct pay_flow ** flows);
+
+/* How much does this flow deliver to destination? */
+struct amount_msat payflow_delivered(const struct pay_flow *flow);
+
+/* Removes amounts from payment and frees flow pointer. 
+ * A possible destructor for flow would remove HTLCs from the
+ * uncertainty_network and remove the flow from any data structure. */
+void payflow_fail(struct pay_flow *flow);
 
 #endif /* LIGHTNING_PLUGINS_RENEPAY_PAY_FLOW_H */

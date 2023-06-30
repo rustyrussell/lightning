@@ -5,6 +5,8 @@
 #include <common/node_id.h>
 #include <plugins/libplugin.h>
 #include <plugins/renepay/flow.h>
+#include <plugins/renepay/payment.h>
+#include <plugins/renepay/uncertainty_network.h>
 
 // TODO(eduardo): renepaystatus should be similar to paystatus
 
@@ -13,8 +15,6 @@
 // TODO(eduardo): MCF should consider pending HTLCs occupy some capacity in the
 // routing channels.
 
-// TODO(eduardo): renepaystatus sometimes shows a truncated invoice string
-// 
 // TODO(eduardo): for some reason cln-renepay does not terminate inmediately:
 // 2023-06-26T07:32:36.064Z DEBUG   lightningd: cln-renepay: failed to self-terminate in time, killing.
 // 
@@ -26,6 +26,13 @@
 // TODO(eduardo): remove assertions, introduce LOG_BROKEN messages
 
 #define MAX_NUM_ATTEMPTS 10
+
+/* Time lapse used to wait for failed sendpays before try_paying. */
+#define TIMER_COLLECT_FAILURES_MSEC 250
+
+/* Knowledge is proportionally decreased with time up to TIMER_FORGET_SEC when
+ * we forget everything. */
+#define TIMER_FORGET_SEC 3600 
 
 // TODO(eduardo): Test ideas
 // - make a payment to a node that is hidden behind private channels, check that
@@ -44,11 +51,6 @@
 // 	- destination is not in the gossmap
 // 	- destination is offline
 // 	- with current knowledge there is no flow solution to destination
-
-enum payment_status {
-        PAYMENT_PENDING, PAYMENT_SUCCESS, PAYMENT_FAIL,
-	PAYMENT_MPP_TIMEOUT
-};
 
 /* Our convenient global data, here in one place. */
 struct pay_plugin {
@@ -76,134 +78,31 @@ struct pay_plugin {
 	bool debug_mcf; 
 	bool debug_payflow; 
 	
+	/* I'll allocate all global (controlled by pay_plugin) variables tied to
+	 * this tal_t. */
 	tal_t *ctx;
+	
+	// TODO(eduardo): pending flows have HTLCs (in-flight) liquidity
+	// attached that is reflected in the uncertainty network. When
+	// waitsendpay returns either fail or success that flow is destroyed and
+	// the liquidity is restored. A payment command could end before all
+	// flows are destroyed, therefore it is important to delegate the
+	// ownership of the waitsendpay request to pay_plugin->ctx so that the
+	// request is kept alive. One more thing: to double check that flows are
+	// not accumulating ad-infinitum I would insert them into a data
+	// structure here so that once in a while a timer kicks and verifies the
+	// list of pending flows.
+	// TODO(eduardo): notice that pending attempts performed with another
+	// pay plugin are not considered by the uncertainty network in renepay,
+	// it would be nice if listsendpay would give us the route of pending
+	// sendpays.
+	
+	/* Timers. */
+	struct plugin_timer *rexmit_timer;
 };
 
 /* Set in init */
 extern struct pay_plugin * const pay_plugin;
-
-/* Data only kept while the payment is being processed. */
-struct active_payment
-{
-	/* The command, and our owner (needed for timer func) */
-	struct command *cmd;
-
-	/* Localmods to apply to gossip_map for our own use. */
-	bool localmods_applied;
-	struct gossmap_localmods *local_gossmods;
-	
-	/* Channels we decided to disable for various reasons. */
-	struct short_channel_id *disabled;
-
-	/* Timers. */
-	struct plugin_timer *rexmit_timer;
-	
-	/* Keep track of the number of attempts. */
-	int last_attempt;
-	
-	/* Root to destroy pending flows */
-	tal_t *all_flows;
-	
-	/* Used in get_payflows to set ids to each pay_flow. */
-	u64 next_partid;
-};
-
-struct payment {
-	/* Chatty description of attempts. */
-	const char **paynotes;
-	
-	/* Total sent, including fees. */
-	struct amount_msat total_sent;
-	
-	/* Total that is delivering (i.e. without fees) */
-	struct amount_msat total_delivering;
-	
-	/* invstring (bolt11 or bolt12) */
-	const char *invstr;
-	
-	/* How much, what, where */
-	struct amount_msat amount;
-	struct node_id destination;
-	struct sha256 payment_hash;
-	
-	
-	/* Limits on what routes we'll accept. */
-	struct amount_msat maxspend;
-	
-	/* Max accepted HTLC delay.*/
-	unsigned int maxdelay;
-	
-	/* We promised this in pay() output */
-	struct timeabs start_time;
-	
-	/* We stop trying after this time is reached. */
-	struct timeabs stop_time;
-	
-	/* Payment preimage, in case of success. */
-	const struct preimage *preimage;
-	
-	/* payment_secret, if specified by invoice. */
-	struct secret *payment_secret;
-	
-	/* Payment metadata, if specified by invoice. */
-	const u8 *payment_metadata;
-	
-	/* To know if the last attempt failed, succeeded or is it pending. */
-	enum payment_status status;	
-
-	u32 final_cltv;
-
-	/* Inside pay_plugin->payments list */
-	struct list_node list;
-
-	/* Description and labels, if any. */
-	const char *description, *label;
-
-	
-	/* Penalty for CLTV delays */
-	double delay_feefactor;
-	
-	/* Penalty for base fee */
-	double base_fee_penalty;
-	
-	/* With these the effective linear fee cost is computed as
-	 * 
-	 * linear fee cost = 
-	 * 	millionths 
-	 * 	+ base_fee* base_fee_penalty
-	 * 	+delay*delay_feefactor;
-	 * */
-
-	/* The minimum acceptable prob. of success */
-	double min_prob_success;
-	
-	/* Conversion from prob. cost to millionths */
-	double prob_cost_factor;
-	/* linear prob. cost = 
-	 * 	- prob_cost_factor * log prob. */
-
-
-	/* If this is paying a local offer, this is the one (sendpay ensures we
-	 * don't pay twice for single-use offers) */
-	// TODO(eduardo): this is not being used!
-	struct sha256 *local_offer_id;
-
-	/* DEVELOPER allows disabling shadow route */
-	bool use_shadow;
-	
-	/* Data used while the payment is being processed. */
-	struct active_payment *active_payment;
-	
-	/* Groupid, so listpays() can group them back together */
-	u64 groupid;
-	
-};
-
-int payment_current_attempt(const struct payment *p);
-
-void paynote(struct payment *p, const char *fmt, ...)
-	PRINTF_FMT(2,3);
-
 
 /* Accumulate or panic on overflow */
 #define amount_msat_accumulate(dst, src) \

@@ -137,10 +137,11 @@ static u64 flow_delay(const struct flow *flow)
 /* This enhances f->amounts, and returns per-flow cltvs */
 static u32 *shadow_additions(const tal_t *ctx,
 			     const struct gossmap *gossmap,
-			     struct payment *p,
+			     struct renepay *renepay,
 			     struct flow **flows,
 			     bool is_entire_payment)
 {
+	struct payment * p = renepay->payment;
 	u32 *final_cltvs;
 
 	/* Set these up now in case we decide to do nothing */
@@ -159,7 +160,7 @@ static u32 *shadow_additions(const tal_t *ctx,
 		shadow_delay = shadow_one_flow(gossmap, flows[i],
 					       &shadow_fee);
 		if (flow_delay(flows[i]) + shadow_delay > p->maxdelay) {
-			paynote(p, "No shadow for flow %zu/%zu:"
+			debug_paynote(p, "No shadow for flow %zu/%zu:"
 				" delay would add %u to %"PRIu64", exceeding max delay.",
 				i, tal_count(flows),
 				shadow_delay,
@@ -174,7 +175,7 @@ static u32 *shadow_additions(const tal_t *ctx,
 		if (is_entire_payment && tal_count(flows) == 1) {
 			if (!add_to_amounts(gossmap, flows[i], p->maxspend,
 					    shadow_fee)) {
-				paynote(p, "No shadow fee for flow %zu/%zu:"
+				debug_paynote(p, "No shadow fee for flow %zu/%zu:"
 					" fee would add %s to %s, exceeding budget %s.",
 					i, tal_count(flows),
 					type_to_string(tmpctx, struct amount_msat,
@@ -184,14 +185,14 @@ static u32 *shadow_additions(const tal_t *ctx,
 					type_to_string(tmpctx, struct amount_msat,
 						       &p->maxspend));
 			} else {
-				paynote(p, "No MPP, so added %s shadow fee",
+				debug_paynote(p, "No MPP, so added %s shadow fee",
 					type_to_string(tmpctx, struct amount_msat,
 						       &shadow_fee));
 			}
 		}
 
 		final_cltvs[i] += shadow_delay;
-		paynote(p, "Shadow route on flow %zu/%zu added %u block delay. now %u",
+		debug_paynote(p, "Shadow route on flow %zu/%zu added %u block delay. now %u",
 			i, tal_count(flows), shadow_delay, final_cltvs[i]);
 	}
 
@@ -239,7 +240,7 @@ static struct pay_flow **flows_to_pay_flows(struct payment *payment,
 		pf->amounts = tal_steal(pf, f->amounts);
 		pf->path_dirs = tal_steal(pf, f->dirs);
 		pf->success_prob = f->success_prob;
-		pf->attempt = payment_current_attempt(payment);
+		pf->attempt = renepay_current_attempt(payment->renepay);
 	}
 	tal_free(flows);
 
@@ -275,11 +276,12 @@ static u64 flows_worst_delay(struct flow **flows)
 }
 
 /* FIXME: If only path has channels marked disabled, we should try... */
-static bool disable_htlc_violations_oneflow(struct payment *p,
+static bool disable_htlc_violations_oneflow(struct renepay * renepay,
 					    const struct flow *flow,
 					    const struct gossmap *gossmap,
 					    bitmap *disabled)
 {
+	struct payment * p = renepay->payment;
 	bool disabled_some = false;
 
 	for (size_t i = 0; i < tal_count(flow->path); i++) {
@@ -297,12 +299,12 @@ static bool disable_htlc_violations_oneflow(struct payment *p,
 			continue;
 
 		scid = gossmap_chan_scid(gossmap, flow->path[i]);
-		paynote(p, "...disabling channel %s: %s",
+		debug_paynote(p, "...disabling channel %s: %s",
 			type_to_string(tmpctx, struct short_channel_id, &scid),
 			reason);
 
 		/* Add this for future searches for this payment. */
-		tal_arr_expand(&p->active_payment->disabled, scid);
+		tal_arr_expand(&renepay->disabled, scid);
 		/* Add to existing bitmap */
 		bitmap_set_bit(disabled,
 			       gossmap_chan_idx(gossmap, flow->path[i]));
@@ -313,7 +315,7 @@ static bool disable_htlc_violations_oneflow(struct payment *p,
 
 /* If we can't use one of these flows because we hit limits, we disable that
  * channel for future searches and return false */
-static bool disable_htlc_violations(struct payment *p,
+static bool disable_htlc_violations(struct renepay *renepay,
 				    struct flow **flows,
 				    const struct gossmap *gossmap,
 				    bitmap *disabled)
@@ -322,7 +324,7 @@ static bool disable_htlc_violations(struct payment *p,
 
 	/* We continue through all of them, to disable many at once. */
 	for (size_t i = 0; i < tal_count(flows); i++) {
-		disabled_some |= disable_htlc_violations_oneflow(p, flows[i],
+		disabled_some |= disable_htlc_violations_oneflow(renepay, flows[i],
 								 gossmap,
 								 disabled);
 	}
@@ -330,27 +332,28 @@ static bool disable_htlc_violations(struct payment *p,
 }
 
 /* Get some payment flows to get this amount to destination, or NULL. */
-struct pay_flow **get_payflows(struct payment *p,
+struct pay_flow **get_payflows(struct renepay * renepay,
 			       struct amount_msat amount,
 			       struct amount_msat feebudget,
 			       bool unlikely_ok,
 			       bool is_entire_payment,
 			       char const ** err_msg)
 {
+	struct payment * p = renepay->payment;
 	bitmap *disabled;
 	struct pay_flow **pay_flows;
 	const struct gossmap_node *src, *dst;
 	
-	disabled = make_disabled_bitmap(tmpctx, pay_plugin->gossmap, p->active_payment->disabled);
+	disabled = make_disabled_bitmap(tmpctx, pay_plugin->gossmap, renepay->disabled);
 	src = gossmap_find_node(pay_plugin->gossmap, &pay_plugin->my_id);
 	if (!src) {
-		paynote(p, "We don't have any channels?");
+		debug_paynote(p, "We don't have any channels?");
 		*err_msg = tal_fmt(tmpctx,"We don't have any channels.");
 		goto fail;
 	}
 	dst = gossmap_find_node(pay_plugin->gossmap, &p->destination);
 	if (!src) {
-		paynote(p, "No trace of destination in network gossip");
+		debug_paynote(p, "No trace of destination in network gossip");
 		*err_msg = tal_fmt(tmpctx,"Destination is unreacheable in the network gossip.");
 		goto fail;
 	}
@@ -372,7 +375,7 @@ struct pay_flow **get_payflows(struct payment *p,
 				p->base_fee_penalty,
 				p->prob_cost_factor);
 		if (!flows) {
-			paynote(p, "Failed to find any paths for %s",
+			debug_paynote(p, "Failed to find any paths for %s",
 				type_to_string(tmpctx,
 					       struct amount_msat,
 					       &amount));
@@ -387,7 +390,7 @@ struct pay_flow **get_payflows(struct payment *p,
 		too_unlikely = (prob < p->min_prob_success);
 		if (too_unlikely && !unlikely_ok)
 		{
-			paynote(p, "Flows too unlikely, P() = %f%%", prob * 100);
+			debug_paynote(p, "Flows too unlikely, P() = %f%%", prob * 100);
 			*err_msg = tal_fmt(tmpctx,
 					  "Probability is too small, "
 					  "Prob = %f%% (min = %f%%)",
@@ -398,7 +401,7 @@ struct pay_flow **get_payflows(struct payment *p,
 		too_expensive = amount_msat_greater(fee, feebudget);
 		if (too_expensive)
 		{
-			paynote(p, "Flows too expensive, fee = %s (max %s)",
+			debug_paynote(p, "Flows too expensive, fee = %s (max %s)",
 				type_to_string(tmpctx, struct amount_msat, &fee),
 				type_to_string(tmpctx, struct amount_msat, &feebudget));
 			*err_msg = tal_fmt(tmpctx,
@@ -410,12 +413,12 @@ struct pay_flow **get_payflows(struct payment *p,
 		}
 		too_delayed = (delay > p->maxdelay);
 		if (too_delayed) {
-			paynote(p, "Flows too delayed, delay = %"PRIu64" (max %u)",
+			debug_paynote(p, "Flows too delayed, delay = %"PRIu64" (max %u)",
 				delay, p->maxdelay);
 			
 			/* FIXME: What is a sane limit? */
 			if (p->delay_feefactor > 1000) {
-				paynote(p, "Giving up!");
+				debug_paynote(p, "Giving up!");
 				*err_msg = tal_fmt(tmpctx,
 						  "CLTV delay exceeds our CLTV budget, "
 						  "delay = %"PRIu64" (maxdelay = %u)",
@@ -424,7 +427,7 @@ struct pay_flow **get_payflows(struct payment *p,
 			}
 
 			p->delay_feefactor *= 2;
-			paynote(p, "Doubling delay_feefactor to %f",
+			debug_paynote(p, "Doubling delay_feefactor to %f",
 				p->delay_feefactor);
 			
 			continue; // retry
@@ -435,7 +438,7 @@ struct pay_flow **get_payflows(struct payment *p,
 		 * to do this inside minflow(), but the diagnostics here
 		 * are far better, since we can report min/max which
 		 * *actually* made us reconsider. */
-		if (disable_htlc_violations(p, flows, pay_plugin->gossmap,
+		if (disable_htlc_violations(renepay, flows, pay_plugin->gossmap,
 					    disabled))
 		{
 			continue; // retry
@@ -444,12 +447,12 @@ struct pay_flow **get_payflows(struct payment *p,
 		/* This can adjust amounts and final cltv for each flow,
 		 * to make it look like it's going elsewhere */
 		final_cltvs = shadow_additions(tmpctx, pay_plugin->gossmap,
-					       p, flows, is_entire_payment);
+					       renepay, flows, is_entire_payment);
 		/* OK, we are happy with these flows: convert to
 		 * pay_flows to outlive the current gossmap. */
-		pay_flows = flows_to_pay_flows(p, pay_plugin->gossmap,
+		pay_flows = flows_to_pay_flows(renepay->payment, pay_plugin->gossmap,
 					       flows, final_cltvs,
-					       &p->active_payment->next_partid);
+					       &renepay->next_partid);
 		break;
 	}
 
@@ -457,6 +460,17 @@ struct pay_flow **get_payflows(struct payment *p,
 
 fail:
 	return NULL;
+}
+
+const char *flow_path_to_str(const tal_t *ctx, const struct pay_flow *flow)
+{
+	char *s = tal_strdup(ctx, "");
+	for (size_t i = 0; i < tal_count(flow->path_scids); i++) {
+		tal_append_fmt(&s, "-%s->",
+			       type_to_string(tmpctx, struct short_channel_id,
+					      &flow->path_scids[i]));
+	}
+	return s;
 }
 
 const char* fmt_payflows(const tal_t *ctx,
@@ -586,3 +600,24 @@ void commit_htlc_payflow(
 		h->num_htlcs++;
 	}
 }
+
+/* How much does this flow deliver to destination? */
+struct amount_msat payflow_delivered(const struct pay_flow *flow)
+{
+	return flow->amounts[tal_count(flow->amounts)-1];
+}
+
+void payflow_fail(struct pay_flow *flow)
+{
+	debug_assert(flow);
+	struct payment * p = flow->payment;
+	
+	payment_fail(p);
+	amount_msat_reduce(&p->total_delivering, payflow_delivered(flow));
+	amount_msat_reduce(&p->total_sent, flow->amounts[0]);
+
+	/* Release the HTLCs in the uncertainty_network. */
+	tal_free(flow);
+}
+
+
