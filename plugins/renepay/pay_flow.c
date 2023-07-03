@@ -217,8 +217,12 @@ static struct pay_flow **flows_to_pay_flows(struct payment *payment,
 
 		plen = tal_count(f->path);
 		pay_flows[i] = pf;
+		
 		pf->payment = payment;
-		pf->partid = (*next_partid)++;
+		pf->key.partid = (*next_partid)++;
+		pf->key.groupid = payment->groupid;
+		pf->key.payment_hash = &payment->payment_hash;
+		
 		/* Convert gossmap_chan into scids and nodes */
 		pf->path_scids = tal_arr(pf, struct short_channel_id, plen);
 		pf->path_nodes = tal_arr(pf, struct node_id, plen);
@@ -339,6 +343,8 @@ struct pay_flow **get_payflows(struct renepay * renepay,
 			       bool is_entire_payment,
 			       char const ** err_msg)
 {
+	*err_msg = tal_fmt(tmpctx,"[no error]");
+	
 	struct payment * p = renepay->payment;
 	bitmap *disabled;
 	struct pay_flow **pay_flows;
@@ -352,7 +358,7 @@ struct pay_flow **get_payflows(struct renepay * renepay,
 		goto fail;
 	}
 	dst = gossmap_find_node(pay_plugin->gossmap, &p->destination);
-	if (!src) {
+	if (!dst) {
 		debug_paynote(p, "No trace of destination in network gossip");
 		*err_msg = tal_fmt(tmpctx,"Destination is unreacheable in the network gossip.");
 		goto fail;
@@ -375,10 +381,13 @@ struct pay_flow **get_payflows(struct renepay * renepay,
 				p->base_fee_penalty,
 				p->prob_cost_factor);
 		if (!flows) {
-			debug_paynote(p, "Failed to find any paths for %s",
-				type_to_string(tmpctx,
-					       struct amount_msat,
-					       &amount));
+			debug_paynote(p,
+				      "minflow couldn't find a feasible flow for %s",
+				      type_to_string(tmpctx,struct amount_msat,&amount));
+				      
+			*err_msg = tal_fmt(tmpctx,
+					   "minflow couldn't find a feasible flow for %s",
+					   type_to_string(tmpctx,struct amount_msat,&amount));
 			goto fail;
 		}
 
@@ -539,8 +548,8 @@ const char* fmt_payflows(const tal_t *ctx,
 }
 
 void remove_htlc_payflow(
-		struct pay_flow *flow,
-		struct chan_extra_map *chan_extra_map)
+		struct chan_extra_map *chan_extra_map,
+		struct pay_flow *flow)
 {
 	for (size_t i = 0; i < tal_count(flow->path_scids); i++) {
 		struct chan_extra_half *h = get_chan_extra_half_by_scid(
@@ -607,17 +616,18 @@ struct amount_msat payflow_delivered(const struct pay_flow *flow)
 	return flow->amounts[tal_count(flow->amounts)-1];
 }
 
-void payflow_fail(struct pay_flow *flow)
+struct pay_flow* payflow_fail(struct pay_flow *flow)
 {
 	debug_assert(flow);
 	struct payment * p = flow->payment;
+	debug_assert(p);
 	
 	payment_fail(p);
 	amount_msat_reduce(&p->total_delivering, payflow_delivered(flow));
 	amount_msat_reduce(&p->total_sent, flow->amounts[0]);
 
 	/* Release the HTLCs in the uncertainty_network. */
-	tal_free(flow);
+	return tal_free(flow);
 }
 
 

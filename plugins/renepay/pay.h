@@ -10,8 +10,6 @@
 
 // TODO(eduardo): renepaystatus should be similar to paystatus
 
-// TODO(eduardo): notice that payment must outlive the command!
-
 // TODO(eduardo): MCF should consider pending HTLCs occupy some capacity in the
 // routing channels.
 
@@ -74,6 +72,9 @@ struct pay_plugin {
 
 	/* Per-channel metadata: some persists between payments */
 	struct chan_extra_map *chan_extra_map;
+	
+	/* Pending senpays. */
+	struct payflow_map * payflow_map;
 
 	bool debug_mcf; 
 	bool debug_payflow; 

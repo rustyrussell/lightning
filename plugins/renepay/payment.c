@@ -207,6 +207,10 @@ void renepay_cleanup(
 	debug_info("calling %s",__PRETTY_FUNCTION__);
 	/* Always remove our local mods (routehints) so others can use
 	 * gossmap. We do this only after the payment completes. */
+	// TODO(eduardo): it can happen that local_gossmods removed below
+	// contained a set of channels for which there is information in the
+	// uncertainty network (chan_extra_map) and that are part of some pending
+	// payflow (payflow_map). Handle this situation.
 	if(renepay->localmods_applied)
 		gossmap_remove_localmods(gossmap,
 					 renepay->local_gossmods);

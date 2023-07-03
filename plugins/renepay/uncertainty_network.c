@@ -155,7 +155,10 @@ void uncertainty_network_update(
 				__LINE__);
 		}
 		chan_extra_map_del(chan_extra_map, ce);
-		tal_free(ce);
+		tal_free(ce); 
+		// TODO(eduardo): if you had added a destructor to ce, you could have removed
+		// the ce from the map automatically.
+		
 	}
 	
 	// For each channel in the gossmap, create a extra data in

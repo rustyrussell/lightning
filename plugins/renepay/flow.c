@@ -364,33 +364,6 @@ get_chan_extra_half_by_chan_verify(
 	return h;
 }
 
-// // TODO(eduardo): not sure we should have this function
-// struct chan_extra_half *new_chan_extra_half(struct chan_extra_map *chan_extra_map,
-// 					    const struct short_channel_id scid,
-// 					    int dir,
-// 					    struct amount_msat capacity)
-// {
-// 	struct chan_extra *ce = tal(chan_extra_map, struct chan_extra);
-// 
-// 	ce->scid = scid;
-// 	for (size_t i = 0; i <= 1; i++) {
-// 		ce->half[i].num_htlcs = 0;
-// 		ce->half[i].htlc_total = AMOUNT_MSAT(0);
-// 		ce->half[i].known_min = AMOUNT_MSAT(0);
-// 		ce->half[i].known_max = capacity;
-// 	}
-// 	/* Remove self from map when done */
-// 	chan_extra_map_add(chan_extra_map, ce);
-// 	
-// 	// TODO(eduardo):
-// 	// Is this desctructor really necessary? the chan_extra will deallocated
-// 	// when the chan_extra_map is freed. Anyways valgrind complains that the
-// 	// hash table is removing the element with a freed pointer.
-// 	// tal_add_destructor2(ce, destroy_chan_extra, chan_extra_map);
-// 	return &ce->half[dir];
-// }
-
-
 /* Assuming a uniform distribution, what is the chance this f gets through?
  * Here we compute the conditional probability of success for a flow f, given
  * the knowledge that the liquidity is in the range [a,b) and some amount
