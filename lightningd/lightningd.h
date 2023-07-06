@@ -265,6 +265,9 @@ struct lightningd {
 	/* Announce names in config as DNS records (recently BOLT 7 addition) */
 	bool announce_dns;
 
+	/* Contains the codex32 string used with --recover flag */
+	char *recover;
+
 #if DEVELOPER
 	/* If we want to debug a subdaemon/plugin. */
 	char *dev_debug_subprocess;
