@@ -95,13 +95,6 @@ static bool json_stream_still_writing(const struct json_stream *js)
 	return js->writer != NULL;
 }
 
-void json_stream_log_suppress(struct json_stream *js, const char *cmd_name)
-{
-	/* Really shouldn't be used for anything else */
-	assert(streq(cmd_name, "getlog"));
-	js->log = NULL;
-}
-
 void json_stream_append(struct json_stream *js,
 			const char *str, size_t len)
 {
@@ -493,38 +486,54 @@ void json_add_short_channel_id(struct json_stream *response,
 			 short_channel_id_outnum(scid));
 }
 
+static void json_add_address_fields(struct json_stream *response,
+				    const struct wireaddr *addr,
+				    const char *typefield)
+{
+	switch (addr->type) {
+	case ADDR_TYPE_IPV4: {
+		char addrstr[INET_ADDRSTRLEN];
+		inet_ntop(AF_INET, addr->addr, addrstr, INET_ADDRSTRLEN);
+		json_add_string(response, typefield, "ipv4");
+		json_add_string(response, "address", addrstr);
+		json_add_num(response, "port", addr->port);
+		return;
+	}
+	case ADDR_TYPE_IPV6: {
+		char addrstr[INET6_ADDRSTRLEN];
+		inet_ntop(AF_INET6, addr->addr, addrstr, INET6_ADDRSTRLEN);
+		json_add_string(response, typefield, "ipv6");
+		json_add_string(response, "address", addrstr);
+		json_add_num(response, "port", addr->port);
+		return;
+	}
+	case ADDR_TYPE_TOR_V2_REMOVED: {
+		json_add_string(response, typefield, "torv2");
+		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
+		json_add_num(response, "port", addr->port);
+		return;
+	}
+	case ADDR_TYPE_TOR_V3: {
+		json_add_string(response, typefield, "torv3");
+		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
+		json_add_num(response, "port", addr->port);
+		return;
+	}
+	case ADDR_TYPE_DNS: {
+		json_add_string(response, typefield, "dns");
+		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
+		json_add_num(response, "port", addr->port);
+		return;
+	}
+	}
+	abort();
+}
+
 void json_add_address(struct json_stream *response, const char *fieldname,
 		      const struct wireaddr *addr)
 {
 	json_object_start(response, fieldname);
-	if (addr->type == ADDR_TYPE_IPV4) {
-		char addrstr[INET_ADDRSTRLEN];
-		inet_ntop(AF_INET, addr->addr, addrstr, INET_ADDRSTRLEN);
-		json_add_string(response, "type", "ipv4");
-		json_add_string(response, "address", addrstr);
-		json_add_num(response, "port", addr->port);
-	} else if (addr->type == ADDR_TYPE_IPV6) {
-		char addrstr[INET6_ADDRSTRLEN];
-		inet_ntop(AF_INET6, addr->addr, addrstr, INET6_ADDRSTRLEN);
-		json_add_string(response, "type", "ipv6");
-		json_add_string(response, "address", addrstr);
-		json_add_num(response, "port", addr->port);
-	} else if (addr->type == ADDR_TYPE_TOR_V2_REMOVED) {
-		json_add_string(response, "type", "torv2");
-		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
-		json_add_num(response, "port", addr->port);
-	} else if (addr->type == ADDR_TYPE_TOR_V3) {
-		json_add_string(response, "type", "torv3");
-		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
-		json_add_num(response, "port", addr->port);
-	} else if (addr->type == ADDR_TYPE_DNS) {
-		json_add_string(response, "type", "dns");
-		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
-		json_add_num(response, "port", addr->port);
-	} else if (addr->type == ADDR_TYPE_WEBSOCKET) {
-		json_add_string(response, "type", "websocket");
-		json_add_num(response, "port", addr->port);
-	}
+	json_add_address_fields(response, addr, "type");
 	json_object_end(response);
 }
 
@@ -541,8 +550,13 @@ void json_add_address_internal(struct json_stream *response,
 		return;
 	case ADDR_INTERNAL_ALLPROTO:
 		json_object_start(response, fieldname);
-		json_add_string(response, "type", "any protocol");
-		json_add_num(response, "port", addr->u.port);
+		if (addr->u.allproto.is_websocket) {
+			json_add_string(response, "type", "websocket");
+			json_add_string(response, "subtype", "any protocol");
+		} else {
+			json_add_string(response, "type", "any protocol");
+		}
+		json_add_num(response, "port", addr->u.allproto.port);
 		json_object_end(response);
 		return;
 	case ADDR_INTERNAL_AUTOTOR:
@@ -565,7 +579,14 @@ void json_add_address_internal(struct json_stream *response,
 		json_object_end(response);
 		return;
 	case ADDR_INTERNAL_WIREADDR:
-		json_add_address(response, fieldname, &addr->u.wireaddr);
+		json_object_start(response, fieldname);
+		if (addr->u.wireaddr.is_websocket) {
+			json_add_string(response, "type", "websocket");
+			json_add_address_fields(response, &addr->u.wireaddr.wireaddr, "subtype");
+		} else {
+			json_add_address_fields(response, &addr->u.wireaddr.wireaddr, "type");
+		}
+		json_object_end(response);
 		return;
 	}
 	abort();
@@ -589,37 +610,12 @@ void json_add_psbt(struct json_stream *stream,
 		tal_free(psbt);
 }
 
-void json_add_amount_msat_compat(struct json_stream *result,
-				 struct amount_msat msat,
-				 const char *rawfieldname,
-				 const char *msatfieldname)
-{
-	if (deprecated_apis)
-		json_add_u64(result, rawfieldname, msat.millisatoshis); /* Raw: low-level helper */
-	json_add_amount_msat_only(result, msatfieldname, msat);
-}
-
-void json_add_amount_msat_only(struct json_stream *result,
+void json_add_amount_msat(struct json_stream *result,
 			  const char *msatfieldname,
 			  struct amount_msat msat)
 {
-	if (!deprecated_apis)
-		assert(strends(msatfieldname, "_msat"));
-	if (deprecated_apis)
-		json_add_string(result, msatfieldname,
-				type_to_string(tmpctx, struct amount_msat, &msat));
-	else
-		json_add_u64(result, msatfieldname, msat.millisatoshis); /* Raw: low-level helper */
-}
-
-void json_add_amount_sat_compat(struct json_stream *result,
-				struct amount_sat sat,
-				const char *rawfieldname,
-				const char *msatfieldname)
-{
-	if (deprecated_apis)
-		json_add_u64(result, rawfieldname, sat.satoshis); /* Raw: low-level helper */
-	json_add_amount_sat_msat(result, msatfieldname, sat);
+	assert(strends(msatfieldname, "_msat"));
+	json_add_u64(result, msatfieldname, msat.millisatoshis); /* Raw: low-level helper */
 }
 
 void json_add_amount_sat_msat(struct json_stream *result,
@@ -629,23 +625,7 @@ void json_add_amount_sat_msat(struct json_stream *result,
 	struct amount_msat msat;
 	assert(strends(msatfieldname, "_msat"));
 	if (amount_sat_to_msat(&msat, sat))
-		json_add_amount_msat_only(result, msatfieldname, msat);
-}
-
-/* When I noticed that we were adding "XXXmsat" fields *not* ending in _msat */
-void json_add_amount_sats_deprecated(struct json_stream *result,
-				     const char *fieldname,
-				     const char *msatfieldname,
-				     struct amount_sat sat)
-{
-	if (deprecated_apis) {
-		struct amount_msat msat;
-		assert(!strends(fieldname, "_msat"));
-		if (amount_sat_to_msat(&msat, sat))
-			json_add_string(result, fieldname,
-					take(fmt_amount_msat(NULL, msat)));
-	}
-	json_add_amount_sat_msat(result, msatfieldname, sat);
+		json_add_amount_msat(result, msatfieldname, msat);
 }
 
 void json_add_sats(struct json_stream *result,
@@ -680,9 +660,9 @@ void json_add_lease_rates(struct json_stream *result,
 				 amount_sat(rates->lease_fee_base_sat));
 	json_add_num(result, "lease_fee_basis", rates->lease_fee_basis);
 	json_add_num(result, "funding_weight", rates->funding_weight);
-	json_add_amount_msat_only(result,
-				  "channel_fee_max_base_msat",
-				  amount_msat(rates->channel_fee_max_base_msat));
+	json_add_amount_msat(result,
+			     "channel_fee_max_base_msat",
+			     amount_msat(rates->channel_fee_max_base_msat));
 	json_add_num(result, "channel_fee_max_proportional_thousandths",
 		     rates->channel_fee_max_proportional_thousandths);
 }

@@ -199,6 +199,26 @@ class NodeStub(object):
                 request_serializer=node__pb2.TxsendRequest.SerializeToString,
                 response_deserializer=node__pb2.TxsendResponse.FromString,
                 )
+        self.ListPeerChannels = channel.unary_unary(
+                '/cln.Node/ListPeerChannels',
+                request_serializer=node__pb2.ListpeerchannelsRequest.SerializeToString,
+                response_deserializer=node__pb2.ListpeerchannelsResponse.FromString,
+                )
+        self.ListClosedChannels = channel.unary_unary(
+                '/cln.Node/ListClosedChannels',
+                request_serializer=node__pb2.ListclosedchannelsRequest.SerializeToString,
+                response_deserializer=node__pb2.ListclosedchannelsResponse.FromString,
+                )
+        self.DecodePay = channel.unary_unary(
+                '/cln.Node/DecodePay',
+                request_serializer=node__pb2.DecodepayRequest.SerializeToString,
+                response_deserializer=node__pb2.DecodepayResponse.FromString,
+                )
+        self.Decode = channel.unary_unary(
+                '/cln.Node/Decode',
+                request_serializer=node__pb2.DecodeRequest.SerializeToString,
+                response_deserializer=node__pb2.DecodeResponse.FromString,
+                )
         self.Disconnect = channel.unary_unary(
                 '/cln.Node/Disconnect',
                 request_serializer=node__pb2.DisconnectRequest.SerializeToString,
@@ -234,10 +254,20 @@ class NodeStub(object):
                 request_serializer=node__pb2.PingRequest.SerializeToString,
                 response_deserializer=node__pb2.PingResponse.FromString,
                 )
+        self.SendCustomMsg = channel.unary_unary(
+                '/cln.Node/SendCustomMsg',
+                request_serializer=node__pb2.SendcustommsgRequest.SerializeToString,
+                response_deserializer=node__pb2.SendcustommsgResponse.FromString,
+                )
         self.SetChannel = channel.unary_unary(
                 '/cln.Node/SetChannel',
                 request_serializer=node__pb2.SetchannelRequest.SerializeToString,
                 response_deserializer=node__pb2.SetchannelResponse.FromString,
+                )
+        self.SignInvoice = channel.unary_unary(
+                '/cln.Node/SignInvoice',
+                request_serializer=node__pb2.SigninvoiceRequest.SerializeToString,
+                response_deserializer=node__pb2.SigninvoiceResponse.FromString,
                 )
         self.SignMessage = channel.unary_unary(
                 '/cln.Node/SignMessage',
@@ -248,6 +278,16 @@ class NodeStub(object):
                 '/cln.Node/Stop',
                 request_serializer=node__pb2.StopRequest.SerializeToString,
                 response_deserializer=node__pb2.StopResponse.FromString,
+                )
+        self.PreApproveKeysend = channel.unary_unary(
+                '/cln.Node/PreApproveKeysend',
+                request_serializer=node__pb2.PreapprovekeysendRequest.SerializeToString,
+                response_deserializer=node__pb2.PreapprovekeysendResponse.FromString,
+                )
+        self.PreApproveInvoice = channel.unary_unary(
+                '/cln.Node/PreApproveInvoice',
+                request_serializer=node__pb2.PreapproveinvoiceRequest.SerializeToString,
+                response_deserializer=node__pb2.PreapproveinvoiceResponse.FromString,
                 )
 
 
@@ -476,6 +516,30 @@ class NodeServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListPeerChannels(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListClosedChannels(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DecodePay(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def Decode(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def Disconnect(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -518,7 +582,19 @@ class NodeServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SendCustomMsg(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def SetChannel(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def SignInvoice(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -531,6 +607,18 @@ class NodeServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def Stop(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PreApproveKeysend(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PreApproveInvoice(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -724,6 +812,26 @@ def add_NodeServicer_to_server(servicer, server):
                     request_deserializer=node__pb2.TxsendRequest.FromString,
                     response_serializer=node__pb2.TxsendResponse.SerializeToString,
             ),
+            'ListPeerChannels': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListPeerChannels,
+                    request_deserializer=node__pb2.ListpeerchannelsRequest.FromString,
+                    response_serializer=node__pb2.ListpeerchannelsResponse.SerializeToString,
+            ),
+            'ListClosedChannels': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListClosedChannels,
+                    request_deserializer=node__pb2.ListclosedchannelsRequest.FromString,
+                    response_serializer=node__pb2.ListclosedchannelsResponse.SerializeToString,
+            ),
+            'DecodePay': grpc.unary_unary_rpc_method_handler(
+                    servicer.DecodePay,
+                    request_deserializer=node__pb2.DecodepayRequest.FromString,
+                    response_serializer=node__pb2.DecodepayResponse.SerializeToString,
+            ),
+            'Decode': grpc.unary_unary_rpc_method_handler(
+                    servicer.Decode,
+                    request_deserializer=node__pb2.DecodeRequest.FromString,
+                    response_serializer=node__pb2.DecodeResponse.SerializeToString,
+            ),
             'Disconnect': grpc.unary_unary_rpc_method_handler(
                     servicer.Disconnect,
                     request_deserializer=node__pb2.DisconnectRequest.FromString,
@@ -759,10 +867,20 @@ def add_NodeServicer_to_server(servicer, server):
                     request_deserializer=node__pb2.PingRequest.FromString,
                     response_serializer=node__pb2.PingResponse.SerializeToString,
             ),
+            'SendCustomMsg': grpc.unary_unary_rpc_method_handler(
+                    servicer.SendCustomMsg,
+                    request_deserializer=node__pb2.SendcustommsgRequest.FromString,
+                    response_serializer=node__pb2.SendcustommsgResponse.SerializeToString,
+            ),
             'SetChannel': grpc.unary_unary_rpc_method_handler(
                     servicer.SetChannel,
                     request_deserializer=node__pb2.SetchannelRequest.FromString,
                     response_serializer=node__pb2.SetchannelResponse.SerializeToString,
+            ),
+            'SignInvoice': grpc.unary_unary_rpc_method_handler(
+                    servicer.SignInvoice,
+                    request_deserializer=node__pb2.SigninvoiceRequest.FromString,
+                    response_serializer=node__pb2.SigninvoiceResponse.SerializeToString,
             ),
             'SignMessage': grpc.unary_unary_rpc_method_handler(
                     servicer.SignMessage,
@@ -773,6 +891,16 @@ def add_NodeServicer_to_server(servicer, server):
                     servicer.Stop,
                     request_deserializer=node__pb2.StopRequest.FromString,
                     response_serializer=node__pb2.StopResponse.SerializeToString,
+            ),
+            'PreApproveKeysend': grpc.unary_unary_rpc_method_handler(
+                    servicer.PreApproveKeysend,
+                    request_deserializer=node__pb2.PreapprovekeysendRequest.FromString,
+                    response_serializer=node__pb2.PreapprovekeysendResponse.SerializeToString,
+            ),
+            'PreApproveInvoice': grpc.unary_unary_rpc_method_handler(
+                    servicer.PreApproveInvoice,
+                    request_deserializer=node__pb2.PreapproveinvoiceRequest.FromString,
+                    response_serializer=node__pb2.PreapproveinvoiceResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1414,6 +1542,74 @@ class Node(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def ListPeerChannels(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/cln.Node/ListPeerChannels',
+            node__pb2.ListpeerchannelsRequest.SerializeToString,
+            node__pb2.ListpeerchannelsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def ListClosedChannels(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/cln.Node/ListClosedChannels',
+            node__pb2.ListclosedchannelsRequest.SerializeToString,
+            node__pb2.ListclosedchannelsResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def DecodePay(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/cln.Node/DecodePay',
+            node__pb2.DecodepayRequest.SerializeToString,
+            node__pb2.DecodepayResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def Decode(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/cln.Node/Decode',
+            node__pb2.DecodeRequest.SerializeToString,
+            node__pb2.DecodeResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def Disconnect(request,
             target,
             options=(),
@@ -1533,6 +1729,23 @@ class Node(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def SendCustomMsg(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/cln.Node/SendCustomMsg',
+            node__pb2.SendcustommsgRequest.SerializeToString,
+            node__pb2.SendcustommsgResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def SetChannel(request,
             target,
             options=(),
@@ -1546,6 +1759,23 @@ class Node(object):
         return grpc.experimental.unary_unary(request, target, '/cln.Node/SetChannel',
             node__pb2.SetchannelRequest.SerializeToString,
             node__pb2.SetchannelResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def SignInvoice(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/cln.Node/SignInvoice',
+            node__pb2.SigninvoiceRequest.SerializeToString,
+            node__pb2.SigninvoiceResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -1580,5 +1810,39 @@ class Node(object):
         return grpc.experimental.unary_unary(request, target, '/cln.Node/Stop',
             node__pb2.StopRequest.SerializeToString,
             node__pb2.StopResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def PreApproveKeysend(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/cln.Node/PreApproveKeysend',
+            node__pb2.PreapprovekeysendRequest.SerializeToString,
+            node__pb2.PreapprovekeysendResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def PreApproveInvoice(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/cln.Node/PreApproveInvoice',
+            node__pb2.PreapproveinvoiceRequest.SerializeToString,
+            node__pb2.PreapproveinvoiceResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

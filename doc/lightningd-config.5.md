@@ -81,6 +81,10 @@ This is not valid within the per-network configuration file.
 
   Alias for *network=bitcoin*.
 
+* **regtest**
+
+  Alias for *network=regtest* (added in v23.08)
+
 * **testnet**
 
   Alias for *network=testnet*.
@@ -401,7 +405,7 @@ create a channel, and if an HTLC asks for longer, we'll refuse it.
   Confirmations required for the funding transaction when the other side
 opens a channel before the channel is usable.
 
-* **commit-fee**=*PERCENT* [plugin `bcli`]
+* **commit-fee**=*PERCENT*
 
   The percentage of *estimatesmartfee 2/CONSERVATIVE* to use for the commitment
 transactions: default is 100.
@@ -497,7 +501,7 @@ precisely control where to bind and what to announce with the
 *bind-addr* and *announce-addr* options. These will **disable** the
 *autolisten* logic, so you must specifiy exactly what you want!
 
-* **addr**=*\[IPADDRESS\[:PORT\]\]|autotor:TORIPADDRESS\[:SERVICEPORT\]\[/torport=TORPORT\]|statictor:TORIPADDRESS\[:SERVICEPORT\]\[/torport=TORPORT\]\[/torblob=\[blob\]\]|DNS\[:PORT\]*
+* **addr**=*\[IPADDRESS\[:PORT\]\]|autotor:TORIPADDRESS\[:SERVICEPORT\]\[/torport=TORPORT\]|statictor:TORIPADDRESS\[:SERVICEPORT\]\[/torport=TORPORT\]\[/torblob=\[blob\]\]|HOSTNAME\[:PORT\]*
 
   Set an IP address (v4 or v6) or automatic Tor address to listen on and
 (maybe) announce as our node address.
@@ -534,12 +538,12 @@ defined by you and possibly different from your local node port assignment.
 
   This option can be used multiple times to add more addresses, and
 its use disables autolisten.  If necessary, and 'always-use-proxy'
-is not specified, a DNS lookup may be done to resolve 'DNS' or 'TORIPADDRESS'.
+is not specified, a DNS lookup may be done to resolve `HOSTNAME` or `TORIPADDRESS'`.
 
-  If a 'DNS' hostname was given that resolves to a local interface, the daemon
-will bind to that interface: if **announce-addr-dns** is true then it will also announce that as type 'DNS' (rather than announcing the IP address).
+  If `HOSTNAME` was given that resolves to a local interface, the daemon
+will bind to that interface.
 
-* **bind-addr**=*\[IPADDRESS\[:PORT\]\]|SOCKETPATH|DNS\[:PORT\]|DNS\[:PORT\]*
+* **bind-addr**=*\[IPADDRESS\[:PORT\]\]|SOCKETPATH|HOSTNAME\[:PORT\]*
 
   Set an IP address or UNIX domain socket to listen to, but do not
 announce. A UNIX domain socket is distinguished from an IP address by
@@ -554,10 +558,10 @@ not specified, 9735 is used.
 its use disables autolisten.  If necessary, and 'always-use-proxy'
 is not specified, a DNS lookup may be done to resolve 'IPADDRESS'.
 
-  If a 'DNS' hostname was given and 'always-use-proxy' is not specified,
-a lookup may be done to resolve it and bind to a local interface (if found).
+  If a HOSTNAME was given and `always-use-proxy` is not specified,
+a DNS lookup may be done to resolve it and bind to a local interface (if found).
 
-* **announce-addr**=*IPADDRESS\[:PORT\]|TORADDRESS.onion\[:PORT\]|DNS\[:PORT\]*
+* **announce-addr**=*IPADDRESS\[:PORT\]|TORADDRESS.onion\[:PORT\]|dns:HOSTNAME\[:PORT\]*
 
   Set an IP (v4 or v6) address or Tor address to announce; a Tor address
 is distinguished by ending in *.onion*. *PORT* defaults to 9735.
@@ -569,12 +573,11 @@ announced addresses are public (e.g. not localhost).
   This option can be used multiple times to add more addresses, and
 its use disables autolisten.
 
-  Since v22.11 'DNS' hostnames can be used for announcement: see **announce-addr-dns**.
+  Since v23.058, the `dns:` prefix can be used to indicate that this hostname and port should be announced as a DNS hostname entry.  Please note that most mainnet nodes do not yet use, read or propagate this information correctly.
 
-* **announce-addr-dns**=*BOOL*
+* **announce-addr-dns**=*BOOL* (deprecated in v23.08)
 
-  Set to *true* (default is *false), this so that names given as arguments to **addr** and **announce-addr** are published in node announcement messages as names, rather than IP addresses.  Please note that most mainnet nodes do not yet use, read or propagate this information correctly.
-
+  When set to *true* (default is *false*), prefixes all `HOSTNAME` in **announce-addr** with `dns:`.
 
 * **offline**
 
@@ -664,28 +667,18 @@ considered important.
 
 Experimental options are subject to breakage between releases: they
 are made available for advanced users who want to test proposed
-features. When the build is configured _without_ `--enable-experimental-features`,
-below options are available but disabled by default.
-Supported features can be listed with `lightningd --list-features-only`
-
-A build _with_ `--enable-experimental-features` flag hard-codes some of below
-options as enabled, ignoring their command line flag. It may also add support for
-even more features. The safest way to determine the active configuration is by
-checking `listconfigs` or by looking at `our_features` (bits) in `getinfo`.
+features.
 
 * **experimental-onion-messages**
 
   Specifying this enables sending, forwarding and receiving onion messages,
 which are in draft status in the [bolt][bolt] specifications (PR #759).
-A build with `--enable-experimental-features` usually enables this via
-experimental-offers, see below.
+This is automatically enabled by `experimental-offers`.
 
 * **experimental-offers**
 
   Specifying this enables the `offers` and `fetchinvoice` plugins and
-corresponding functionality, which are in draft status ([bolt][bolt] #798) as [bolt12][bolt12].
-A build with `--enable-experimental-features` enables this permanently and usually
-enables experimental-onion-messages as well.
+corresponding functionality, which are in draft status ([bolt][bolt] #798) as [bolt12][bolt12], as well as `experimental-onion-messages`.
 
 * **fetchinvoice-noconnect**
 
@@ -713,6 +706,25 @@ your needs. The default behavior is to not contribute funds.
 connections on that port, on any IPv4 and IPv6 addresses you listen
 to ([bolt][bolt] #891).  The normal protocol is expected to be sent over WebSocket binary
 frames once the connection is upgraded.
+
+* **experimental-peer-storage**
+
+  Specifying this option means we will store up to 64k of encrypted
+data for our peers, and give them our (encrypted!) backup data to
+store as well, based on a protocol similar to [bolt][bolt] #881.
+
+* **experimental-quiesce**
+
+  Specifying this option advertizes `option_quiesce`.  Not very useful
+by itself, except for testing.
+
+* **experimental-upgrade-protocol**
+
+  Specifying this option means we send (and allow receipt of) a simple
+protocol to update channel types.  At the moment, we only support setting
+`option_static_remotekey` to ancient channels.  The peer must also support
+this option.
+
 
 BUGS
 ----

@@ -3,8 +3,9 @@ from decimal import Decimal
 from fixtures import *  # noqa: F401,F403
 from fixtures import TEST_NETWORK
 from pyln.client import RpcError, Millisatoshi
+from shutil import copyfile
 from utils import (
-    only_one, wait_for, sync_blockheight, EXPERIMENTAL_FEATURES,
+    only_one, wait_for, sync_blockheight,
     VALGRIND, check_coin_moves, TailableProc, scriptpubkey_addr,
     check_utxos_channel
 )
@@ -498,6 +499,9 @@ def test_fundpsbt(node_factory, bitcoind, chainparams):
     total_outs = 4
     l1 = node_factory.get_node()
 
+    # CLN returns PSBTv0 and PSETv2, for now
+    is_psbt_v2 = chainparams['elements']
+
     outputs = []
     # Add a medley of funds to withdraw later
     for i in range(total_outs):
@@ -512,22 +516,35 @@ def test_fundpsbt(node_factory, bitcoind, chainparams):
 
     # Should get one input, plus some excess
     funding = l1.rpc.fundpsbt(amount // 2, feerate, 0, reserve=0)
+
     psbt = bitcoind.rpc.decodepsbt(funding['psbt'])
     # We can fuzz this up to 99 blocks back.
-    assert psbt['tx']['locktime'] > bitcoind.rpc.getblockcount() - 100
-    assert psbt['tx']['locktime'] <= bitcoind.rpc.getblockcount()
-    assert len(psbt['tx']['vin']) == 1
     assert funding['excess_msat'] > Millisatoshi(0)
     assert funding['excess_msat'] < Millisatoshi(amount // 2 * 1000)
     assert funding['feerate_per_kw'] == 7500
     assert 'estimated_final_weight' in funding
     assert 'reservations' not in funding
 
+    if is_psbt_v2:
+        assert psbt['fallback_locktime'] > bitcoind.rpc.getblockcount() - 100
+        assert psbt['fallback_locktime'] <= bitcoind.rpc.getblockcount()
+        assert psbt['input_count'] == 1
+    else:
+        assert psbt['tx']['locktime'] > bitcoind.rpc.getblockcount() - 100
+        assert psbt['tx']['locktime'] <= bitcoind.rpc.getblockcount()
+        assert len(psbt['tx']['vin']) == 1
+
     # This should add 99 to the weight, but otherwise be identical (might choose different inputs though!) except for locktime.
     funding2 = l1.rpc.fundpsbt(amount // 2, feerate, 99, reserve=0, locktime=bitcoind.rpc.getblockcount() + 1)
     psbt2 = bitcoind.rpc.decodepsbt(funding2['psbt'])
-    assert psbt2['tx']['locktime'] == bitcoind.rpc.getblockcount() + 1
-    assert len(psbt2['tx']['vin']) == 1
+
+    if is_psbt_v2:
+        assert psbt2['fallback_locktime'] == bitcoind.rpc.getblockcount() + 1
+        assert psbt2['input_count'] == 1
+    else:
+        assert psbt2['tx']['locktime'] == bitcoind.rpc.getblockcount() + 1
+        assert len(psbt2['tx']['vin']) == 1
+
     assert funding2['excess_msat'] < funding['excess_msat']
     assert funding2['feerate_per_kw'] == 7500
     # Naively you'd expect this to be +99, but it might have selected a non-p2sh output...
@@ -545,7 +562,12 @@ def test_fundpsbt(node_factory, bitcoind, chainparams):
     assert funding3['excess_msat'] == Millisatoshi(0)
     # Should have the excess msat as the output value (minus fee for change)
     psbt = bitcoind.rpc.decodepsbt(funding3['psbt'])
-    change = Millisatoshi("{}btc".format(psbt['tx']['vout'][funding3['change_outnum']]['value']))
+
+    if is_psbt_v2:
+        change = Millisatoshi("{}btc".format(psbt["outputs"][funding3['change_outnum']]["amount"]))
+    else:
+        change = Millisatoshi("{}btc".format(psbt['tx']['vout'][funding3['change_outnum']]['value']))
+
     # The weight should be greater (now includes change output)
     change_weight = funding3['estimated_final_weight'] - funding['estimated_final_weight']
     assert change_weight > 0
@@ -555,7 +577,10 @@ def test_fundpsbt(node_factory, bitcoind, chainparams):
 
     # Should get two inputs.
     psbt = bitcoind.rpc.decodepsbt(l1.rpc.fundpsbt(amount, feerate, 0, reserve=0)['psbt'])
-    assert len(psbt['tx']['vin']) == 2
+    if is_psbt_v2:
+        assert psbt['input_count'] == 2
+    else:
+        assert len(psbt['tx']['vin']) == 2
 
     # Should not use reserved outputs.
     psbt = bitcoind.rpc.createpsbt([{'txid': out[0], 'vout': out[1]} for out in outputs], [])
@@ -580,6 +605,9 @@ def test_utxopsbt(node_factory, bitcoind, chainparams):
     amount = 1000000
     l1 = node_factory.get_node()
 
+    # CLN returns PSBTv0 and PSETv2, for now
+    is_psbt_v2 = chainparams['elements']
+
     outputs = []
     # Add a funds to withdraw later
     for _ in range(2):
@@ -599,14 +627,20 @@ def test_utxopsbt(node_factory, bitcoind, chainparams):
                               reserve=0)
     psbt = bitcoind.rpc.decodepsbt(funding['psbt'])
     # We can fuzz this up to 99 blocks back.
-    assert psbt['tx']['locktime'] > bitcoind.rpc.getblockcount() - 100
-    assert psbt['tx']['locktime'] <= bitcoind.rpc.getblockcount()
-    assert len(psbt['tx']['vin']) == 1
     assert funding['excess_msat'] > Millisatoshi(0)
     assert funding['excess_msat'] < Millisatoshi(amount // 2 * 1000)
     assert funding['feerate_per_kw'] == 7500
     assert 'estimated_final_weight' in funding
     assert 'reservations' not in funding
+
+    if is_psbt_v2:
+        assert psbt['fallback_locktime'] > bitcoind.rpc.getblockcount() - 100
+        assert psbt['fallback_locktime'] <= bitcoind.rpc.getblockcount()
+        assert psbt['input_count'] == 1
+    else:
+        assert psbt['tx']['locktime'] > bitcoind.rpc.getblockcount() - 100
+        assert psbt['tx']['locktime'] <= bitcoind.rpc.getblockcount()
+        assert len(psbt['tx']['vin']) == 1
 
     # This should add 99 to the weight, but otherwise be identical except for locktime.
     start_weight = 99
@@ -614,12 +648,19 @@ def test_utxopsbt(node_factory, bitcoind, chainparams):
                                ['{}:{}'.format(outputs[0][0], outputs[0][1])],
                                reserve=0, locktime=bitcoind.rpc.getblockcount() + 1)
     psbt2 = bitcoind.rpc.decodepsbt(funding2['psbt'])
-    assert psbt2['tx']['locktime'] == bitcoind.rpc.getblockcount() + 1
-    assert psbt2['tx']['vin'] == psbt['tx']['vin']
+
+    if is_psbt_v2:
+        assert psbt2['fallback_locktime'] == bitcoind.rpc.getblockcount() + 1
+        assert psbt2['inputs'] == psbt['inputs']
+    else:
+        assert psbt2['tx']['locktime'] == bitcoind.rpc.getblockcount() + 1
+        assert psbt2['tx']['vin'] == psbt['tx']['vin']
+
     if chainparams['elements']:
+        assert is_psbt_v2
         # elements includes the fee as an output
         addl_fee = Millisatoshi((fee_val * start_weight + 999) // 1000 * 1000)
-        assert psbt2['tx']['vout'][0]['value'] == psbt['tx']['vout'][0]['value'] + addl_fee.to_btc()
+        assert psbt2['outputs'][0]['amount'] == psbt['outputs'][0]['amount'] + addl_fee.to_btc()
     else:
         assert psbt2['tx']['vout'] == psbt['tx']['vout']
     assert funding2['excess_msat'] < funding['excess_msat']
@@ -645,7 +686,11 @@ def test_utxopsbt(node_factory, bitcoind, chainparams):
     assert funding3['excess_msat'] == Millisatoshi(0)
     # Should have the excess msat as the output value (minus fee for change)
     psbt = bitcoind.rpc.decodepsbt(funding3['psbt'])
-    change = Millisatoshi("{}btc".format(psbt['tx']['vout'][funding3['change_outnum']]['value']))
+    if is_psbt_v2:
+        change = Millisatoshi("{}btc".format(psbt['outputs'][funding3['change_outnum']]['amount']))
+    else:
+        change = Millisatoshi("{}btc".format(psbt['tx']['vout'][funding3['change_outnum']]['value']))
+
     # The weight should be greater (now includes change output)
     change_weight = funding3['estimated_final_weight'] - funding['estimated_final_weight']
     assert change_weight > 0
@@ -666,7 +711,10 @@ def test_utxopsbt(node_factory, bitcoind, chainparams):
                               ['{}:{}'.format(outputs[0][0], outputs[0][1]),
                                '{}:{}'.format(outputs[1][0], outputs[1][1])])
     psbt = bitcoind.rpc.decodepsbt(funding['psbt'])
-    assert len(psbt['tx']['vin']) == 2
+    if is_psbt_v2:
+        assert psbt['input_count'] == 2
+    else:
+        assert len(psbt['tx']['vin']) == 2
     assert len(funding['reservations']) == 2
     assert funding['reservations'][0]['txid'] == outputs[0][0]
     assert funding['reservations'][0]['vout'] == outputs[0][1]
@@ -718,10 +766,65 @@ def test_sign_external_psbt(node_factory, bitcoind, chainparams):
     l1.rpc.signpsbt(psbt)
 
 
+def test_psbt_version(node_factory, bitcoind, chainparams):
+
+    sats_amount = 10**8
+
+    # CLN returns PSBTv0 and PSETv2, for now
+    is_elements = chainparams['elements']
+
+    l1 = node_factory.get_node()
+    bitcoind.rpc.sendtoaddress(l1.rpc.newaddr()['bech32'],
+                               sats_amount / 100000000)
+
+    bitcoind.generate_block(1)
+    wait_for(lambda: len(l1.rpc.listfunds()['outputs']) == 1)
+
+    funding = l1.rpc.fundpsbt(satoshi=int(sats_amount / 2),
+                              feerate=7500,
+                              startweight=42)['psbt']
+
+    # Short elements test
+    if is_elements:
+        # Only v2 is allowed, and is a no-op
+        for i in [0, 1, 3, 4, 5]:
+            with pytest.raises(RpcError, match=r"Could not set PSBT version"):
+                l1.rpc.setpsbtversion(funding, i)
+        assert funding == l1.rpc.setpsbtversion(funding, 2)['psbt']
+        # And elementsd can understand it
+        bitcoind.rpc.decodepsbt(funding)
+        return
+
+    # Non-elements test
+    v2_funding = l1.rpc.setpsbtversion(funding, 2)['psbt']
+
+    # Bitcoind cannot understand PSBTv2 yet
+    with pytest.raises(JSONRPCError, match=r"TX decode failed Unsupported version number"):
+        bitcoind.rpc.decodepsbt(v2_funding)
+
+    # But it round-trips fine enough
+    v0_funding = l1.rpc.setpsbtversion(v2_funding, 0)['psbt']
+
+    # CLN returns v0 for now
+    assert funding == v0_funding
+
+    # And we reject non-0/2 args
+    for i in [1, 3, 4, 5]:
+        with pytest.raises(RpcError, match=r"Could not set PSBT version"):
+            l1.rpc.setpsbtversion(v2_funding, i)
+
+
+@unittest.skipIf(TEST_NETWORK == 'liquid-regtest', 'Core/Elements need joinpsbt support for v2')
 def test_sign_and_send_psbt(node_factory, bitcoind, chainparams):
     """
     Tests for the sign + send psbt RPCs
     """
+    # CLN returns PSBTv0 and PSETv2, for now
+    is_psbt_v2 = chainparams['elements']
+
+    # Once support for v2 joinpsbt is added, below test should work verbatim
+    assert not is_psbt_v2
+
     amount = 1000000
     total_outs = 12
     coin_mvt_plugin = os.path.join(os.getcwd(), 'tests/plugins/coin_movements.py')
@@ -744,7 +847,10 @@ def test_sign_and_send_psbt(node_factory, bitcoind, chainparams):
                               startweight=42)
     assert len([x for x in l1.rpc.listfunds()['outputs'] if x['reserved']]) == 4
     psbt = bitcoind.rpc.decodepsbt(funding['psbt'])
-    saved_input = psbt['tx']['vin'][0]
+    if is_psbt_v2:
+        saved_input = psbt['inputs'][0]
+    else:
+        saved_input = psbt['tx']['vin'][0]
 
     # Go ahead and unreserve the UTXOs, we'll use a smaller
     # set of them to create a second PSBT that we'll attempt to sign
@@ -752,8 +858,13 @@ def test_sign_and_send_psbt(node_factory, bitcoind, chainparams):
     l1.rpc.unreserveinputs(funding['psbt'])
 
     # Re-reserve one of the utxos we just unreserved
-    psbt = bitcoind.rpc.createpsbt([{'txid': saved_input['txid'],
-                                     'vout': saved_input['vout']}], [])
+    if is_psbt_v2:
+        psbt = bitcoind.rpc.createpsbt([{'txid': saved_input['previous_txid'],
+                                         'vout': saved_input['previous_vout']}], [])
+    else:
+        psbt = bitcoind.rpc.createpsbt([{'txid': saved_input['txid'],
+                                         'vout': saved_input['vout']}], [])
+
     l1.rpc.reserveinputs(psbt)
 
     # We require the utxos be reserved before signing them
@@ -817,8 +928,12 @@ def test_sign_and_send_psbt(node_factory, bitcoind, chainparams):
     l1_funding = l1.rpc.fundpsbt(satoshi=out_total,
                                  feerate=7500,
                                  startweight=42)
-    l1_num_inputs = len(bitcoind.rpc.decodepsbt(l1_funding['psbt'])['tx']['vin'])
-    l2_num_inputs = len(bitcoind.rpc.decodepsbt(l2_funding['psbt'])['tx']['vin'])
+    if is_psbt_v2:
+        l1_num_inputs = bitcoind.rpc.decodepsbt(l1_funding['psbt'])["input_count"]
+        l2_num_inputs = bitcoind.rpc.decodepsbt(l2_funding['psbt'])["input_count"]
+    else:
+        l1_num_inputs = len(bitcoind.rpc.decodepsbt(l1_funding['psbt'])['tx']['vin'])
+        l2_num_inputs = len(bitcoind.rpc.decodepsbt(l2_funding['psbt'])['tx']['vin'])
 
     # Join and add an output (reorders!)
     out_2_ms = Millisatoshi(l1_funding['excess_msat'])
@@ -948,78 +1063,6 @@ def test_txsend(node_factory, bitcoind, chainparams):
 
     # Change address should appear in listfunds()
     assert scriptpubkey_addr(decode['vout'][changenum]['scriptPubKey']) in [f['address'] for f in l1.rpc.listfunds()['outputs']]
-
-
-@unittest.skipIf(TEST_NETWORK != 'regtest', "Fee outputs throw off our output matching logic")
-@unittest.skipIf(not EXPERIMENTAL_FEATURES, "Tests annotations which are compiled only with experimental features")
-def test_transaction_annotations(node_factory, bitcoind):
-    l1, l2, l3 = node_factory.get_nodes(3)
-    l1.fundwallet(10**6)
-
-    # We should now have a transaction that gave us the funds in the
-    # transactions table...
-    outputs = l1.rpc.listfunds()['outputs']
-    assert(len(outputs) == 1 and outputs[0]['status'] == 'confirmed')
-    out = outputs[0]
-    idx = out['output']
-    assert(idx in [0, 1] and out['amount_msat'] == Millisatoshi("{}sat".format(10**6)))
-
-    # ... and it should have an annotation on the output reading 'deposit'
-    txs = l1.rpc.listtransactions()['transactions']
-    assert(len(txs) == 1)
-    tx = txs[0]
-    output = tx['outputs'][idx]
-    assert(output['type'] == 'deposit' and output['amount_msat'] == Millisatoshi(1000000000))
-
-    # ... and all other output should be change, and have no annotations
-    types = []
-    for i, o in enumerate(tx['outputs']):
-        if i == idx:
-            continue
-        if 'type' in o:
-            types.append(o['type'])
-        else:
-            types.append(None)
-
-    assert(set([None]) == set(types))
-
-    ##########################################################################
-    # Let's now open a channel. The opener should get the funding transaction
-    # annotated as channel open and deposit.
-    l1.connect(l2)
-    fundingtx = l1.rpc.fundchannel(l2.info['id'], 10**5)
-
-    # We should have one output unreserved, and it should be unconfirmed
-    outputs = l1.rpc.listfunds()['outputs']
-    assert len(outputs) == 2
-    outputs = [o for o in outputs if not o['reserved']]
-    assert(len(outputs) == 1 and outputs[0]['status'] == 'unconfirmed')
-
-    # It should also match the funding txid:
-    assert(outputs[0]['txid'] == fundingtx['txid'])
-
-    # Confirm the channel and check that the output changed to confirmed
-    bitcoind.generate_block(3)
-    sync_blockheight(bitcoind, [l1, l2])
-    outputs = l1.rpc.listfunds()['outputs']
-    assert(len(outputs) == 1 and outputs[0]['status'] == 'confirmed')
-
-    # We should have 2 transactions, the second one should be the funding tx
-    # (we are ordering by blockheight and txindex, so that order should be ok)
-    txs = l1.rpc.listtransactions()['transactions']
-    assert(len(txs) == 2 and txs[1]['hash'] == fundingtx['txid'])
-
-    # Check the annotated types
-    types = [o['type'] for o in txs[1]['outputs']]
-    changeidx = 0 if types[0] == 'deposit' else 1
-    fundidx = 1 - changeidx
-    assert(types[changeidx] == 'deposit' and types[fundidx] == 'channel_funding')
-
-    # And check the channel annotation on the funding output
-    channels = l1.rpc.listpeerchannels()['channels']
-    assert(len(channels) == 1)
-    scid = channels[0]['short_channel_id']
-    assert(txs[1]['outputs'][fundidx]['channel'] == scid)
 
 
 def write_all(fd, bytestr):
@@ -1475,7 +1518,7 @@ def test_withdraw_bech32m(node_factory, bitcoind):
     l1 = node_factory.get_node()
     l1.fundwallet(10000000)
 
-    # Based on BIP-320, but all changed to regtest.
+    # Based on BIP-350, but all changed to valid regtest.
     addrs = ("BCRT1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KYGT080",
              "bcrt1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qzf4jry",
              "bcrt1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k0ylj56",
@@ -1495,4 +1538,95 @@ def test_withdraw_bech32m(node_factory, bitcoind):
     args = []
     for addr in addrs:
         args += [{addr: 10**3}]
-    l1.rpc.multiwithdraw(args)["txid"]
+    res = l1.rpc.multiwithdraw(args)
+
+    # Let's check to make sure outputs are as expected (plus change)
+    outputs = bitcoind.rpc.decoderawtransaction(res['tx'])["vout"]
+    assert set([output['scriptPubKey']['address'] for output in outputs]).issuperset([addr.lower() for addr in addrs])
+
+
+@unittest.skipIf(TEST_NETWORK != 'regtest', "Address is network specific")
+def test_upgradewallet(node_factory, bitcoind):
+    # Make sure bitcoind doesn't think it's going backwards
+    bitcoind.generate_block(104)
+    l1 = node_factory.get_node(start=False)
+
+    # Write the data/p2sh_wallet_hsm_secret to the hsm_path,
+    # so node can spend funds at p2sh_wrapped_addr
+    p2sh_wrapped_addr = '2N2V4ee2vMkiXe5FSkRqFjQhiS9hKqNytv3'
+    hsm_path_dest = os.path.join(l1.daemon.lightning_dir, TEST_NETWORK, "hsm_secret")
+    hsm_path_origin = os.path.join('tests/data', 'p2sh_wallet_hsm_secret')
+    copyfile(hsm_path_origin, hsm_path_dest)
+
+    l1.start()
+    assert l1.daemon.is_in_log('Server started with public key 0266e4598d1d3c415f572a8488830b60f7e744ed9235eb0b1ba93283b315c03518')
+
+    # No funds in wallet, upgrading does nothing
+    upgrade = l1.rpc.upgradewallet()
+    assert upgrade['upgraded_outs'] == 0
+
+    l1.fundwallet(10000000, addrtype="bech32")
+
+    # Funds are in wallet but they're already native segwit
+    upgrade = l1.rpc.upgradewallet()
+    assert upgrade['upgraded_outs'] == 0
+
+    # Send funds to wallet-compatible p2sh-segwit funds
+    txid = bitcoind.rpc.sendtoaddress(p2sh_wrapped_addr, 20000000 / 10 ** 8)
+    bitcoind.generate_block(1)
+    l1.daemon.wait_for_log('Owning output .* txid {} CONFIRMED'.format(txid))
+
+    upgrade = l1.rpc.upgradewallet()
+    assert upgrade['upgraded_outs'] == 1
+    assert bitcoind.rpc.getmempoolinfo()['size'] == 1
+
+    # Should be reserved!
+    res_funds = only_one([out for out in l1.rpc.listfunds()['outputs'] if out['reserved']])
+    assert 'redeemscript' in res_funds
+
+    # Running it again should be no-op because reservedok is false
+    upgrade = l1.rpc.upgradewallet()
+    assert upgrade['upgraded_outs'] == 0
+
+    # Doing it with 'reserved ok' should have 1
+    # We use a big feerate so we can get over the RBF hump
+    upgrade = l1.rpc.upgradewallet(feerate="urgent", reservedok=True)
+    assert upgrade['upgraded_outs'] == 1
+    assert bitcoind.rpc.getmempoolinfo()['size'] == 1
+
+    # Mine it, nothing to upgrade
+    l1.bitcoin.generate_block(1)
+    sync_blockheight(l1.bitcoin, [l1])
+    upgrade = l1.rpc.upgradewallet(feerate="urgent", reservedok=True)
+    assert upgrade['upgraded_outs'] == 0
+
+
+def test_hsmtool_makerune(node_factory):
+    """Test we can make a valid rune before the node really exists"""
+    l1 = node_factory.get_node(start=False)
+
+    # get_node() creates a secret, but in usual case we generate one.
+    hsm_path = os.path.join(l1.daemon.lightning_dir, TEST_NETWORK, "hsm_secret")
+    os.remove(hsm_path)
+
+    hsmtool = HsmTool(node_factory.directory, "generatehsm", hsm_path)
+    master_fd, slave_fd = os.openpty()
+    hsmtool.start(stdin=slave_fd)
+    hsmtool.wait_for_log(r"Select your language:")
+    write_all(master_fd, "0\n".encode("utf-8"))
+    hsmtool.wait_for_log(r"Introduce your BIP39 word list")
+    write_all(master_fd, "ritual idle hat sunny universe pluck key alpha wing "
+              "cake have wedding\n".encode("utf-8"))
+    hsmtool.wait_for_log(r"Enter your passphrase:")
+    write_all(master_fd, "This is actually not a passphrase\n".encode("utf-8"))
+    assert hsmtool.proc.wait(WAIT_TIMEOUT) == 0
+    hsmtool.is_in_log(r"New hsm_secret file created")
+
+    cmd_line = ["tools/hsmtool", "makerune", hsm_path]
+    out = subprocess.check_output(cmd_line).decode("utf8").split("\n")[0]
+
+    l1.start()
+
+    # We have to generate a rune now, for commando to even start processing!
+    rune = l1.rpc.commando_rune()['rune']
+    assert rune == out

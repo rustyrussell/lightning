@@ -27,6 +27,9 @@ struct early_peer {
 	/* Buffer for reading/writing message. */
 	u8 *msg;
 
+	/* Are we connected via a websocket? */
+	enum is_websocket is_websocket;
+
 	bool incoming;
 };
 
@@ -115,7 +118,6 @@ static struct io_plan *peer_init_received(struct io_conn *conn,
 			case ADDR_TYPE_TOR_V2_REMOVED:
 			case ADDR_TYPE_TOR_V3:
 			case ADDR_TYPE_DNS:
-			case ADDR_TYPE_WEBSOCKET:
 				remote_addr = tal_free(remote_addr);
 				break;
 			}
@@ -137,6 +139,7 @@ static struct io_plan *peer_init_received(struct io_conn *conn,
 			      remote_addr,
 			      &peer->cs,
 			      take(features),
+			      peer->is_websocket,
 			      peer->incoming);
 }
 
@@ -192,6 +195,7 @@ struct io_plan *peer_exchange_initmsg(struct io_conn *conn,
 				      const struct node_id *id,
 				      const struct wireaddr_internal *addr,
 				      struct oneshot *timeout,
+				      enum is_websocket is_websocket,
 				      bool incoming)
 {
 	/* If conn is closed, forget peer */
@@ -204,6 +208,7 @@ struct io_plan *peer_exchange_initmsg(struct io_conn *conn,
 	peer->addr = *addr;
 	peer->cs = *cs;
 	peer->incoming = incoming;
+	peer->is_websocket = is_websocket;
 
 	/* Attach timer to early peer, so it gets freed with it. */
 	notleak(tal_steal(peer, timeout));
@@ -231,19 +236,20 @@ struct io_plan *peer_exchange_initmsg(struct io_conn *conn,
 	 *    incoming connection, if the node is the receiver and the connection was done
 	 *    via IP.
 	 */
-	if (incoming && addr->itype == ADDR_INTERNAL_WIREADDR &&
-			address_routable(&addr->u.wireaddr, true)) {
-		switch (addr->u.wireaddr.type) {
+	if (incoming
+	    && addr->itype == ADDR_INTERNAL_WIREADDR
+	    && !addr->u.wireaddr.is_websocket
+	    && address_routable(&addr->u.wireaddr.wireaddr, true)) {
+		switch (addr->u.wireaddr.wireaddr.type) {
 		case ADDR_TYPE_IPV4:
 		case ADDR_TYPE_IPV6:
 			tlvs->remote_addr = tal_arr(tlvs, u8, 0);
-			towire_wireaddr(&tlvs->remote_addr, &addr->u.wireaddr);
+			towire_wireaddr(&tlvs->remote_addr, &addr->u.wireaddr.wireaddr);
 			break;
 		/* Only report IP addresses back for now */
 		case ADDR_TYPE_TOR_V2_REMOVED:
 		case ADDR_TYPE_TOR_V3:
 		case ADDR_TYPE_DNS:
-		case ADDR_TYPE_WEBSOCKET:
 			break;
 		}
 	}

@@ -10,6 +10,7 @@
 #include <common/key_derive.h>
 #include <common/type_to_string.h>
 #include <lightningd/chaintopology.h>
+#include <lightningd/hsm_control.h>
 #include <lightningd/jsonrpc.h>
 #include <lightningd/lightningd.h>
 #include <wallet/txfilter.h>
@@ -96,12 +97,21 @@ static struct command_result *json_reserveinputs(struct command *cmd,
 		   NULL))
 		return command_param_failed();
 
+	/* We only deal with V2 internally */
+	if (!psbt_set_version(psbt, 2)) {
+		return command_fail(cmd, LIGHTNINGD,
+					"Failed to set version for PSBT: %s",
+					type_to_string(tmpctx,
+						   struct wally_psbt,
+						   psbt));
+	}
+
 	current_height = get_block_height(cmd->ld->topology);
-	for (size_t i = 0; i < psbt->tx->num_inputs; i++) {
+	for (size_t i = 0; i < psbt->num_inputs; i++) {
 		struct bitcoin_outpoint outpoint;
 		struct utxo *utxo;
 
-		wally_tx_input_get_outpoint(&psbt->tx->inputs[i], &outpoint);
+		wally_psbt_input_get_outpoint(&psbt->inputs[i], &outpoint);
 		utxo = wallet_utxo_get(cmd, cmd->ld->wallet, &outpoint);
 		if (!utxo)
 			continue;
@@ -151,6 +161,14 @@ static struct command_result *json_unreserveinputs(struct command *cmd,
 		   NULL))
 		return command_param_failed();
 
+	/* We only deal with V2 internally */
+	if (!psbt_set_version(psbt, 2)) {
+		log_broken(cmd->ld->log,
+			"Unable to set version for PSBT: %s",
+			type_to_string(tmpctx, struct wally_psbt,
+                          psbt));
+	}
+
 	/* We should also add the utxo info for these inputs!
 	 * (absolutely required for using this psbt in a dual-funded
 	 * round) */
@@ -158,7 +176,7 @@ static struct command_result *json_unreserveinputs(struct command *cmd,
 		struct bitcoin_tx *utxo_tx;
 		struct bitcoin_txid txid;
 
-		wally_tx_input_get_txid(&psbt->tx->inputs[i], &txid);
+		wally_psbt_input_get_txid(&psbt->inputs[i], &txid);
 		utxo_tx = wallet_transaction_get(psbt, cmd->ld->wallet,
 						 &txid);
 		if (utxo_tx) {
@@ -175,13 +193,13 @@ static struct command_result *json_unreserveinputs(struct command *cmd,
 
 	response = json_stream_success(cmd);
 	json_array_start(response, "reservations");
-	for (size_t i = 0; i < psbt->tx->num_inputs; i++) {
+	for (size_t i = 0; i < psbt->num_inputs; i++) {
 		struct bitcoin_outpoint outpoint;
 		struct utxo *utxo;
 		enum output_status oldstatus;
 		u32 old_res;
 
-		wally_tx_input_get_outpoint(&psbt->tx->inputs[i], &outpoint);
+		wally_psbt_input_get_outpoint(&psbt->inputs[i], &outpoint);
 		utxo = wallet_utxo_get(cmd, cmd->ld->wallet, &outpoint);
 		if (!utxo || utxo->status != OUTPUT_STATE_RESERVED)
 			continue;
@@ -243,25 +261,28 @@ static bool inputs_sufficient(struct amount_sat input,
 	return false;
 }
 
-static struct wally_psbt *psbt_using_utxos(const tal_t *ctx,
-					   struct wallet *wallet,
-					   struct utxo **utxos,
-					   const struct ext_key *bip32_base,
-					   u32 nlocktime,
-					   u32 nsequence)
+struct wally_psbt *psbt_using_utxos(const tal_t *ctx,
+				    struct wallet *wallet,
+				    struct utxo **utxos,
+				    u32 nlocktime,
+				    u32 nsequence,
+				    struct wally_psbt *base)
 {
 	struct pubkey key;
 	u8 *scriptSig, *scriptPubkey, *redeemscript;
 	struct wally_psbt *psbt;
 
-	psbt = create_psbt(ctx, tal_count(utxos), 0, nlocktime);
+	if (base)
+		psbt = base;
+	else
+		psbt = create_psbt(ctx, tal_count(utxos), 0, nlocktime);
 
 	for (size_t i = 0; i < tal_count(utxos); i++) {
 		u32 this_nsequence;
 		struct bitcoin_tx *tx;
 
 		if (utxos[i]->is_p2sh) {
-			bip32_pubkey(bip32_base, &key, utxos[i]->keyindex);
+			bip32_pubkey(wallet->ld, &key, utxos[i]->keyindex);
 			scriptSig = bitcoin_scriptsig_p2sh_p2wpkh(tmpctx, &key);
 			redeemscript = bitcoin_redeem_p2sh_p2wpkh(tmpctx, &key);
 			scriptPubkey = scriptpubkey_p2sh(tmpctx, redeemscript);
@@ -295,14 +316,10 @@ static struct wally_psbt *psbt_using_utxos(const tal_t *ctx,
 
 		psbt_input_set_wit_utxo(psbt, i, scriptPubkey, utxos[i]->amount);
 		if (is_elements(chainparams)) {
-			struct amount_asset asset;
 			/* FIXME: persist asset tags */
-			asset = amount_sat_to_asset(&utxos[i]->amount,
+			amount_sat_to_asset(&utxos[i]->amount,
 						    chainparams->fee_asset_tag);
 			/* FIXME: persist nonces */
-			psbt_elements_input_set_asset(psbt,
-						      psbt->num_inputs - 1,
-						      &asset);
 		}
 
 		/* FIXME: as of 17 sept 2020, elementsd is *at most* at par
@@ -338,28 +355,15 @@ static struct command_result *finish_psbt(struct command *cmd,
 	size_t change_outnum COMPILER_WANTS_INIT("gcc 9.4.0 -Og");
 	u32 current_height = get_block_height(cmd->ld->topology);
 
-	/* Setting the locktime to the next block to be mined has multiple
-	 * benefits:
-	 * - anti fee-snipping (even if not yet likely)
-	 * - less distinguishable transactions (with this we create
-	 *   general-purpose transactions which looks like bitcoind:
-	 *   native segwit, nlocktime set to tip, and sequence set to
-	 *   0xFFFFFFFD by default. Other wallets are likely to implement
-	 *   this too).
-	 */
 	if (!locktime) {
 		locktime = tal(cmd, u32);
-		*locktime = current_height;
-
-		/* Eventually fuzz it too. */
-		if (*locktime > 100 && pseudorand(10) == 0)
-			*locktime -= pseudorand(100);
+		*locktime = default_locktime(cmd->ld->topology);
 	}
 
 	psbt = psbt_using_utxos(cmd, cmd->ld->wallet, utxos,
-				cmd->ld->wallet->bip32_base,
-				*locktime, BITCOIN_TX_RBF_SEQUENCE);
-
+				*locktime, BITCOIN_TX_RBF_SEQUENCE,
+				NULL);
+	assert(psbt->version == 2);
 	/* Should we add a change output for the excess? */
 	if (excess_as_change) {
 		struct amount_sat change;
@@ -381,10 +385,7 @@ static struct command_result *finish_psbt(struct command *cmd,
 					    "Failed to generate change address."
 					    " Keys exhausted.");
 
-		if (!bip32_pubkey(cmd->ld->wallet->bip32_base, &pubkey, keyidx))
-			return command_fail(cmd, LIGHTNINGD,
-					    "Failed to generate change address."
-					    " Keys generation failure");
+		bip32_pubkey(cmd->ld, &pubkey, keyidx);
 		b32script = scriptpubkey_p2wpkh(tmpctx, &pubkey);
 		txfilter_add_scriptpubkey(cmd->ld->owned_txfilter, b32script);
 
@@ -405,7 +406,14 @@ fee_calc:
 		psbt_append_output(psbt, NULL, est_fee);
 		/* Add additional weight of fee output */
 		weight += bitcoin_tx_output_weight(0);
+	} else {
+		/* PSETv0 doesn't exist */
+		if (!psbt_set_version(psbt, 0)) {
+			return command_fail(cmd, LIGHTNINGD,
+						"Failed to set PSBT version number back to 0.");
+		}
 	}
+
 	response = json_stream_success(cmd);
 	json_add_psbt(response, "psbt", psbt);
 	json_add_num(response, "feerate_per_kw", feerate_per_kw);
@@ -443,7 +451,7 @@ static struct command_result *json_fundpsbt(struct command *cmd,
 	u32 *feerate_per_kw;
 	u32 *minconf, *weight, *min_witness_weight;
 	struct amount_sat *amount, input, diff;
-	bool all, *excess_as_change;
+	bool all, *excess_as_change, *nonwrapped;
 	u32 *locktime, *reserve, maxheight;
 
 	if (!param(cmd, buffer, params,
@@ -458,6 +466,8 @@ static struct command_result *json_fundpsbt(struct command *cmd,
 			     &min_witness_weight, 0),
 		   p_opt_def("excess_as_change", param_bool,
 			     &excess_as_change, false),
+		   p_opt_def("nonwrapped", param_bool,
+			     &nonwrapped, false),
 		   NULL))
 		return command_param_failed();
 
@@ -479,6 +489,7 @@ static struct command_result *json_fundpsbt(struct command *cmd,
 					&diff,
 					*feerate_per_kw,
 					maxheight,
+					*nonwrapped,
 					cast_const2(const struct utxo **, utxos));
 		if (utxo) {
 			utxo_weight = utxo_spend_weight(utxo,

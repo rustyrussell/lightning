@@ -25,7 +25,7 @@ int db_get_version(struct db *db)
 	 * table that doesn't exist yet, so we need to terminate and restart
 	 * the DB transaction.
 	 */
-	if (!db_query_prepared(stmt)) {
+	if (!db_query_prepared_canfail(stmt)) {
 		db_commit_transaction(stmt->db);
 		db_begin_transaction(stmt->db);
 		tal_free(stmt);
@@ -45,7 +45,7 @@ u32 db_data_version_get(struct db *db)
 	u32 version;
 	stmt = db_prepare_v2(db, SQL("SELECT intval FROM vars WHERE name = 'data_version'"));
 	/* postgres will act upset if the table doesn't exist yet. */
-	if (!db_query_prepared(stmt)) {
+	if (!db_query_prepared_canfail(stmt)) {
 		tal_free(stmt);
 		return 0;
 	}
@@ -58,14 +58,13 @@ u32 db_data_version_get(struct db *db)
 	return version;
 }
 
-void db_set_intvar(struct db *db, char *varname, s64 val)
+void db_set_intvar(struct db *db, const char *varname, s64 val)
 {
 	size_t changes;
 	struct db_stmt *stmt = db_prepare_v2(db, SQL("UPDATE vars SET intval=? WHERE name=?;"));
 	db_bind_int(stmt, 0, val);
 	db_bind_text(stmt, 1, varname);
-	if (!db_exec_prepared_v2(stmt))
-		db_fatal("Error executing update: %s", stmt->error);
+	db_exec_prepared_v2(stmt);
 	changes = db_count_changes(stmt);
 	tal_free(stmt);
 
@@ -73,19 +72,18 @@ void db_set_intvar(struct db *db, char *varname, s64 val)
 		stmt = db_prepare_v2(db, SQL("INSERT INTO vars (name, intval) VALUES (?, ?);"));
 		db_bind_text(stmt, 0, varname);
 		db_bind_int(stmt, 1, val);
-		if (!db_exec_prepared_v2(stmt))
-			db_fatal("Error executing insert: %s", stmt->error);
+		db_exec_prepared_v2(stmt);
 		tal_free(stmt);
 	}
 }
 
-s64 db_get_intvar(struct db *db, char *varname, s64 defval)
+s64 db_get_intvar(struct db *db, const char *varname, s64 defval)
 {
 	s64 res = defval;
 	struct db_stmt *stmt = db_prepare_v2(
 	    db, SQL("SELECT intval FROM vars WHERE name= ? LIMIT 1"));
 	db_bind_text(stmt, 0, varname);
-	if (db_query_prepared(stmt) && db_step(stmt))
+	if (db_query_prepared_canfail(stmt) && db_step(stmt))
 		res = db_col_int(stmt, "intval");
 
 	tal_free(stmt);

@@ -1,7 +1,9 @@
 #include "config.h"
 #include <bitcoin/feerate.h>
 #include <bitcoin/script.h>
+#include <ccan/array_size/array_size.h>
 #include <ccan/asort/asort.h>
+#include <ccan/cast/cast.h>
 #include <ccan/mem/mem.h>
 #include <ccan/tal/str/str.h>
 #include <common/htlc_tx.h>
@@ -36,15 +38,6 @@ static const struct pubkey *remote_per_commitment_point;
 /* The commitment number we're dealing with (if not mutual close) */
 static u64 commit_num;
 
-/* The feerate for the transaction spending our delayed output. */
-static u32 delayed_to_us_feerate;
-
-/* The feerate for transactions spending HTLC outputs. */
-static u32 htlc_feerate;
-
-/* The feerate for transactions spending from revoked transactions. */
-static u32 penalty_feerate, max_penalty_feerate;
-
 /* Min and max feerates we ever used */
 static u32 min_possible_feerate, max_possible_feerate;
 
@@ -71,8 +64,8 @@ static u32 reasonable_depth;
 /* The messages to send at that depth. */
 static u8 **missing_htlc_msgs;
 
-/* The messages which were sent to us before init_reply was processed. */
-static u8 **queued_msgs;
+/* The messages which were sent to us while waiting for a specific msg. */
+static const u8 **queued_msgs;
 
 /* Our recorded channel balance at 'chain time' */
 static struct amount_msat our_msat;
@@ -91,8 +84,10 @@ static u32 min_relay_feerate;
 
 /* If we broadcast a tx, or need a delay to resolve the output. */
 struct proposed_resolution {
-	/* This can be NULL if our proposal is to simply ignore it after depth */
-	const struct bitcoin_tx *tx;
+	/* Once we had lightningd create tx, here's what it told us
+	 * witnesses were (we ignore sigs!). */
+	/* NULL if answer is to simply ignore it. */
+	const struct onchain_witness_element **welements;
 	/* Non-zero if this is CSV-delayed. */
 	u32 depth_required;
 	enum tx_type tx_type;
@@ -149,6 +144,20 @@ static const char *output_type_name(enum output_type output_type)
 		if (enum_output_type_names[i].v == output_type)
 			return enum_output_type_names[i].name;
 	return "unknown";
+}
+
+static const u8 *queue_until_msg(const tal_t *ctx, enum onchaind_wire mtype)
+{
+	const u8 *msg;
+
+	while ((msg = wire_sync_read(ctx, REQ_FD)) != NULL) {
+		if (fromwire_peektype(msg) == mtype)
+			return msg;
+		/* Process later */
+		tal_arr_expand(&queued_msgs, tal_steal(queued_msgs, msg));
+	}
+	status_failed(STATUS_FAIL_HSM_IO, "Waiting for %s: connection lost",
+		      onchaind_wire_name(mtype));
 }
 
 /* helper to compare output script with our tal'd script */
@@ -325,33 +334,6 @@ static void record_to_them_htlc_fulfilled(struct tracked_output *out,
 						     &out->payment_hash)));
 }
 
-static void record_ignored_wallet_deposit(struct tracked_output *out)
-{
-	struct bitcoin_outpoint outpoint;
-
-	/* Every spend tx we construct has a single output. */
-	bitcoin_txid(out->proposal->tx, &outpoint.txid);
-	outpoint.n = 0;
-
-	enum mvt_tag tag = TO_WALLET;
-	if (out->tx_type == OUR_HTLC_TIMEOUT_TX
-	    || out->tx_type == OUR_HTLC_SUCCESS_TX)
-		tag = HTLC_TX;
-	else if (out->tx_type == THEIR_REVOKED_UNILATERAL)
-		tag = PENALTY;
-	else if (out->tx_type == OUR_UNILATERAL
-		|| out->tx_type == THEIR_UNILATERAL) {
-		if (out->output_type == OUR_HTLC)
-			tag = HTLC_TIMEOUT;
-	}
-	if (out->output_type == DELAYED_OUTPUT_TO_US)
-		tag = CHANNEL_TO_US;
-
-	/* Record the in/out through the channel */
-	record_channel_deposit(out, out->tx_blockheight, tag);
-	record_channel_withdrawal(&outpoint.txid, out, 0, IGNORED);
-}
-
 static void record_anchor(struct tracked_output *out)
 {
 	enum mvt_tag *tags = new_tag_arr(NULL, ANCHOR);
@@ -365,7 +347,6 @@ static void record_anchor(struct tracked_output *out)
 
 static void record_coin_movements(struct tracked_output *out,
 				  u32 blockheight,
-				  const struct bitcoin_tx *tx,
 				  const struct bitcoin_txid *txid)
 {
 	/* For 'timeout' htlcs, we re-record them as a deposit
@@ -479,7 +460,8 @@ static bool set_htlc_timeout_fee(struct bitcoin_tx *tx,
 				 const struct bitcoin_signature *remotesig,
 				 const u8 *wscript)
 {
-	static struct amount_sat amount, fee = AMOUNT_SAT_INIT(UINT64_MAX);
+	static struct amount_sat fee = AMOUNT_SAT_INIT(UINT64_MAX);
+	struct amount_sat amount;
 	struct amount_asset asset = bitcoin_tx_output_get_amount(tx, 0);
 	size_t weight;
 
@@ -523,13 +505,30 @@ static bool set_htlc_timeout_fee(struct bitcoin_tx *tx,
 			    &keyset->other_htlc_key, remotesig);
 }
 
-static void set_htlc_success_fee(struct bitcoin_tx *tx,
-				 const struct bitcoin_signature *remotesig,
-				 const u8 *wscript)
+static struct amount_sat get_htlc_success_fee(struct tracked_output *out)
 {
-	static struct amount_sat amt, fee = AMOUNT_SAT_INIT(UINT64_MAX);
-	struct amount_asset asset;
+	static struct amount_sat fee = AMOUNT_SAT_INIT(UINT64_MAX);
 	size_t weight;
+	struct amount_msat htlc_amount;
+	struct bitcoin_tx *tx;
+
+	/* We only grind once, since they're all equiv. */
+	if (!amount_sat_eq(fee, AMOUNT_SAT(UINT64_MAX)))
+		return fee;
+
+	if (!amount_sat_to_msat(&htlc_amount, out->sat))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "Overflow in get_htlc_success_fee %s",
+			      type_to_string(tmpctx,
+					     struct amount_sat,
+					     &out->sat));
+	tx = htlc_success_tx(tmpctx, chainparams,
+			     &out->outpoint,
+			     out->wscript,
+			     htlc_amount,
+			     to_self_delay[LOCAL],
+			     0,
+			     keyset, option_anchor_outputs);
 
 	/* BOLT #3:
 	 *
@@ -546,408 +545,21 @@ static void set_htlc_success_fee(struct bitcoin_tx *tx,
 		weight = 703;
 
 	weight += elements_tx_overhead(chainparams, 1, 1);
-	if (amount_sat_eq(fee, AMOUNT_SAT(UINT64_MAX))) {
-		if (!grind_htlc_tx_fee(&fee, tx, remotesig, wscript, weight))
-			status_failed(STATUS_FAIL_INTERNAL_ERROR,
-				      "htlc_success_fee can't be found "
-				      "for tx %s (weight %zu, feerate %u-%u), signature %s, wscript %s",
-				      type_to_string(tmpctx, struct bitcoin_tx,
-						     tx),
-				      weight,
-				      min_possible_feerate, max_possible_feerate,
-				      type_to_string(tmpctx,
-						     struct bitcoin_signature,
-						     remotesig),
-				      tal_hex(tmpctx, wscript));
-		return;
-	}
-
-	asset = bitcoin_tx_output_get_amount(tx, 0);
-	assert(amount_asset_is_main(&asset));
-	amt = amount_asset_to_sat(&asset);
-
-	if (!amount_sat_sub(&amt, amt, fee))
+	if (!grind_htlc_tx_fee(&fee, tx, out->remote_htlc_sig,
+			       out->wscript, weight)) {
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
-			      "Cannot deduct htlc-success fee %s from tx %s",
-			      type_to_string(tmpctx, struct amount_sat, &fee),
-			      type_to_string(tmpctx, struct bitcoin_tx, tx));
-	bitcoin_tx_output_set_amount(tx, 0, amt);
-	bitcoin_tx_finalize(tx);
-
-	if (check_tx_sig(tx, 0, NULL, wscript,
-			 &keyset->other_htlc_key, remotesig))
-		return;
-
-	status_failed(STATUS_FAIL_INTERNAL_ERROR,
-		      "htlc_success_fee %s failed sigcheck "
-		      " for tx %s, signature %s, wscript %s",
-		      type_to_string(tmpctx, struct amount_sat, &fee),
-		      type_to_string(tmpctx, struct bitcoin_tx, tx),
-		      type_to_string(tmpctx, struct bitcoin_signature, remotesig),
-		      tal_hex(tmpctx, wscript));
-}
-
-static u8 *delayed_payment_to_us(const tal_t *ctx,
-				 struct bitcoin_tx *tx,
-				 const u8 *wscript)
-{
-	return towire_hsmd_sign_delayed_payment_to_us(ctx, commit_num,
-						     tx, wscript);
-}
-
-static u8 *remote_htlc_to_us(const tal_t *ctx,
-			     struct bitcoin_tx *tx,
-			     const u8 *wscript)
-{
-	return towire_hsmd_sign_remote_htlc_to_us(ctx,
-						 remote_per_commitment_point,
-						 tx, wscript,
-						 option_anchor_outputs);
-}
-
-static u8 *penalty_to_us(const tal_t *ctx,
-			 struct bitcoin_tx *tx,
-			 const u8 *wscript)
-{
-	return towire_hsmd_sign_penalty_to_us(ctx, remote_per_commitment_secret,
-					     tx, wscript);
-}
-
-/*
- * This covers:
- * 1. to-us output spend (`<local_delayedsig> 0`)
- * 2. the their-commitment, our HTLC timeout case (`<remotehtlcsig> 0`),
- * 3. the their-commitment, our HTLC redeem case (`<remotehtlcsig> <payment_preimage>`)
- * 4. the their-revoked-commitment, to-local (`<revocation_sig> 1`)
- * 5. the their-revoked-commitment, htlc (`<revocation_sig> <revocationkey>`)
- *
- * Overrides *tx_type if it all turns to dust.
- */
-static struct bitcoin_tx *tx_to_us(const tal_t *ctx,
-				   u8 *(*hsm_sign_msg)(const tal_t *ctx,
-						       struct bitcoin_tx *tx,
-						       const u8 *wscript),
-				   struct tracked_output *out,
-				   u32 to_self_delay,
-				   u32 locktime,
-				   const void *elem, size_t elemsize,
-				   const u8 *wscript,
-				   enum tx_type *tx_type,
-				   u32 feerate)
-{
-	struct bitcoin_tx *tx;
-	struct amount_sat fee, min_out, amt;
-	struct bitcoin_signature sig;
-	size_t weight;
-	u8 *msg;
-	u8 **witness;
-
-	tx = bitcoin_tx(ctx, chainparams, 1, 1, locktime);
-	bitcoin_tx_add_input(tx, &out->outpoint, to_self_delay,
-			     NULL, out->sat, NULL, wscript);
-
-	bitcoin_tx_add_output(
-	    tx, scriptpubkey_p2wpkh(tmpctx, &our_wallet_pubkey), NULL, out->sat);
-	psbt_add_keypath_to_last_output(tx, our_wallet_index, &our_wallet_ext_key);
-
-	/* Worst-case sig is 73 bytes */
-	weight = bitcoin_tx_weight(tx) + 1 + 3 + 73 + 0 + tal_count(wscript);
-	weight += elements_tx_overhead(chainparams, 1, 1);
-	fee = amount_tx_fee(feerate, weight);
-
-	/* Result is trivial?  Spend with small feerate, but don't wait
-	 * around for it as it might not confirm. */
-	if (!amount_sat_add(&min_out, dust_limit, fee))
-		status_failed(STATUS_FAIL_INTERNAL_ERROR,
-			      "Cannot add dust_limit %s and fee %s",
-			      type_to_string(tmpctx, struct amount_sat, &dust_limit),
-			      type_to_string(tmpctx, struct amount_sat, &fee));
-
-	if (amount_sat_less(out->sat, min_out)) {
-		/* FIXME: We should use SIGHASH_NONE so others can take it */
-		fee = amount_tx_fee(feerate_floor(), weight);
-		status_unusual("TX %s amount %s too small to"
-			       " pay reasonable fee, using minimal fee"
-			       " and ignoring",
-			       tx_type_name(*tx_type),
-			       type_to_string(tmpctx, struct amount_sat, &out->sat));
-		*tx_type = IGNORING_TINY_PAYMENT;
+			      "htlc_success_fee can't be found "
+			      "for tx %s (weight %zu, feerate %u-%u), signature %s, wscript %s",
+			      type_to_string(tmpctx, struct bitcoin_tx, tx),
+			      weight,
+			      min_possible_feerate, max_possible_feerate,
+			      type_to_string(tmpctx,
+					     struct bitcoin_signature,
+					     out->remote_htlc_sig),
+			      tal_hex(tmpctx, out->wscript));
 	}
 
-	/* This can only happen if feerate_floor() is still too high; shouldn't
-	 * happen! */
-	if (!amount_sat_sub(&amt, out->sat, fee)) {
-		amt = dust_limit;
-		status_broken("TX %s can't afford minimal feerate"
-			      "; setting output to %s",
-			      tx_type_name(*tx_type),
-			      type_to_string(tmpctx, struct amount_sat,
-					     &amt));
-	}
-	bitcoin_tx_output_set_amount(tx, 0, amt);
-	bitcoin_tx_finalize(tx);
-
-	if (!wire_sync_write(HSM_FD, take(hsm_sign_msg(NULL, tx, wscript))))
-		status_failed(STATUS_FAIL_HSM_IO, "Writing sign request to hsm");
-	msg = wire_sync_read(tmpctx, HSM_FD);
-	if (!msg || !fromwire_hsmd_sign_tx_reply(msg, &sig)) {
-		status_failed(STATUS_FAIL_HSM_IO,
-			      "Reading sign_tx_reply: %s",
-			      tal_hex(tmpctx, msg));
-	}
-
-	witness = bitcoin_witness_sig_and_element(tx, &sig, elem,
-						  elemsize, wscript);
-	bitcoin_tx_input_set_witness(tx, 0, take(witness));
-	return tx;
-}
-
-/** replace_penalty_tx_to_us
- *
- * @brief creates a replacement TX for
- * a given penalty tx.
- *
- * @param ctx - the context to allocate
- * off of.
- * @param hsm_sign_msg - function to construct
- * the signing message to HSM.
- * @param penalty_tx - the original
- * penalty transaction.
- * @param output_amount - the output
- * amount to use instead of the
- * original penalty transaction.
- * If this amount is below the dust
- * limit, the output is replaced with
- * an `OP_RETURN` instead.
- *
- * @return the signed transaction.
- */
-static struct bitcoin_tx *
-replace_penalty_tx_to_us(const tal_t *ctx,
-			 u8 *(*hsm_sign_msg)(const tal_t *ctx,
-					     struct bitcoin_tx *tx,
-					     const u8 *wscript),
-			 const struct bitcoin_tx *penalty_tx,
-			 struct amount_sat *output_amount)
-{
-	struct bitcoin_tx *tx;
-
-	/* The penalty tx input.  */
-	const struct wally_tx_input *input;
-	/* Specs of the penalty tx input.  */
-	struct bitcoin_outpoint input_outpoint;
-	u8 *input_wscript;
-	u8 *input_element;
-	struct amount_sat input_amount;
-
-	/* Signature from the HSM.  */
-	u8 *msg;
-	struct bitcoin_signature sig;
-	/* Witness we generate from the signature and other data.  */
-	u8 **witness;
-
-
-	/* Get the single input of the penalty tx.  */
-	input = &penalty_tx->wtx->inputs[0];
-	/* Extract the input-side data.  */
-	bitcoin_tx_input_get_txid(penalty_tx, 0, &input_outpoint.txid);
-	input_outpoint.n = input->index;
-	input_wscript = tal_dup_arr(tmpctx, u8,
-				    input->witness->items[2].witness,
-				    input->witness->items[2].witness_len,
-				    0);
-	input_element = tal_dup_arr(tmpctx, u8,
-				    input->witness->items[1].witness,
-				    input->witness->items[1].witness_len,
-				    0);
-	input_amount = psbt_input_get_amount(penalty_tx->psbt, 0);
-
-	/* Create the replacement.  */
-	tx = bitcoin_tx(ctx, chainparams, 1, 1, /*locktime*/ 0);
-	/* Reconstruct the input.  */
-	bitcoin_tx_add_input(tx, &input_outpoint,
-			     BITCOIN_TX_RBF_SEQUENCE,
-			     NULL, input_amount, NULL, input_wscript);
-	/* Reconstruct the output with a smaller amount.  */
-	if (amount_sat_greater(*output_amount, dust_limit)) {
-		bitcoin_tx_add_output(tx,
-				      scriptpubkey_p2wpkh(tx,
-							  &our_wallet_pubkey),
-				      NULL,
-				      *output_amount);
-		psbt_add_keypath_to_last_output(tx, our_wallet_index, &our_wallet_ext_key);
-	} else {
-		bitcoin_tx_add_output(tx,
-				      scriptpubkey_opreturn_padded(tx),
-				      NULL,
-				      AMOUNT_SAT(0));
-		*output_amount = AMOUNT_SAT(0);
-	}
-
-	/* Finalize the transaction.  */
-	bitcoin_tx_finalize(tx);
-
-	/* Ask HSM to sign it.  */
-	if (!wire_sync_write(HSM_FD, take(hsm_sign_msg(NULL, tx,
-							input_wscript))))
-		status_failed(STATUS_FAIL_HSM_IO, "While feebumping penalty: writing sign request to hsm");
-	msg = wire_sync_read(tmpctx, HSM_FD);
-	if (!msg || !fromwire_hsmd_sign_tx_reply(msg, &sig))
-		status_failed(STATUS_FAIL_HSM_IO, "While feebumping penalty: reading sign_tx_reply: %s", tal_hex(tmpctx, msg));
-
-	/* Install the witness with the signature.  */
-	witness = bitcoin_witness_sig_and_element(tx, &sig,
-						  input_element,
-						  tal_bytelen(input_element),
-						  input_wscript);
-	bitcoin_tx_input_set_witness(tx, 0, take(witness));
-
-	return tx;
-}
-
-/** min_rbf_bump
- *
- * @brief computes the minimum RBF bump required by
- * BIP125, given an index.
- *
- * @desc BIP125 requires that an replacement transaction
- * pay, not just the fee of the evicted transactions,
- * but also the minimum relay fee for itself.
- * This function assumes that previous RBF attempts
- * paid exactly the return value for that attempt, on
- * top of the initial transaction fee.
- * It can serve as a baseline for other functions that
- * compute a suggested fee: get whichever is higher,
- * the fee this function suggests, or your own unique
- * function.
- *
- * This function is provided as a common function that
- * all RBF-bump computations can use.
- *
- * @param weight - the weight of the transaction you
- * are RBFing.
- * @param index - 0 makes no sense, 1 means this is
- * the first RBF attempt, 2 means this is the 2nd
- * RBF attempt, etc.
- *
- * @return the suggested total fee.
- */
-static struct amount_sat min_rbf_bump(size_t weight,
-				      size_t index)
-{
-	struct amount_sat min_relay_fee;
-	struct amount_sat min_rbf_bump;
-
-	/* Compute the minimum relay fee for a transaction of the given
-	 * weight.  */
-	min_relay_fee = amount_tx_fee(min_relay_feerate, weight);
-
-	/* For every RBF attempt, we add the min-relay-fee.
-	 * Or in other words, we multiply the min-relay-fee by the
-	 * index number of the attempt.
-	 */
-	if (mul_overflows_u64(index, min_relay_fee.satoshis)) /* Raw: multiplication.  */
-		min_rbf_bump = AMOUNT_SAT(UINT64_MAX);
-	else
-		min_rbf_bump.satoshis = index * min_relay_fee.satoshis; /* Raw: multiplication.  */
-
-	return min_rbf_bump;
-}
-
-/** compute_penalty_output_amount
- *
- * @brief computes the appropriate output amount for a
- * penalty transaction that spends a theft transaction
- * that is already of a specific depth.
- *
- * @param initial_amount - the outout amount of the first
- * penalty transaction.
- * @param depth - the current depth of the theft
- * transaction.
- * @param max_depth - the maximum depth of the theft
- * transaction, after which the theft transaction will
- * succeed.
- * @param weight - the weight of the first penalty
- * transaction, in Sipa.
- */
-static struct amount_sat
-compute_penalty_output_amount(struct amount_sat initial_amount,
-			      u32 depth, u32 max_depth,
-			      size_t weight)
-{
-	struct amount_sat max_output_amount;
-	struct amount_sat output_amount;
-	struct amount_sat deducted_amount;
-	struct amount_sat min_output_amount, max_fee;
-
-	assert(depth <= max_depth);
-	assert(depth > 0);
-
-	/* We never pay more than max_penalty_feerate; at some point,
-	 * it's clearly not working. */
-	max_fee = amount_tx_fee(max_penalty_feerate, weight);
-	if (!amount_sat_sub(&min_output_amount, initial_amount, max_fee))
-		/* We may just donate the whole output as fee, meaning
-		 * we get zero amount. */
-		min_output_amount = AMOUNT_SAT(0);
-
-	/* The difference between initial_amount, and the fee suggested
-	 * by min_rbf_bump, is the largest allowed output amount.
-	 *
-	 * depth = 1 is the first attempt, thus maps to the 0th RBF
-	 * (i.e. the initial attempt that is not RBFed itself).
-	 * We actually start to replace at depth = 2, so we use
-	 * depth - 1 as the index for min_rbf_bump.
-	 */
-	if (!amount_sat_sub(&max_output_amount,
-			    initial_amount, min_rbf_bump(weight, depth - 1)))
-		return min_output_amount;
-
-	/* Map the depth / max_depth into a number between 0->1.  */
-	double x = (double) depth / (double) max_depth;
-	/* Get the cube of the above position, resulting in a graph
-	 * where the y is close to 0 up to less than halfway through,
-	 * then quickly rises up to 1 as depth nears the max depth.
-	 */
-	double y = x * x * x;
-	/* Scale according to the initial_amount.  */
-	deducted_amount.satoshis = (u64) (y * initial_amount.satoshis); /* Raw: multiplication.  */
-
-	/* output_amount = initial_amount - deducted_amount.  */
-	if (!amount_sat_sub(&output_amount,
-			    initial_amount, deducted_amount)) {
-		/* If underflow, force to min.  */
-		output_amount = min_output_amount;
-	}
-
-	/* If output below min, return min. */
-	if (amount_sat_less(output_amount, min_output_amount))
-		return min_output_amount;
-
-	/* If output exceeds max, return max.  */
-	if (amount_sat_less(max_output_amount, output_amount))
-		return max_output_amount;
-
-	return output_amount;
-}
-
-
-static void hsm_sign_local_htlc_tx(struct bitcoin_tx *tx,
-				   const u8 *wscript,
-				   struct bitcoin_signature *sig)
-{
-	u8 *msg = towire_hsmd_sign_local_htlc_tx(NULL, commit_num,
-						tx, wscript,
-						option_anchor_outputs);
-
-	if (!wire_sync_write(HSM_FD, take(msg)))
-		status_failed(STATUS_FAIL_HSM_IO,
-			      "Writing sign_local_htlc_tx to hsm");
-	msg = wire_sync_read(tmpctx, HSM_FD);
-	if (!msg || !fromwire_hsmd_sign_tx_reply(msg, sig))
-		status_failed(STATUS_FAIL_HSM_IO,
-			      "Reading sign_local_htlc_tx: %s",
-			      tal_hex(tmpctx, msg));
+	return fee;
 }
 
 static void hsm_get_per_commitment_point(struct pubkey *per_commitment_point)
@@ -976,7 +588,7 @@ new_tracked_output(struct tracked_output ***outs,
 		   enum output_type output_type,
 		   const struct htlc_stub *htlc,
 		   const u8 *wscript,
-		   const struct bitcoin_signature *remote_htlc_sig TAKES)
+		   const struct bitcoin_signature *remote_htlc_sig)
 {
 	struct tracked_output *out = tal(*outs, struct tracked_output);
 
@@ -1018,223 +630,130 @@ static void ignore_output(struct tracked_output *out)
 	out->resolved->tx_type = SELF;
 }
 
-/** proposal_is_rbfable
- *
- * @brief returns true if the given proposal
- * would be RBFed if the output it is tracking
- * increases in depth without being spent.
- */
-static bool proposal_is_rbfable(const struct proposed_resolution *proposal)
+static void handle_spend_created(struct tracked_output *out, const u8 *msg)
 {
-	/* Future onchain resolutions, such as anchored commitments, might
-	 * want to RBF as well.
-	 */
-	return proposal->tx_type == OUR_PENALTY_TX;
-}
+	struct onchain_witness_element **witness;
+	bool worthwhile;
 
-/** proposal_should_rbf
- *
- * @brief the given output just increased its depth,
- * so the proposal for it should be RBFed and
- * rebroadcast.
- *
- * @desc precondition: the given output must have an
- * rbfable proposal as per `proposal_is_rbfable`.
- */
-static void proposal_should_rbf(struct tracked_output *out)
-{
-	struct bitcoin_tx *tx = NULL;
-	u32 depth;
+	if (!fromwire_onchaind_spend_created(tmpctx, msg, &worthwhile, &witness))
+		master_badmsg(WIRE_ONCHAIND_SPEND_CREATED, msg);
 
-	assert(out->proposal);
-	assert(proposal_is_rbfable(out->proposal));
+	out->proposal->welements
+		= cast_const2(const struct onchain_witness_element **,
+			      tal_steal(out->proposal, witness));
 
-	depth = out->depth;
-
-	/* Do not RBF at depth 1.
-	 *
-	 * Since we react to *onchain* events, whatever proposal we made,
-	 * the output for that proposal is already at depth 1.
-	 *
-	 * Since our initial proposal was broadcasted with the output at
-	 * depth 1, we should not RBF until a new block arrives, which is
-	 * at depth 2.
-	 */
-	if (depth <= 1)
-		return;
-
-	if (out->proposal->tx_type == OUR_PENALTY_TX) {
-		u32 max_depth = to_self_delay[REMOTE];
-		u32 my_depth = depth;
-		size_t weight = bitcoin_tx_weight(out->proposal->tx);
-		struct amount_sat initial_amount;
-		struct amount_sat new_amount;
-
-		if (max_depth >= 1)
-			max_depth -= 1;
-		if (my_depth >= max_depth)
-			my_depth = max_depth;
-
-		bitcoin_tx_output_get_amount_sat(out->proposal->tx, 0,
-						 &initial_amount);
-
-		/* Compute the new output amount for the RBF.  */
-		new_amount = compute_penalty_output_amount(initial_amount,
-							   my_depth, max_depth,
-							   weight);
-		assert(amount_sat_less_eq(new_amount, initial_amount));
-		/* Recreate the penalty tx.  */
-		tx = replace_penalty_tx_to_us(tmpctx,
-					      &penalty_to_us,
-					      out->proposal->tx, &new_amount);
-
-		/* We also update the output's value, so our accounting
-		 * is correct. */
-		out->sat = new_amount;
-
-		status_debug("Created RBF OUR_PENALTY_TX with output %s "
-			     "(originally %s) for depth %"PRIu32"/%"PRIu32".",
-			     type_to_string(tmpctx, struct amount_sat,
-					    &new_amount),
-			     type_to_string(tmpctx, struct amount_sat,
-					    &initial_amount),
-			     depth, to_self_delay[LOCAL]);
-	}
-	/* Add other RBF-able proposals here.  */
-
-	/* Broadcast the transaction.  */
-	if (tx) {
-		status_debug("Broadcasting RBF %s (%s) to resolve %s/%s "
-			     "depth=%"PRIu32"",
-			     tx_type_name(out->proposal->tx_type),
-			     type_to_string(tmpctx, struct bitcoin_tx, tx),
-			     tx_type_name(out->tx_type),
-			     output_type_name(out->output_type),
-			     depth);
-
-		wire_sync_write(REQ_FD,
-				take(towire_onchaind_broadcast_tx(NULL, tx,
-								  true)));
-	}
-}
-
-static void proposal_meets_depth(struct tracked_output *out)
-{
-	assert(out->proposal);
-
-	/* Our own penalty transactions are going to be RBFed.  */
-	bool is_rbf = proposal_is_rbfable(out->proposal);
-
-	/* If we simply wanted to ignore it after some depth */
-	if (!out->proposal->tx) {
+	/* Did it decide it's not worth it?  Don't wait for it. */
+	if (!worthwhile)
 		ignore_output(out);
+}
 
-		if (out->proposal->tx_type == THEIR_HTLC_TIMEOUT_TO_THEM)
-			record_external_deposit(out, out->tx_blockheight,
-						HTLC_TIMEOUT);
+static struct proposed_resolution *new_proposed_resolution(struct tracked_output *out,
+							   unsigned int block_required,
+							   enum tx_type tx_type)
+{
+	struct proposed_resolution *proposal = tal(out, struct proposed_resolution);
+	proposal->tx_type = tx_type;
+	proposal->depth_required = block_required - out->tx_blockheight;
 
-		return;
-	}
+	return proposal;
+}
 
-	status_debug("Broadcasting %s (%s) to resolve %s/%s",
-		     tx_type_name(out->proposal->tx_type),
-		     type_to_string(tmpctx, struct bitcoin_tx, out->proposal->tx),
+/* Modern style: we don't create tx outselves, but tell lightningd. */
+static void propose_resolution_to_master(struct tracked_output *out,
+					 const u8 *send_message TAKES,
+					 unsigned int block_required,
+					 enum tx_type tx_type)
+{
+	/* i.e. we want this in @block_required, so it will be broadcast by
+	 * lightningd after it sees @block_required - 1. */
+	status_debug("Telling lightningd about %s to resolve %s/%s"
+		     " after block %u (%i more blocks)",
+		     tx_type_name(tx_type),
 		     tx_type_name(out->tx_type),
-		     output_type_name(out->output_type));
+		     output_type_name(out->output_type),
+		     block_required - 1, block_required - 1 - out->tx_blockheight);
 
-	wire_sync_write(
-	    REQ_FD,
-	    take(towire_onchaind_broadcast_tx(
-		 NULL, out->proposal->tx, is_rbf)));
+	out->proposal = new_proposed_resolution(out, block_required, tx_type);
 
-	/* Don't wait for this if we're ignoring the tiny payment. */
-	if (out->proposal->tx_type == IGNORING_TINY_PAYMENT) {
-		ignore_output(out);
-		record_ignored_wallet_deposit(out);
-	}
+	wire_sync_write(REQ_FD, send_message);
 
-	/* Otherwise we will get a callback when it's in a block. */
+	/* Get reply now: if we're replaying, tx could be included before we
+	 * tell lightningd about it, so we need to recognize it! */
+	handle_spend_created(out,
+			     queue_until_msg(tmpctx, WIRE_ONCHAIND_SPEND_CREATED));
 }
 
-static void propose_resolution(struct tracked_output *out,
-			       const struct bitcoin_tx *tx,
-			       unsigned int depth_required,
-			       enum tx_type tx_type)
+/* Create and broadcast this tx now */
+static void propose_immediate_resolution(struct tracked_output *out,
+					 const u8 *send_message TAKES,
+					 enum tx_type tx_type)
 {
-	status_debug("Propose handling %s/%s by %s (%s) after %u blocks",
+	/* We add 1 to blockheight (meaning you can broadcast it now) to avoid
+	 * having to check for < 0 in various places we print messages */
+	propose_resolution_to_master(out, send_message, out->tx_blockheight+1,
+				     tx_type);
+}
+
+/* If UTXO reaches this block, ignore it (it's not for us, it's ok!) */
+static void propose_ignore(struct tracked_output *out,
+			   unsigned int block_required,
+			   enum tx_type tx_type)
+{
+	status_debug("Propose ignoring %s/%s as %s"
+		     " after block %u (%i more blocks)",
 		     tx_type_name(out->tx_type),
 		     output_type_name(out->output_type),
 		     tx_type_name(tx_type),
-		     tx ? type_to_string(tmpctx, struct bitcoin_tx, tx):"IGNORING",
-		     depth_required);
+		     block_required,
+		     block_required - out->tx_blockheight);
 
-	out->proposal = tal(out, struct proposed_resolution);
-	out->proposal->tx = tal_steal(out->proposal, tx);
-	out->proposal->depth_required = depth_required;
-	out->proposal->tx_type = tx_type;
-
-	if (depth_required == 0)
-		proposal_meets_depth(out);
-}
-
-static void propose_resolution_at_block(struct tracked_output *out,
-					const struct bitcoin_tx *tx,
-					unsigned int block_required,
-					enum tx_type tx_type)
-{
-	u32 depth;
-
-	/* Expiry could be in the past! */
+	/* If it's already passed, don't underflow. */
 	if (block_required < out->tx_blockheight)
-		depth = 0;
-	else /* Note that out->tx_blockheight is already at depth 1 */
-		depth = block_required - out->tx_blockheight + 1;
-	propose_resolution(out, tx, depth, tx_type);
+		block_required = out->tx_blockheight;
+
+	out->proposal = new_proposed_resolution(out, block_required, tx_type);
+	out->proposal->welements = NULL;
+
+	/* Can we immediately ignore? */
+	if (out->proposal->depth_required == 0)
+		ignore_output(out);
 }
 
-static bool is_valid_sig(const u8 *e)
+/* Do any of these tx_parts spend this outpoint?  If so, return it */
+static const struct wally_tx_input *
+which_input_spends(const struct tx_parts *tx_parts,
+		   const struct bitcoin_outpoint *outpoint)
 {
-	struct bitcoin_signature sig;
-	return signature_from_der(e, tal_count(e), &sig);
-}
-
-/* We ignore things which look like signatures. */
-static bool input_similar(const struct wally_tx_input *i1,
-			  const struct wally_tx_input *i2)
-{
-	u8 *s1, *s2;
-
-	if (!memeq(i1->txhash, WALLY_TXHASH_LEN, i2->txhash, WALLY_TXHASH_LEN))
-		return false;
-
-	if (i1->index != i2->index)
-		return false;
-
-	if (!scripteq(i1->script, i2->script))
-		return false;
-
-	if (i1->sequence != i2->sequence)
-		return false;
-
-	if (i1->witness->num_items != i2->witness->num_items)
-		return false;
-
-	for (size_t i = 0; i < i1->witness->num_items; i++) {
-		/* Need to wrap these in `tal_arr`s since the primitives
-		 * except to be able to call tal_bytelen on them */
-		s1 = tal_dup_arr(tmpctx, u8, i1->witness->items[i].witness,
-				 i1->witness->items[i].witness_len, 0);
-		s2 = tal_dup_arr(tmpctx, u8, i2->witness->items[i].witness,
-				 i2->witness->items[i].witness_len, 0);
-
-		if (scripteq(s1, s2))
+	for (size_t i = 0; i < tal_count(tx_parts->inputs); i++) {
+		struct bitcoin_outpoint o;
+		if (!tx_parts->inputs[i])
 			continue;
-
-		if (is_valid_sig(s1) && is_valid_sig(s2))
+		wally_tx_input_get_outpoint(tx_parts->inputs[i], &o);
+		if (!bitcoin_outpoint_eq(&o, outpoint))
 			continue;
-		return false;
+		return tx_parts->inputs[i];
 	}
+	return NULL;
+}
 
+/* Does this tx input's witness match the witness we expected? */
+static bool onchain_witness_element_matches(const struct onchain_witness_element **welements,
+					    const struct wally_tx_input *input)
+{
+	const struct wally_tx_witness_stack *stack = input->witness;
+	if (stack->num_items != tal_count(welements))
+		return false;
+	for (size_t i = 0; i < stack->num_items; i++) {
+		/* Don't compare signatures: they can change with
+		 * other details */
+		if (welements[i]->is_signature)
+			continue;
+		if (!memeq(stack->items[i].witness,
+			   stack->items[i].witness_len,
+			   welements[i]->witness,
+			   tal_bytelen(welements[i]->witness)))
+			return false;
+	}
 	return true;
 }
 
@@ -1242,20 +761,17 @@ static bool input_similar(const struct wally_tx_input *i1,
 static bool resolved_by_proposal(struct tracked_output *out,
 				 const struct tx_parts *tx_parts)
 {
+	const struct wally_tx_input *input;
+
 	/* If there's no TX associated, it's not us. */
-	if (!out->proposal->tx)
+	if (!out->proposal->welements)
 		return false;
 
-	/* Our proposal can change as feerates change.  Input
-	 * comparison (ignoring signatures) works pretty well. */
-	if (tal_count(tx_parts->inputs) != out->proposal->tx->wtx->num_inputs)
+	input = which_input_spends(tx_parts, &out->outpoint);
+	if (!input)
 		return false;
-
-	for (size_t i = 0; i < tal_count(tx_parts->inputs); i++) {
-		if (!input_similar(tx_parts->inputs[i],
-				   &out->proposal->tx->wtx->inputs[i]))
-			return false;
-	}
+	if (!onchain_witness_element_matches(out->proposal->welements, input))
+		return false;
 
 	out->resolved = tal(out, struct resolution);
 	out->resolved->txid = tx_parts->txid;
@@ -1383,9 +899,17 @@ static size_t num_not_irrevocably_resolved(struct tracked_output **outs)
 	return num;
 }
 
+/* If a tx spends @out, and is CSV delayed by @delay, what's the first
+ * block it can get into? */
+static u32 rel_blockheight(const struct tracked_output *out, u32 delay)
+{
+	return out->tx_blockheight + delay;
+}
+
+/* What is the first block that the proposal can get into? */
 static u32 prop_blockheight(const struct tracked_output *out)
 {
-	return out->tx_blockheight + out->proposal->depth_required;
+	return rel_blockheight(out, out->proposal->depth_required);
 }
 
 static void billboard_update(struct tracked_output **outs)
@@ -1562,12 +1086,11 @@ static void resolve_htlc_tx(struct tracked_output ***outs,
 			    u32 tx_blockheight)
 {
 	struct tracked_output *out;
-	struct bitcoin_tx *tx;
 	struct amount_sat amt;
 	struct amount_asset asset;
 	struct bitcoin_outpoint outpoint;
-	enum tx_type tx_type = OUR_DELAYED_RETURN_TO_WALLET;
-	u8 *wscript = bitcoin_wscript_htlc_tx(htlc_tx, to_self_delay[LOCAL],
+	u8 *msg;
+	u8 *wscript = bitcoin_wscript_htlc_tx(tmpctx, to_self_delay[LOCAL],
 					      &keyset->self_revocation_key,
 					      &keyset->self_delayed_payment_key);
 
@@ -1594,21 +1117,14 @@ static void resolve_htlc_tx(struct tracked_output ***outs,
  				 DELAYED_OUTPUT_TO_US,
  				 NULL, NULL, NULL);
 
-	/* BOLT #3:
-	 *
-	 * ## HTLC-Timeout and HTLC-Success Transactions
-	 *
-	 * These HTLC transactions are almost identical, except the
-	 * HTLC-timeout transaction is timelocked.
-	 *
-	 * ... to collect the output, the local node uses an input with
-	 * nSequence `to_self_delay` and a witness stack `<local_delayedsig>
-	 * 0`
-	 */
-	tx = tx_to_us(*outs, delayed_payment_to_us, out, to_self_delay[LOCAL],
-		      0, NULL, 0, wscript, &tx_type, htlc_feerate);
-
-	propose_resolution(out, tx, to_self_delay[LOCAL], tx_type);
+	msg = towire_onchaind_spend_to_us(NULL,
+					  &outpoint, amt,
+					  rel_blockheight(out, to_self_delay[LOCAL]),
+					  commit_num,
+					  wscript);
+	propose_resolution_to_master(out, take(msg),
+				     rel_blockheight(out, to_self_delay[LOCAL]),
+				     OUR_DELAYED_RETURN_TO_WALLET);
 }
 
 /* BOLT #5:
@@ -1625,11 +1141,10 @@ static void steal_htlc_tx(struct tracked_output *out,
 			  enum tx_type htlc_tx_type,
 			  const struct bitcoin_outpoint *htlc_outpoint)
 {
-	struct bitcoin_tx *tx;
-	enum tx_type tx_type = OUR_PENALTY_TX;
 	struct tracked_output *htlc_out;
 	struct amount_asset asset;
 	struct amount_sat htlc_out_amt;
+	const u8 *msg;
 
 	u8 *wscript = bitcoin_wscript_htlc_tx(htlc_tx, to_self_delay[REMOTE],
 					      &keyset->self_revocation_key,
@@ -1645,22 +1160,23 @@ static void steal_htlc_tx(struct tracked_output *out,
 				      htlc_out_amt,
 				      DELAYED_CHEAT_OUTPUT_TO_THEM,
 				      &out->htlc, wscript, NULL);
+
+	/* mark commitment tx htlc output as 'resolved by them' */
+	resolved_by_other(out, &htlc_tx->txid, htlc_tx_type);
+
 	/* BOLT #3:
 	 *
 	 * To spend this via penalty, the remote node uses a witness stack
 	 * `<revocationsig> 1`
 	 */
-	tx = tx_to_us(htlc_out, penalty_to_us, htlc_out,
-		      BITCOIN_TX_RBF_SEQUENCE, 0,
-		      &ONE, sizeof(ONE),
-		      htlc_out->wscript,
-		      &tx_type, penalty_feerate);
+	msg = towire_onchaind_spend_penalty(NULL,
+					    htlc_outpoint, htlc_out_amt,
+					    remote_per_commitment_secret,
+					    tal_dup(tmpctx, u8, &ONE),
+					    htlc_out->wscript);
 
-	/* mark commitment tx htlc output as 'resolved by them' */
-	resolved_by_other(out, &htlc_tx->txid, htlc_tx_type);
-
-	/* annnd done! */
-	propose_resolution(htlc_out, tx, 0, tx_type);
+	/* Spend this immediately. */
+	propose_immediate_resolution(htlc_out, take(msg), OUR_PENALTY_TX);
 }
 
 static void onchain_annotate_txout(const struct bitcoin_outpoint *outpoint,
@@ -1703,7 +1219,6 @@ static void output_spent(struct tracked_output ***outs,
 						tx_blockheight);
 
 			record_coin_movements(out, tx_blockheight,
-					      out->proposal->tx,
 					      &tx_parts->txid);
 			return;
 		}
@@ -1894,10 +1409,6 @@ static void tx_new_depth(struct tracked_output **outs,
 	}
 
 	for (i = 0; i < tal_count(outs); i++) {
-		/* Update output depth. */
-		if (bitcoin_txid_eq(&outs[i]->outpoint.txid, txid))
-			outs[i]->depth = depth;
-
 		/* Is this tx resolving an output? */
 		if (outs[i]->resolved) {
 			if (bitcoin_txid_eq(&outs[i]->resolved->txid, txid)) {
@@ -1906,20 +1417,22 @@ static void tx_new_depth(struct tracked_output **outs,
 			continue;
 		}
 
-		/* Otherwise, is this something we have a pending
-		 * resolution for? */
-		if (outs[i]->proposal
-		    && bitcoin_txid_eq(&outs[i]->outpoint.txid, txid)
-		    && depth >= outs[i]->proposal->depth_required) {
-			proposal_meets_depth(outs[i]);
-		}
+		/* Does it match this output? */
+		if (!bitcoin_txid_eq(&outs[i]->outpoint.txid, txid))
+			continue;
 
-		/* Otherwise, is this an output whose proposed resolution
-		 * we should RBF?  */
+		outs[i]->depth = depth;
+
+		/* Are we supposed to ignore it now? */
 		if (outs[i]->proposal
-		    && bitcoin_txid_eq(&outs[i]->outpoint.txid, txid)
-		    && proposal_is_rbfable(outs[i]->proposal))
-			proposal_should_rbf(outs[i]);
+		    && depth >= outs[i]->proposal->depth_required
+		    && !outs[i]->proposal->welements) {
+			ignore_output(outs[i]);
+
+			if (outs[i]->proposal->tx_type == THEIR_HTLC_TIMEOUT_TO_THEM)
+				record_external_deposit(outs[i], outs[i]->tx_blockheight,
+							HTLC_TIMEOUT);
+		}
 	}
 }
 
@@ -1955,14 +1468,12 @@ static void handle_preimage(struct tracked_output **outs,
 	size_t i;
 	struct sha256 sha;
 	struct ripemd160 ripemd;
-	u8 **witness;
 
 	sha256(&sha, preimage, sizeof(*preimage));
 	ripemd160(&ripemd, &sha, sizeof(sha));
 
 	for (i = 0; i < tal_count(outs); i++) {
-		struct bitcoin_tx *tx;
-		struct bitcoin_signature sig;
+		const u8 *msg;
 
 		if (outs[i]->output_type != THEIR_HTLC)
 			continue;
@@ -1998,32 +1509,29 @@ static void handle_preimage(struct tracked_output **outs,
 		 *      HTLC-success transaction.
 		 */
 		if (outs[i]->remote_htlc_sig) {
-			struct amount_msat htlc_amount;
-			if (!amount_sat_to_msat(&htlc_amount, outs[i]->sat))
-				status_failed(STATUS_FAIL_INTERNAL_ERROR,
-					      "Overflow in output %zu %s",
-					      i,
-					      type_to_string(tmpctx,
-							     struct amount_sat,
-							     &outs[i]->sat));
-			tx = htlc_success_tx(outs[i], chainparams,
-					     &outs[i]->outpoint,
-					     outs[i]->wscript,
-					     htlc_amount,
-					     to_self_delay[LOCAL],
-					     0,
-					     keyset, option_anchor_outputs);
-			set_htlc_success_fee(tx, outs[i]->remote_htlc_sig,
-					     outs[i]->wscript);
-			hsm_sign_local_htlc_tx(tx, outs[i]->wscript, &sig);
-			witness = bitcoin_witness_htlc_success_tx(
-			    tx, &sig, outs[i]->remote_htlc_sig, preimage,
-			    outs[i]->wscript);
-			bitcoin_tx_input_set_witness(tx, 0, take(witness));
-			propose_resolution(outs[i], tx, 0, OUR_HTLC_SUCCESS_TX);
-		} else {
-			enum tx_type tx_type = THEIR_HTLC_FULFILL_TO_US;
+			struct amount_sat fee;
+			const u8 *htlc_wscript;
 
+			/* FIXME: lightningd could derive this itself? */
+			htlc_wscript = bitcoin_wscript_htlc_tx(tmpctx,
+							       to_self_delay[LOCAL],
+							       &keyset->self_revocation_key,
+							       &keyset->self_delayed_payment_key);
+
+			fee = get_htlc_success_fee(outs[i]);
+			msg = towire_onchaind_spend_htlc_success(NULL,
+								 &outs[i]->outpoint,
+								 outs[i]->sat,
+								 fee,
+								 outs[i]->htlc.id,
+								 commit_num,
+								 outs[i]->remote_htlc_sig,
+								 preimage,
+								 outs[i]->wscript,
+								 htlc_wscript);
+			propose_immediate_resolution(outs[i], take(msg),
+						     OUR_HTLC_SUCCESS_TX);
+		} else {
 			/* BOLT #5:
 			 *
 			 * ## HTLC Output Handling: Remote Commitment, Remote
@@ -2037,13 +1545,16 @@ static void handle_preimage(struct tracked_output **outs,
 			 *    - MUST *resolve* the output by spending it to a
 			 *      convenient address.
 			 */
-			tx = tx_to_us(outs[i], remote_htlc_to_us, outs[i],
-				      option_anchor_outputs ? 1 : 0,
-				      0, preimage, sizeof(*preimage),
-				      outs[i]->wscript, &tx_type,
-				      htlc_feerate);
-			propose_resolution(outs[i], tx, 0, tx_type);
+			msg = towire_onchaind_spend_fulfill(NULL,
+							    &outs[i]->outpoint,
+							    outs[i]->sat,
+							    outs[i]->htlc.id,
+							    remote_per_commitment_point,
+							    preimage,
+							    outs[i]->wscript);
 
+			propose_immediate_resolution(outs[i], take(msg),
+						     THEIR_HTLC_FULFILL_TO_US);
 		}
 	}
 }
@@ -2059,33 +1570,65 @@ static void memleak_remove_globals(struct htable *memtable, const tal_t *topctx)
 	memleak_scan_obj(memtable, queued_msgs);
 }
 
-static bool handle_dev_memleak(struct tracked_output **outs, const u8 *msg)
+static void handle_dev_memleak(struct tracked_output ***outs, const u8 *msg)
 {
 	struct htable *memtable;
 	bool found_leak;
 
 	if (!fromwire_onchaind_dev_memleak(msg))
-		return false;
+		master_badmsg(WIRE_ONCHAIND_DEV_MEMLEAK, msg);
 
 	memtable = memleak_start(tmpctx);
 	memleak_ptr(memtable, msg);
 
 	/* Top-level context is parent of outs */
-	memleak_remove_globals(memtable, tal_parent(outs));
-	memleak_scan_obj(memtable, outs);
+	memleak_remove_globals(memtable, tal_parent(*outs));
+	memleak_scan_obj(memtable, *outs);
 
 	found_leak = dump_memleak(memtable, memleak_status_broken);
 	wire_sync_write(REQ_FD,
 			take(towire_onchaind_dev_memleak_reply(NULL,
 							      found_leak)));
-	return true;
 }
 #else
-static bool handle_dev_memleak(struct tracked_output **outs, const u8 *msg)
+static void handle_dev_memleak(struct tracked_output ***outs, const u8 *msg)
 {
-	return false;
+	master_badmsg(WIRE_ONCHAIND_DEV_MEMLEAK, msg);
 }
 #endif /* !DEVELOPER */
+
+static void handle_onchaind_depth(struct tracked_output ***outs, const u8 *msg)
+{
+	struct bitcoin_txid txid;
+	u32 depth;
+
+	if (!fromwire_onchaind_depth(msg, &txid, &depth))
+		master_badmsg(WIRE_ONCHAIND_DEPTH, msg);
+
+	tx_new_depth(*outs, &txid, depth);
+}
+
+static void handle_onchaind_spent(struct tracked_output ***outs, const u8 *msg)
+{
+	struct tx_parts *tx_parts;
+	u32 input_num, tx_blockheight;
+
+	if (!fromwire_onchaind_spent(msg, msg, &tx_parts, &input_num,
+				     &tx_blockheight))
+		master_badmsg(WIRE_ONCHAIND_SPENT, msg);
+
+	output_spent(outs, tx_parts, input_num, tx_blockheight);
+}
+
+static void handle_onchaind_known_preimage(struct tracked_output ***outs,
+					   const u8 *msg)
+{
+	struct preimage preimage;
+
+	if (!fromwire_onchaind_known_preimage(msg, &preimage))
+		master_badmsg(WIRE_ONCHAIND_KNOWN_PREIMAGE, msg);
+	handle_preimage(*outs, &preimage);
+}
 
 /* BOLT #5:
  *
@@ -2101,11 +1644,8 @@ static void wait_for_resolved(struct tracked_output **outs)
 	billboard_update(outs);
 
 	while (num_not_irrevocably_resolved(outs) != 0) {
-		u8 *msg;
-		struct bitcoin_txid txid;
-		u32 input_num, depth, tx_blockheight;
-		struct preimage preimage;
-		struct tx_parts *tx_parts;
+		const u8 *msg;
+		enum onchaind_wire mtype;
 
 		if (tal_count(queued_msgs)) {
 			msg = tal_steal(outs, queued_msgs[0]);
@@ -2113,19 +1653,51 @@ static void wait_for_resolved(struct tracked_output **outs)
 		} else
 			msg = wire_sync_read(outs, REQ_FD);
 
-		status_debug("Got new message %s",
-			     onchaind_wire_name(fromwire_peektype(msg)));
+		mtype = fromwire_peektype(msg);
+		status_debug("Got new message %s", onchaind_wire_name(mtype));
 
-		if (fromwire_onchaind_depth(msg, &txid, &depth))
-			tx_new_depth(outs, &txid, depth);
-		else if (fromwire_onchaind_spent(msg, msg, &tx_parts, &input_num,
-						&tx_blockheight)) {
-			output_spent(&outs, tx_parts, input_num, tx_blockheight);
-		} else if (fromwire_onchaind_known_preimage(msg, &preimage))
-			handle_preimage(outs, &preimage);
-		else if (!handle_dev_memleak(outs, msg))
-			master_badmsg(-1, msg);
+		switch (mtype) {
+		case WIRE_ONCHAIND_DEPTH:
+			handle_onchaind_depth(&outs, msg);
+			goto handled;
+		case WIRE_ONCHAIND_SPENT:
+			handle_onchaind_spent(&outs, msg);
+			goto handled;
+		case WIRE_ONCHAIND_KNOWN_PREIMAGE:
+			handle_onchaind_known_preimage(&outs, msg);
+			goto handled;
+		case WIRE_ONCHAIND_DEV_MEMLEAK:
+			handle_dev_memleak(&outs, msg);
+			goto handled;
 
+		/* Unexpected messages */
+		case WIRE_ONCHAIND_INIT:
+		case WIRE_ONCHAIND_HTLCS:
+		case WIRE_ONCHAIND_SPEND_CREATED:
+
+		/* We send these, not receive! */
+		case WIRE_ONCHAIND_INIT_REPLY:
+		case WIRE_ONCHAIND_UNWATCH_TX:
+		case WIRE_ONCHAIND_EXTRACTED_PREIMAGE:
+		case WIRE_ONCHAIND_MISSING_HTLC_OUTPUT:
+		case WIRE_ONCHAIND_HTLC_TIMEOUT:
+		case WIRE_ONCHAIND_ALL_IRREVOCABLY_RESOLVED:
+		case WIRE_ONCHAIND_ADD_UTXO:
+		case WIRE_ONCHAIND_DEV_MEMLEAK_REPLY:
+		case WIRE_ONCHAIND_ANNOTATE_TXOUT:
+		case WIRE_ONCHAIND_ANNOTATE_TXIN:
+		case WIRE_ONCHAIND_NOTIFY_COIN_MVT:
+		case WIRE_ONCHAIND_SPEND_TO_US:
+		case WIRE_ONCHAIND_SPEND_PENALTY:
+		case WIRE_ONCHAIND_SPEND_HTLC_SUCCESS:
+		case WIRE_ONCHAIND_SPEND_HTLC_TIMEOUT:
+		case WIRE_ONCHAIND_SPEND_FULFILL:
+		case WIRE_ONCHAIND_SPEND_HTLC_EXPIRED:
+			break;
+		}
+		master_badmsg(-1, msg);
+
+	handled:
 		billboard_update(outs);
 		tal_free(msg);
 		clean_tmpctx();
@@ -2159,7 +1731,7 @@ static int cmp_htlc_with_tells_cltv(const struct htlc_with_tells *a,
 static struct htlcs_info *init_reply(const tal_t *ctx, const char *what)
 {
 	struct htlcs_info *htlcs_info = tal(ctx, struct htlcs_info);
-	u8 *msg;
+	const u8 *msg;
 	struct htlc_with_tells *htlcs;
 
 	/* commit_num is 0 for mutual close, but we don't care about HTLCs
@@ -2171,20 +1743,13 @@ static struct htlcs_info *init_reply(const tal_t *ctx, const char *what)
 
 	peer_billboard(true, what);
 
-	/* Read in htlcs */
-	for (;;) {
-		msg = wire_sync_read(queued_msgs, REQ_FD);
-		if (fromwire_onchaind_htlcs(tmpctx, msg,
-					    &htlcs_info->htlcs,
-					    &htlcs_info->tell_if_missing,
-					    &htlcs_info->tell_immediately)) {
-			tal_free(msg);
-			break;
-		}
-
-		/* Process later */
-		tal_arr_expand(&queued_msgs, msg);
-	}
+	/* Read in htlcs (ignoring everything else for now) */
+	msg = queue_until_msg(tmpctx, WIRE_ONCHAIND_HTLCS);
+	if (!fromwire_onchaind_htlcs(htlcs_info, msg,
+				     &htlcs_info->htlcs,
+				     &htlcs_info->tell_if_missing,
+				     &htlcs_info->tell_immediately))
+		master_badmsg(WIRE_ONCHAIND_HTLCS, msg);
 
 	/* One convenient structure, so we sort them together! */
 	htlcs = tal_arr(tmpctx, struct htlc_with_tells, tal_count(htlcs_info->htlcs));
@@ -2266,10 +1831,10 @@ static size_t resolve_our_htlc_ourcommit(struct tracked_output *out,
 					 u8 **htlc_scripts)
 {
 	struct bitcoin_tx *tx = NULL;
-	struct bitcoin_signature localsig;
 	size_t i;
+	struct amount_sat fee;
 	struct amount_msat htlc_amount;
-	u8 **witness;
+	const u8 *msg, *htlc_wscript;
 
 	if (!amount_sat_to_msat(&htlc_amount, out->sat))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
@@ -2342,18 +1907,27 @@ static size_t resolve_our_htlc_ourcommit(struct tracked_output *out,
 			      ? "option_anchor_outputs" : "");
 	}
 
-	hsm_sign_local_htlc_tx(tx, htlc_scripts[matches[i]], &localsig);
+	/* FIXME: lightningd could derive this itself? */
+	htlc_wscript = bitcoin_wscript_htlc_tx(tmpctx,
+					       to_self_delay[LOCAL],
+					       &keyset->self_revocation_key,
+					       &keyset->self_delayed_payment_key);
+	fee = bitcoin_tx_compute_fee(tx);
+	msg = towire_onchaind_spend_htlc_timeout(NULL,
+						 &out->outpoint,
+						 out->sat,
+						 fee,
+						 htlcs[matches[i]].id,
+						 htlcs[matches[i]].cltv_expiry,
+						 commit_num,
+						 out->remote_htlc_sig,
+						 htlc_scripts[matches[i]],
+						 htlc_wscript);
 
-	witness = bitcoin_witness_htlc_timeout_tx(tx, &localsig,
-						  out->remote_htlc_sig,
-						  htlc_scripts[matches[i]]);
-
-	bitcoin_tx_input_set_witness(tx, 0, take(witness));
-
-	/* Steals tx onto out */
-	propose_resolution_at_block(out, tx, htlcs[matches[i]].cltv_expiry,
-				    OUR_HTLC_TIMEOUT_TX);
-
+	propose_resolution_to_master(out, take(msg),
+				     /* nLocktime: we have to be *after* that block! */
+				     htlcs[matches[i]].cltv_expiry + 1,
+				     OUR_HTLC_TIMEOUT_TX);
 	return matches[i];
 }
 
@@ -2376,9 +1950,10 @@ static size_t resolve_our_htlc_theircommit(struct tracked_output *out,
 					   const struct htlc_stub *htlcs,
 					   u8 **htlc_scripts)
 {
-	struct bitcoin_tx *tx;
-	enum tx_type tx_type = OUR_HTLC_TIMEOUT_TO_US;
+	const u8 *msg;
 	u32 cltv_expiry = matches_cltv(matches, htlcs);
+	/* They're all equivalent: might as well use first one. */
+	const struct htlc_stub *htlc = &htlcs[matches[0]];
 
 	/* BOLT #5:
 	 *
@@ -2390,14 +1965,17 @@ static size_t resolve_our_htlc_theircommit(struct tracked_output *out,
 	 *     - MUST *resolve* the output, by spending it to a convenient
 	 *       address.
 	 */
-	tx = tx_to_us(out, remote_htlc_to_us, out,
-		      option_anchor_outputs ? 1 : 0,
-		      cltv_expiry, NULL, 0,
-		      htlc_scripts[matches[0]], &tx_type, htlc_feerate);
+	msg = towire_onchaind_spend_htlc_expired(NULL,
+						 &out->outpoint, out->sat,
+						 htlc->id,
+						 cltv_expiry,
+						 remote_per_commitment_point,
+						 htlc_scripts[matches[0]]);
+	propose_resolution_to_master(out, take(msg),
+				     /* nLocktime: we have to be *after* that block! */
+				     cltv_expiry + 1,
+				     OUR_HTLC_TIMEOUT_TO_US);
 
-	propose_resolution_at_block(out, tx, cltv_expiry, tx_type);
-
-	/* They're all equivalent: might as well use first one. */
 	return matches[0];
 }
 
@@ -2441,8 +2019,8 @@ static size_t resolve_their_htlc(struct tracked_output *out,
 	}
 
 	/* If we hit timeout depth, resolve by ignoring. */
-	propose_resolution_at_block(out, NULL, htlcs[which_htlc].cltv_expiry,
-				    THEIR_HTLC_TIMEOUT_TO_THEM);
+	propose_ignore(out, htlcs[which_htlc].cltv_expiry,
+		       THEIR_HTLC_TIMEOUT_TO_THEM);
 	return which_htlc;
 }
 
@@ -2538,7 +2116,7 @@ static u8 *scriptpubkey_to_remote(const tal_t *ctx,
 	 */
 	if (option_anchor_outputs) {
 		return scriptpubkey_p2wsh(ctx,
-					  anchor_to_remote_redeem(tmpctx,
+					  bitcoin_wscript_to_remote_anchored(tmpctx,
 								  remotekey,
 								  csv_lock));
 	} else {
@@ -2554,9 +2132,8 @@ static void our_unilateral_to_us(struct tracked_output ***outs,
 				 const u8 *local_scriptpubkey,
 				 const u8 *local_wscript)
 {
-	struct bitcoin_tx *to_us;
 	struct tracked_output *out;
-	enum tx_type tx_type = OUR_DELAYED_RETURN_TO_WALLET;
+	const u8 *msg;
 
 	/* BOLT #5:
 	 *
@@ -2575,26 +2152,21 @@ static void our_unilateral_to_us(struct tracked_output ***outs,
 				 amt,
 				 DELAYED_OUTPUT_TO_US,
 				 NULL, NULL, NULL);
-	/* BOLT #3:
-	 *
-	 * The output is spent by an input with
-	 * `nSequence` field set to `to_self_delay` (which can
-	 * only be valid after that duration has passed) and
-	 * witness:
-	 *
-	 *	<local_delayedsig> <>
-	 */
-	to_us = tx_to_us(out, delayed_payment_to_us, out,
-			 sequence, 0, NULL, 0,
-			 local_wscript, &tx_type,
-			 delayed_to_us_feerate);
+
+	msg = towire_onchaind_spend_to_us(NULL,
+					  outpoint, amt,
+					  rel_blockheight(out, to_self_delay[LOCAL]),
+					  commit_num,
+					  local_wscript);
 
 	/* BOLT #5:
 	 *
 	 * Note: if the output is spent (as recommended), the
 	 * output is *resolved* by the spending transaction
 	 */
-	propose_resolution(out, to_us, sequence, tx_type);
+	propose_resolution_to_master(out, take(msg),
+				     rel_blockheight(out, to_self_delay[LOCAL]),
+				     OUR_DELAYED_RETURN_TO_WALLET);
 }
 
 static void handle_our_unilateral(const struct tx_parts *tx,
@@ -2923,9 +2495,7 @@ static void handle_our_unilateral(const struct tx_parts *tx,
  * delay */
 static void steal_to_them_output(struct tracked_output *out, u32 csv)
 {
-	u8 *wscript;
-	struct bitcoin_tx *tx;
-	enum tx_type tx_type = OUR_PENALTY_TX;
+	const u8 *wscript, *msg;
 
 	/* BOLT #3:
 	 *
@@ -2938,16 +2508,19 @@ static void steal_to_them_output(struct tracked_output *out, u32 csv)
 					   &keyset->self_revocation_key,
 					   &keyset->self_delayed_payment_key);
 
-	tx = tx_to_us(tmpctx, penalty_to_us, out, BITCOIN_TX_RBF_SEQUENCE, 0,
-		      &ONE, sizeof(ONE), wscript, &tx_type, penalty_feerate);
+	msg = towire_onchaind_spend_penalty(NULL,
+					    &out->outpoint, out->sat,
+					    remote_per_commitment_secret,
+					    tal_dup(tmpctx, u8, &ONE),
+					    wscript);
 
-	propose_resolution(out, tx, 0, tx_type);
+	/* Spend this immediately. */
+	propose_immediate_resolution(out, take(msg), OUR_PENALTY_TX);
 }
 
 static void steal_htlc(struct tracked_output *out)
 {
-	struct bitcoin_tx *tx;
-	enum tx_type tx_type = OUR_PENALTY_TX;
+	const u8 *msg;
 	u8 der[PUBKEY_CMPR_LEN];
 
 	/* BOLT #3:
@@ -2958,11 +2531,15 @@ static void steal_htlc(struct tracked_output *out)
 	 *     <revocation_sig> <revocationpubkey>
 	 */
 	pubkey_to_der(der, &keyset->self_revocation_key);
-	tx = tx_to_us(out, penalty_to_us, out, BITCOIN_TX_RBF_SEQUENCE, 0,
-		      der, sizeof(der), out->wscript, &tx_type,
-		      penalty_feerate);
 
-	propose_resolution(out, tx, 0, tx_type);
+	msg = towire_onchaind_spend_penalty(NULL,
+					    &out->outpoint, out->sat,
+					    remote_per_commitment_secret,
+					    tal_dup_arr(tmpctx, u8, der, ARRAY_SIZE(der), 0),
+					    out->wscript);
+
+	/* Spend this immediately. */
+	propose_immediate_resolution(out, take(msg), OUR_PENALTY_TX);
 }
 
 /* Tell wallet that we have discovered a UTXO from a to-remote output,
@@ -3859,7 +3436,7 @@ int main(int argc, char *argv[])
 	status_setup_sync(REQ_FD);
 
 	missing_htlc_msgs = tal_arr(ctx, u8 *, 0);
-	queued_msgs = tal_arr(ctx, u8 *, 0);
+	queued_msgs = tal_arr(ctx, const u8 *, 0);
 
 	msg = wire_sync_read(tmpctx, REQ_FD);
 	if (!fromwire_onchaind_init(tmpctx, msg,
@@ -3871,10 +3448,6 @@ int main(int argc, char *argv[])
 				   &remote_per_commit_point,
 				   &to_self_delay[LOCAL],
 				   &to_self_delay[REMOTE],
-				   &delayed_to_us_feerate,
-				   &htlc_feerate,
-				   &penalty_feerate,
-				   &max_penalty_feerate,
 				   &dust_limit,
 				   &our_broadcast_txid,
 				   &scriptpubkey[LOCAL],
@@ -3902,9 +3475,6 @@ int main(int argc, char *argv[])
 		master_badmsg(WIRE_ONCHAIND_INIT, msg);
 	}
 
-	status_debug("delayed_to_us_feerate = %u, htlc_feerate = %u, "
-		     "penalty_feerate = %u", delayed_to_us_feerate,
-		     htlc_feerate, penalty_feerate);
 	/* We need to keep tx around, but there's only one: not really a leak */
 	tal_steal(ctx, notleak(tx));
 

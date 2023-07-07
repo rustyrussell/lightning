@@ -156,8 +156,8 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 	base_fee = commit_tx_base_fee(feerate_per_kw, untrimmed,
 				      option_anchor_outputs);
 
-	SUPERVERBOSE("# base commitment transaction fee = %"PRIu64"\n",
-		     base_fee.satoshis /* Raw: spec uses raw numbers */);
+	SUPERVERBOSE("# base commitment transaction fee = %"PRIu64" for %zu untrimmed\n",
+		     base_fee.satoshis /* Raw: spec uses raw numbers */, untrimmed);
 
 	/* BOLT #3:
 	 * If `option_anchors` applies to the commitment
@@ -304,7 +304,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 		 * Otherwise, this output is a simple P2WPKH to `remotepubkey`.
 		 */
 		if (option_anchor_outputs) {
-			redeem = anchor_to_remote_redeem(tmpctx,
+			redeem = bitcoin_wscript_to_remote_anchored(tmpctx,
 							 &keyset->other_payment_key,
 							 (!side) == lessor ?
 							       csv_lock : 1);

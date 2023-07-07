@@ -5,8 +5,11 @@ from pyln.client import Millisatoshi
 from pyln.testing.utils import EXPERIMENTAL_DUAL_FUND
 import time
 
-EXPERIMENTAL_FEATURES = env("EXPERIMENTAL_FEATURES", "0") == "1"
 COMPAT = env("COMPAT", "1") == "1"
+
+# Big enough to make channels with 10k effective capacity, including Elements channels
+# which have bigger txns
+CHANNEL_SIZE = 50000
 
 
 def default_ln_port(network: str) -> int:
@@ -21,8 +24,9 @@ def default_ln_port(network: str) -> int:
     return network_map[network]
 
 
-def anchor_expected():
-    return EXPERIMENTAL_FEATURES or EXPERIMENTAL_DUAL_FUND
+def anchor_expected(*args):
+    """Would this/these nodes all support anchors?"""
+    return False
 
 
 def hex_bits(features):
@@ -37,19 +41,10 @@ def hex_bits(features):
 
 def expected_peer_features(wumbo_channels=False, extra=[]):
     """Return the expected peer features hexstring for this configuration"""
-    features = [1, 5, 7, 8, 11, 13, 14, 17, 27, 45, 47, 51]
-    if EXPERIMENTAL_FEATURES:
-        # OPT_ONION_MESSAGES
-        features += [39]
-        # option_anchor_outputs
-        features += [21]
-        # option_quiesce
-        features += [35]
+    features = [1, 5, 7, 8, 11, 13, 14, 17, 25, 27, 45, 47, 51]
     if wumbo_channels:
         features += [19]
     if EXPERIMENTAL_DUAL_FUND:
-        # option_anchor_outputs
-        features += [21]
         # option_dual_fund
         features += [29]
     return hex_bits(features + extra)
@@ -59,19 +54,10 @@ def expected_peer_features(wumbo_channels=False, extra=[]):
 # features for the 'node' and the 'peer' feature sets
 def expected_node_features(wumbo_channels=False, extra=[]):
     """Return the expected node features hexstring for this configuration"""
-    features = [1, 5, 7, 8, 11, 13, 14, 17, 27, 45, 47, 51, 55]
-    if EXPERIMENTAL_FEATURES:
-        # OPT_ONION_MESSAGES
-        features += [39]
-        # option_anchor_outputs
-        features += [21]
-        # option_quiesce
-        features += [35]
+    features = [1, 5, 7, 8, 11, 13, 14, 17, 25, 27, 45, 47, 51, 55]
     if wumbo_channels:
         features += [19]
     if EXPERIMENTAL_DUAL_FUND:
-        # option_anchor_outputs
-        features += [21]
         # option_dual_fund
         features += [29]
     return hex_bits(features + extra)
@@ -418,7 +404,7 @@ def first_scid(n1, n2):
 
 
 def basic_fee(feerate):
-    if EXPERIMENTAL_FEATURES or EXPERIMENTAL_DUAL_FUND:
+    if anchor_expected():
         # option_anchor_outputs
         weight = 1124
     else:

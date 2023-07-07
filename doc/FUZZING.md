@@ -24,10 +24,17 @@ a few sanitizers for bug detections as well as experimental features for an exte
 coverage (not required though).
 
 ```
-DEVELOPER=1 EXPERIMENTAL_FEATURES=1 ASAN=1 UBSAN=1 VALGRIND=0 FUZZING=1 CC=clang ./configure && make
+./configure --enable-developer --enable-address-sanitizer --enable-ub-sanitizer --enable-fuzzing --disable-valgrind CC=clang && make
 ```
 
-The targets will be built in `tests/fuzz/` as `fuzz-` binaries.
+The targets will be built in `tests/fuzz/` as `fuzz-` binaries, with their best
+known seed corpora stored in `tests/fuzz/corpora/`.
+
+You can run the fuzz targets on their seed corpora to check for regressions:
+
+```
+make check-fuzz
+```
 
 
 ## Run one or more target(s)
@@ -53,7 +60,43 @@ The latter will run all targets two by two `12345` times.
 If you want to contribute new seeds, be sure to merge your corpus with the main one:
 ```
 ./tests/fuzz/run.py my_locally_extended_fuzz_corpus -j2 --generate --runs 12345
-./tests/fuzz/run.py main_fuzz_corpus --merge_dir my_locally_extended_fuzz_corpus
+./tests/fuzz/run.py tests/fuzz/corpora --merge_dir my_locally_extended_fuzz_corpus
+```
+
+
+## Improve seed corpora
+
+If you find coverage increasing inputs while fuzzing, please create a pull
+request to add them into `tests/fuzz/corpora`. Be sure to minimize any additions
+to the corpora first.
+
+### Example
+
+Here's an example workflow to contribute new inputs for the `fuzz-addr` target.
+
+Create a directory for newly found corpus inputs and begin fuzzing:
+
+```shell
+mkdir -p local_corpora/fuzz-addr
+./tests/fuzz/fuzz-addr -jobs=4 local_corpora/fuzz-addr tests/fuzz/corpora/fuzz-addr/
+```
+
+After some time, libFuzzer may find some potential coverage increasing inputs
+and save them in `local_corpora/fuzz-addr`. We can then merge them into the seed
+corpora in `tests/fuzz/corpora`:
+
+```shell
+./tests/fuzz/run.py tests/fuzz/corpora --merge_dir local_corpora
+```
+
+This will copy over any inputs that improve the coverage of the existing corpus.
+If any new inputs were added, create a pull request to improve the upstream seed
+corpus:
+
+```shell
+git add tests/fuzz/corpora/fuzz-addr/*
+git commit
+...
 ```
 
 
@@ -65,7 +108,8 @@ In order to write a new target:
      repeatedly with mutated data.
  - read about [what makes a good fuzz target](https://github.com/google/fuzzing/blob/master/docs/good-fuzz-target.md).
 
-A simple example is [`fuzz-addr`][tests/fuzz/fuzz-addr.c]. It setups the chainparams and
-context (wally, tmpctx, ..) in `init()` then bruteforces the bech32 encoder in `run()`.
+A simple example is [`fuzz-addr`][fuzz-addr]. It setups the
+chainparams and context (wally, tmpctx, ..) in `init()` then
+bruteforces the bech32 encoder in `run()`.
 
-[tests/fuzz/fuzz-addr.c]: https://github.com/ElementsProject/lightning/blob/master/tests/fuzz/fuzz-addr.c
+[fuzz-addr]: https://github.com/ElementsProject/lightning/blob/master/tests/fuzz/fuzz-addr.c

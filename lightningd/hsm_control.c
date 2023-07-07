@@ -27,13 +27,10 @@ static int hsm_get_fd(struct lightningd *ld,
 		      int capabilities)
 {
 	int hsm_fd;
-	u8 *msg;
+	const u8 *msg;
 
 	msg = towire_hsmd_client_hsmfd(NULL, id, dbid, capabilities);
-	if (!wire_sync_write(ld->hsm_fd, take(msg)))
-		fatal("Could not write to HSM: %s", strerror(errno));
-
-	msg = wire_sync_read(tmpctx, ld->hsm_fd);
+	msg = hsm_sync_req(tmpctx, ld, take(msg));
 	if (!fromwire_hsmd_client_hsmfd_reply(msg))
 		fatal("Bad reply from HSM: %s", tal_hex(tmpctx, msg));
 
@@ -77,11 +74,23 @@ static unsigned int hsm_msg(struct subd *hsmd,
 	return 0;
 }
 
+/* Is this capability supported by the HSM? (So far, always a message
+ * number) */
+bool hsm_capable(struct lightningd *ld, u32 msgtype)
+{
+	for (size_t i = 0; i < tal_count(ld->hsm_capabilities); i++) {
+		if (ld->hsm_capabilities[i] == msgtype)
+			return true;
+	}
+	return false;
+}
+
 struct ext_key *hsm_init(struct lightningd *ld)
 {
 	u8 *msg;
 	int fds[2];
 	struct ext_key *bip32_base;
+	u32 hsm_version;
 
 	/* We actually send requests synchronously: only status is async. */
 	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, fds) != 0)
@@ -104,7 +113,6 @@ struct ext_key *hsm_init(struct lightningd *ld)
 	}
 
 	ld->hsm_fd = fds[0];
-	u32 min_version = 3; /* payment modifiers need hsmd_preapprove_{invoice,keysend} */
 	if (!wire_sync_write(ld->hsm_fd, towire_hsmd_init(tmpctx,
 							 &chainparams->bip32_key_version,
 							 chainparams,
@@ -113,33 +121,43 @@ struct ext_key *hsm_init(struct lightningd *ld)
 							 IFDEV(ld->dev_force_bip32_seed, NULL),
 							 IFDEV(ld->dev_force_channel_secrets, NULL),
 							  IFDEV(ld->dev_force_channel_secrets_shaseed, NULL),
-							  min_version,
+							  HSM_MIN_VERSION,
 							  HSM_MAX_VERSION)))
 		err(EXITCODE_HSM_GENERIC_ERROR, "Writing init msg to hsm");
 
 	bip32_base = tal(ld, struct ext_key);
 	msg = wire_sync_read(tmpctx, ld->hsm_fd);
-	if (!fromwire_hsmd_init_reply_v2(msg,
-					 &ld->id, bip32_base,
-					 &ld->bolt12_base)) {
-		/* v1 had x-only pubkey */
-		u8 pubkey32[33];
-		/* And gave us a secret to use for onion_reply paths */
-		struct secret onion_reply_secret;
+	if (fromwire_hsmd_init_reply_v4(ld, msg,
+					&hsm_version,
+					&ld->hsm_capabilities,
+					&ld->id, bip32_base,
+					&ld->bolt12_base)) {
+		/* nothing to do. */
+	} else if (fromwire_hsmd_init_reply_v2(msg,
+					       &ld->id, bip32_base,
+					       &ld->bolt12_base)) {
+		/* implicit version */
+		hsm_version = 3;
+		ld->hsm_capabilities = NULL;
+	} else {
+		if (ld->config.keypass)
+			errx(EXITCODE_HSM_BAD_PASSWORD, "Wrong password for encrypted hsm_secret.");
+		errx(EXITCODE_HSM_GENERIC_ERROR, "HSM did not give init reply");
+	}
 
-		pubkey32[0] = SECP256K1_TAG_PUBKEY_EVEN;
-		if (!fromwire_hsmd_init_reply_v1(msg,
-					 &ld->id, bip32_base,
-					 pubkey32 + 1,
-					 &onion_reply_secret)) {
-			if (ld->config.keypass)
-				errx(EXITCODE_HSM_BAD_PASSWORD, "Wrong password for encrypted hsm_secret.");
-			errx(EXITCODE_HSM_GENERIC_ERROR, "HSM did not give init reply");
-		}
-		if (!pubkey_from_der(pubkey32, sizeof(pubkey32),
-				     &ld->bolt12_base))
-			errx(EXITCODE_HSM_GENERIC_ERROR,
-			     "HSM gave invalid v1 bolt12_base");
+	if (hsm_version < HSM_MIN_VERSION)
+		errx(EXITCODE_HSM_GENERIC_ERROR,
+		     "HSM version %u below minimum %u",
+		     hsm_version, HSM_MIN_VERSION);
+	if (hsm_version > HSM_MAX_VERSION)
+		errx(EXITCODE_HSM_GENERIC_ERROR,
+		     "HSM version %u above maximum %u",
+		     hsm_version, HSM_MAX_VERSION);
+
+	/* Debugging help */
+	for (size_t i = 0; i < tal_count(ld->hsm_capabilities); i++) {
+		log_debug(ld->hsm->log, "capability +%s",
+			  hsmd_wire_name(ld->hsm_capabilities[i]));
 	}
 
 	/* This is equivalent to makesecret("bolt12-invoice-base") */
@@ -154,6 +172,49 @@ struct ext_key *hsm_init(struct lightningd *ld)
 		err(EXITCODE_HSM_GENERIC_ERROR, "Bad derive_secret_reply");
 
 	return bip32_base;
+}
+
+/*~ There was a nasty LND bug report where the user issued an address which it
+ * couldn't spend, presumably due to a bitflip.  We check every address using our
+ * hsm, to be sure it's valid.  Expensive, but not as expensive as losing BTC! */
+void bip32_pubkey(struct lightningd *ld, struct pubkey *pubkey, u32 index)
+{
+	const uint32_t flags = BIP32_FLAG_KEY_PUBLIC | BIP32_FLAG_SKIP_HASH;
+	struct ext_key ext;
+
+	if (index >= BIP32_INITIAL_HARDENED_CHILD)
+		fatal("Can't derive keu %u (too large!)", index);
+
+	if (bip32_key_from_parent(ld->bip32_base, index, flags, &ext) != WALLY_OK)
+		fatal("Can't derive key %u", index);
+
+	if (!secp256k1_ec_pubkey_parse(secp256k1_ctx, &pubkey->pubkey,
+				       ext.pub_key, sizeof(ext.pub_key)))
+		fatal("Can't parse derived key %u", index);
+
+	/* Don't assume hsmd supports it! */
+	if (hsm_capable(ld, WIRE_HSMD_CHECK_PUBKEY)) {
+		bool ok;
+		const u8 *msg = towire_hsmd_check_pubkey(NULL, index, pubkey);
+		msg = hsm_sync_req(tmpctx, ld, take(msg));
+		if (!fromwire_hsmd_check_pubkey_reply(msg, &ok))
+			fatal("Invalid check_pubkey_reply from hsm");
+		if (!ok)
+			fatal("HSM said key derivation of %u != %s",
+			      index, type_to_string(tmpctx, struct pubkey, pubkey));
+	}
+}
+
+const u8 *hsm_sync_req(const tal_t *ctx, struct lightningd *ld, const u8 *msg)
+{
+	int type = fromwire_peektype(msg);
+	if (!wire_sync_write(ld->hsm_fd, msg))
+		fatal("Writing %s hsm", hsmd_wire_name(type));
+	msg = wire_sync_read(ctx, ld->hsm_fd);
+	if (!msg)
+		fatal("EOF reading from HSM after %s",
+		      hsmd_wire_name(type));
+	return msg;
 }
 
 static struct command_result *json_makesecret(struct command *cmd,

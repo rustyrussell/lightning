@@ -38,12 +38,12 @@ static void update_feerates(struct lightningd *ld, struct channel *channel)
 		  feerate,
 		  feerate_min(ld, NULL),
 		  feerate_max(ld, NULL),
-		  try_get_feerate(ld->topology, FEERATE_PENALTY));
+		  penalty_feerate(ld->topology));
 
 	msg = towire_channeld_feerates(NULL, feerate,
 				       feerate_min(ld, NULL),
 				       feerate_max(ld, NULL),
-				       try_get_feerate(ld->topology, FEERATE_PENALTY));
+				       penalty_feerate(ld->topology));
 	subd_send_msg(channel->owner, take(msg));
 }
 
@@ -480,7 +480,6 @@ static void forget_channel(struct channel *channel, const char *why)
 		forget(channel);
 }
 
-#if EXPERIMENTAL_FEATURES
 static void handle_channel_upgrade(struct channel *channel,
 				   const u8 *msg)
 {
@@ -519,7 +518,6 @@ static void handle_channel_upgrade(struct channel *channel,
 
 	wallet_channel_save(channel->peer->ld->wallet, channel);
 }
-#endif /* EXPERIMENTAL_FEATURES */
 
 static unsigned channel_msg(struct subd *sd, const u8 *msg, const int *fds)
 {
@@ -569,13 +567,9 @@ static unsigned channel_msg(struct subd *sd, const u8 *msg, const int *fds)
 	case WIRE_CHANNELD_LOCAL_PRIVATE_CHANNEL:
 		handle_local_private_channel(sd->channel, msg);
 		break;
-#if EXPERIMENTAL_FEATURES
 	case WIRE_CHANNELD_UPGRADED:
 		handle_channel_upgrade(sd->channel, msg);
 		break;
-#else
-	case WIRE_CHANNELD_UPGRADED:
-#endif
 	/* And we never get these from channeld. */
 	case WIRE_CHANNELD_INIT:
 	case WIRE_CHANNELD_FUNDING_DEPTH:
@@ -711,7 +705,7 @@ bool peer_start_channeld(struct channel *channel,
 
 	struct ext_key final_ext_key;
 	if (bip32_key_from_parent(
-		    ld->wallet->bip32_base,
+		    ld->bip32_base,
 		    channel->final_key_idx,
 		    BIP32_FLAG_KEY_PUBLIC,
 		    &final_ext_key) != WALLY_OK) {
@@ -736,7 +730,7 @@ bool peer_start_channeld(struct channel *channel,
 				       channel->fee_states,
 				       feerate_min(ld, NULL),
 				       feerate_max(ld, NULL),
-				       try_get_feerate(ld->topology, FEERATE_PENALTY),
+				       penalty_feerate(ld->topology),
 				       &channel->last_sig,
 				       &channel->channel_info.remote_fundingkey,
 				       &channel->channel_info.theirbase,
@@ -790,7 +784,8 @@ bool peer_start_channeld(struct channel *channel,
 					     NULL),
 				       pbases,
 				       reestablish_only,
-				       channel->channel_update);
+				       channel->channel_update,
+				       ld->experimental_upgrade_protocol);
 
 	/* We don't expect a response: we are triggered by funding_depth_cb. */
 	subd_send_msg(channel->owner, take(initmsg));
@@ -1146,8 +1141,7 @@ static struct command_result *json_dev_feerate(struct command *cmd,
 	msg = towire_channeld_feerates(NULL, *feerate,
 				       feerate_min(cmd->ld, NULL),
 				       feerate_max(cmd->ld, NULL),
-				       try_get_feerate(cmd->ld->topology,
-						       FEERATE_PENALTY));
+				       penalty_feerate(cmd->ld->topology));
 	subd_send_msg(channel->owner, take(msg));
 
 	response = json_stream_success(cmd);
@@ -1165,7 +1159,6 @@ static const struct json_command dev_feerate_command = {
 };
 AUTODATA(json_command, &dev_feerate_command);
 
-#if EXPERIMENTAL_FEATURES
 static void quiesce_reply(struct subd *channeld UNUSED,
 			  const u8 *reply,
 			  const int *fds UNUSED,
@@ -1197,6 +1190,7 @@ static struct command_result *json_dev_quiesce(struct command *cmd,
 	if (!peer)
 		return command_fail(cmd, LIGHTNINGD, "Peer not connected");
 
+	/* FIXME: If this becomes a real API, check for OPT_QUIESCE! */
 	channel = peer_any_active_channel(peer, &more_than_one);
 	if (!channel || !channel->owner || channel->state != CHANNELD_NORMAL)
 		return command_fail(cmd, LIGHTNINGD, "Peer bad state");
@@ -1217,5 +1211,4 @@ static const struct json_command dev_quiesce_command = {
 	"Initiate quiscence protocol with peer"
 };
 AUTODATA(json_command, &dev_quiesce_command);
-#endif /* EXPERIMENTAL_FEATURES */
 #endif /* DEVELOPER */

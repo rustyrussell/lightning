@@ -15,21 +15,6 @@ logger = logging.getLogger(__name__)
 # built-in keywords.
 keywords = ["in", "type"]
 
-# Manual overrides for some of the auto-generated types for paths
-# Manual overrides for some of the auto-generated types for paths
-overrides = {
-    'ListPeers.peers[].channels[].state_changes[].old_state': "ChannelState",
-    'ListPeers.peers[].channels[].state_changes[].new_state': "ChannelState",
-    'ListPeers.peers[].channels[].state_changes[].cause': "ChannelStateChangeCause",
-    'ListPeers.peers[].channels[].htlcs[].state': None,
-    'ListPeers.peers[].channels[].opener': "ChannelSide",
-    'ListPeers.peers[].channels[].closer': "ChannelSide",
-    'ListPeers.peers[].channels[].features[]': "string",
-    'ListFunds.channels[].state': 'ChannelState',
-    'ListTransactions.transactions[].type[]': None,
-    'Invoice.exposeprivatechannels': None,
-}
-
 # A map of schema type to rust primitive types.
 typemap = {
     'boolean': 'bool',
@@ -75,6 +60,8 @@ def normalize_varname(field):
 
 
 def gen_field(field):
+    if field.omit():
+        return ("", "")
     if isinstance(field, CompositeField):
         return gen_composite(field)
     elif isinstance(field, EnumField):
@@ -90,7 +77,7 @@ def gen_field(field):
 def gen_enum(e):
     defi, decl = "", ""
 
-    if e.path in overrides and overrides[e.path] is None:
+    if e.omit():
         return "", ""
 
     if e.description != "":
@@ -128,11 +115,11 @@ def gen_enum(e):
 
     typename = e.typename
 
-    if e.path in overrides:
+    if e.override() is not None:
         decl = ""  # No declaration if we have an override
-        typename = overrides[e.path]
+        typename = e.override()
 
-    if e.required:
+    if not e.optional:
         defi = f"    // Path `{e.path}`\n"
         defi += rename_if_necessary(str(e.name), e.name.normalized())
         defi += f"    pub {e.name.normalized()}: {typename},\n"
@@ -152,7 +139,7 @@ def gen_primitive(p):
     if p.deprecated:
         defi += "    #[deprecated]\n"
     defi += rename_if_necessary(org, p.name.name)
-    if p.required:
+    if not p.optional:
         defi += f"    pub {p.name}: {typename},\n"
     else:
         defi += f"    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub {p.name}: Option<{typename}>,\n"
@@ -172,9 +159,9 @@ def gen_array(a):
     logger.debug(f"Generating array field {a.name} -> {name} ({a.path})")
     _, decl = gen_field(a.itemtype)
 
-    if a.path in overrides:
+    if a.override():
         decl = ""  # No declaration if we have an override
-        itemtype = overrides[a.path]
+        itemtype = a.override()
     elif isinstance(a.itemtype, PrimitiveField):
         itemtype = a.itemtype.typename
     elif isinstance(a.itemtype, CompositeField):
@@ -191,7 +178,7 @@ def gen_array(a):
     if a.deprecated:
         defi += "    #[deprecated]\n"
     defi += rename_if_necessary(alias, name)
-    if a.required:
+    if not a.optional:
         defi += f"    pub {name}: {'Vec<'*a.dims}{itemtype}{'>'*a.dims},\n"
     else:
         defi += f"    #[serde(skip_serializing_if = \"crate::is_none_or_empty\")]\n    pub {name}: Option<{'Vec<'*a.dims}{itemtype}{'>'*a.dims}>,\n"
@@ -216,7 +203,7 @@ def gen_composite(c) -> Tuple[str, str]:
     defi = ""
     if c.deprecated:
         defi += "    #[deprecated]\n"
-    if c.required:
+    if not c.optional:
         defi += f"    pub {c.name}: {c.typename},\n"
     else:
         defi += f"    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub {c.name}: Option<{c.typename}>,\n"

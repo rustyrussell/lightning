@@ -9,7 +9,7 @@ struct lightningd;
 void handle_early_opts(struct lightningd *ld, int argc, char *argv[]);
 
 /* After this we're in the .lightning dir, and we've parsed all options */
-void handle_opts(struct lightningd *ld, int argc, char *argv[]);
+void handle_opts(struct lightningd *ld);
 
 /* Derive default color and alias from the pubkey. */
 void setup_color_and_alias(struct lightningd *ld);
@@ -20,6 +20,8 @@ enum opt_autobool {
 	OPT_AUTOBOOL_AUTO = 2,
 };
 char *opt_set_autobool_arg(const char *arg, enum opt_autobool *b);
-void opt_show_autobool(char buf[OPT_SHOW_LEN], const enum opt_autobool *b);
+bool opt_show_autobool(char *buf, size_t len, const enum opt_autobool *b);
 
+/* opt_bool is quite loose; you should use this if wanting to add it to JSON */
+bool opt_canon_bool(const char *val);
 #endif /* LIGHTNING_LIGHTNINGD_OPTIONS_H */

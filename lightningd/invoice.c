@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <hsmd/hsmd_wiregen.h>
 #include <lightningd/channel.h>
+#include <lightningd/hsm_control.h>
 #include <lightningd/invoice.h>
 #include <lightningd/notification.h>
 #include <lightningd/plugin_hook.h>
@@ -44,14 +45,12 @@ static void json_add_invoice_fields(struct json_stream *response,
 		json_add_invstring(response, inv->invstring);
 	json_add_sha256(response, "payment_hash", &inv->rhash);
 	if (inv->msat)
-		json_add_amount_msat_compat(response, *inv->msat,
-					    "msatoshi", "amount_msat");
+		json_add_amount_msat(response, "amount_msat", *inv->msat);
 	json_add_string(response, "status", invoice_status_str(inv));
 	if (inv->state == PAID) {
 		json_add_u64(response, "pay_index", inv->pay_index);
-		json_add_amount_msat_compat(response, inv->received,
-					    "msatoshi_received",
-					    "amount_received_msat");
+		json_add_amount_msat(response,
+				     "amount_received_msat", inv->received);
 		json_add_u64(response, "paid_at", inv->paid_timestamp);
 		json_add_preimage(response, "payment_preimage", &inv->r);
 	}
@@ -174,7 +173,7 @@ static void invoice_payment_add_tlvs(struct json_stream *stream,
 				     struct htlc_set *hset)
 {
 	struct htlc_in *hin;
-	const struct tlv_tlv_payload *tlvs;
+	const struct tlv_payload *tlvs;
 	assert(tal_count(hset->htlcs) > 0);
 
 	/* Pick the first HTLC as representative for the entire set. */
@@ -478,12 +477,10 @@ static bool hsm_sign_b11(const u5 *u5bytes,
 			 secp256k1_ecdsa_recoverable_signature *rsig,
 			 struct lightningd *ld)
 {
-	u8 *msg = towire_hsmd_sign_invoice(NULL, u5bytes, hrpu8);
+	const u8 *msg;
 
-	if (!wire_sync_write(ld->hsm_fd, take(msg)))
-		fatal("Could not write to HSM: %s", strerror(errno));
-
-	msg = wire_sync_read(tmpctx, ld->hsm_fd);
+	msg = hsm_sync_req(tmpctx, ld,
+			   take(towire_hsmd_sign_invoice(NULL, u5bytes, hrpu8)));
         if (!fromwire_hsmd_sign_invoice_reply(msg, rsig))
 		fatal("HSM gave bad sign_invoice_reply %s",
 		      tal_hex(msg, msg));
@@ -495,17 +492,14 @@ static void hsm_sign_b12_invoice(struct lightningd *ld,
 				 struct tlv_invoice *invoice)
 {
 	struct sha256 merkle;
-	u8 *msg;
+	const u8 *msg;
 
 	assert(!invoice->signature);
 
  	merkle_tlv(invoice->fields, &merkle);
 	msg = towire_hsmd_sign_bolt12(NULL, "invoice", "signature", &merkle, NULL);
 
-	if (!wire_sync_write(ld->hsm_fd, take(msg)))
-		fatal("Could not write to HSM: %s", strerror(errno));
-
-	msg = wire_sync_read(tmpctx, ld->hsm_fd);
+	msg = hsm_sync_req(tmpctx, ld, take(msg));
 	invoice->signature = tal(invoice, struct bip340sig);
         if (!fromwire_hsmd_sign_bolt12_reply(msg, invoice->signature))
 		fatal("HSM gave bad sign_invoice_reply %s",
@@ -1817,6 +1811,7 @@ static struct command_result *json_preapproveinvoice(struct command *cmd,
 	const char *invstring;
 	struct json_stream *response;
 	bool approved;
+	const u8 *msg;
 
 	if (!param(cmd, buffer, params,
 		   /* FIXME: parameter should be invstring now */
@@ -1829,12 +1824,8 @@ static struct command_result *json_preapproveinvoice(struct command *cmd,
 	    strncmp(invstring, "LIGHTNING:", 10) == 0)
 		invstring += 10;
 
-	u8 *msg = towire_hsmd_preapprove_invoice(NULL, invstring);
-
-	if (!wire_sync_write(cmd->ld->hsm_fd, take(msg)))
-		fatal("Could not write to HSM: %s", strerror(errno));
-
-	msg = wire_sync_read(tmpctx, cmd->ld->hsm_fd);
+	msg = hsm_sync_req(tmpctx, cmd->ld,
+			   take(towire_hsmd_preapprove_invoice(NULL, invstring)));
         if (!fromwire_hsmd_preapprove_invoice_reply(msg, &approved))
 		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
 				    "HSM gave bad preapprove_invoice_reply %s", tal_hex(msg, msg));
@@ -1862,9 +1853,9 @@ static struct command_result *json_preapprovekeysend(struct command *cmd,
 	struct node_id *destination;
 	struct sha256 *payment_hash;
 	struct amount_msat *amount;
-
 	struct json_stream *response;
 	bool approved;
+	const u8 *msg;
 
 	if (!param(cmd, buffer, params,
 		   p_req("destination", param_node_id, &destination),
@@ -1873,12 +1864,9 @@ static struct command_result *json_preapprovekeysend(struct command *cmd,
 		   NULL))
 		return command_param_failed();
 
-	u8 *msg = towire_hsmd_preapprove_keysend(NULL, destination, payment_hash, *amount);
+	msg = towire_hsmd_preapprove_keysend(NULL, destination, payment_hash, *amount);
 
-	if (!wire_sync_write(cmd->ld->hsm_fd, take(msg)))
-		fatal("Could not write to HSM: %s", strerror(errno));
-
-	msg = wire_sync_read(tmpctx, cmd->ld->hsm_fd);
+	msg = hsm_sync_req(tmpctx, cmd->ld, take(msg));
         if (!fromwire_hsmd_preapprove_keysend_reply(msg, &approved))
 		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
 				    "HSM gave bad preapprove_keysend_reply %s", tal_hex(msg, msg));
@@ -1897,3 +1885,57 @@ static const struct json_command preapprovekeysend_command = {
 	"Ask the HSM to preapprove a keysend payment."
 };
 AUTODATA(json_command, &preapprovekeysend_command);
+
+static struct command_result *json_signinvoice(struct command *cmd,
+						 const char *buffer,
+						 const jsmntok_t *obj UNNEEDED,
+						 const jsmntok_t *params)
+{
+	const char *invstring;
+	struct json_stream *response;
+	struct bolt11 *b11;
+	struct sha256 hash;
+	const u5 *sig;
+	bool have_n;
+	char *fail;
+
+	if (!param(cmd, buffer, params,
+		   p_req("invstring", param_string, &invstring),
+		   NULL))
+		return command_param_failed();
+
+	b11 = bolt11_decode_nosig(cmd, invstring, cmd->ld->our_features,
+				  NULL, chainparams, &hash, &sig, &have_n,
+				  &fail);
+
+	if (!b11)
+		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
+				    "Unparsable invoice '%s': %s",
+				    invstring, fail);
+
+	/* This adds the signature */
+	char *b11enc = bolt11_encode(cmd, b11, have_n,
+				     hsm_sign_b11, cmd->ld);
+
+        /* BOLT #11:
+         * A writer:
+         *...
+         *    - MUST include either exactly one `d` or exactly one `h` field.
+         */
+	if (!b11->description && !b11->description_hash)
+		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
+				    "Missing description in invoice");
+
+	response = json_stream_success(cmd);
+	json_add_invstring(response, b11enc);
+	return command_success(cmd, response);
+}
+
+static const struct json_command signinvoice_command = {
+	"signinvoice",
+	"payment",
+	json_signinvoice,
+	"Lowlevel command to sign invoice {invstring}."
+};
+
+AUTODATA(json_command, &signinvoice_command);

@@ -80,6 +80,12 @@ Additionally, only the following functions are allowed:
 
 TABLES
 ------
+Note that the first column of every table is a unique integer called
+`rowid`: this is used for related tables to refer to specific rows in
+their parent.  sqlite3 usually has this as an implicit column, but we
+make it explicit as the implicit version is not allowed to be used as
+a foreign key.
+
 [comment]: # (GENERATE-DOC-START)
 The following tables are currently supported:
 - `bkpr_accountevents` (see lightning-bkpr-listaccountevents(7))
@@ -129,6 +135,40 @@ The following tables are currently supported:
   - `htlc_minimum_msat` (type `msat`, sqltype `INTEGER`)
   - `htlc_maximum_msat` (type `msat`, sqltype `INTEGER`)
   - `features` (type `hex`, sqltype `BLOB`)
+
+- `closedchannels` (see lightning-listclosedchannels(7))
+  - `peer_id` (type `pubkey`, sqltype `BLOB`)
+  - `channel_id` (type `hash`, sqltype `BLOB`)
+  - `short_channel_id` (type `short_channel_id`, sqltype `TEXT`)
+  - `alias_local` (type `short_channel_id`, sqltype `TEXT`, from JSON object `alias`)
+  - `alias_remote` (type `short_channel_id`, sqltype `TEXT`, from JSON object `alias`)
+  - `opener` (type `string`, sqltype `TEXT`)
+  - `closer` (type `string`, sqltype `TEXT`)
+  - `private` (type `boolean`, sqltype `INTEGER`)
+  - related table `closedchannels_channel_type_bits`, from JSON object `channel_type`
+    - `row` (reference to `closedchannels_channel_type.rowid`, sqltype `INTEGER`)
+    - `arrindex` (index within array, sqltype `INTEGER`)
+    - `bits` (type `u32`, sqltype `INTEGER`)
+  - related table `closedchannels_channel_type_names`, from JSON object `channel_type`
+    - `row` (reference to `closedchannels_channel_type.rowid`, sqltype `INTEGER`)
+    - `arrindex` (index within array, sqltype `INTEGER`)
+    - `names` (type `string`, sqltype `TEXT`)
+  - `total_local_commitments` (type `u64`, sqltype `INTEGER`)
+  - `total_remote_commitments` (type `u64`, sqltype `INTEGER`)
+  - `total_htlcs_sent` (type `u64`, sqltype `INTEGER`)
+  - `funding_txid` (type `txid`, sqltype `BLOB`)
+  - `funding_outnum` (type `u32`, sqltype `INTEGER`)
+  - `leased` (type `boolean`, sqltype `INTEGER`)
+  - `funding_fee_paid_msat` (type `msat`, sqltype `INTEGER`)
+  - `funding_fee_rcvd_msat` (type `msat`, sqltype `INTEGER`)
+  - `funding_pushed_msat` (type `msat`, sqltype `INTEGER`)
+  - `total_msat` (type `msat`, sqltype `INTEGER`)
+  - `final_to_us_msat` (type `msat`, sqltype `INTEGER`)
+  - `min_to_us_msat` (type `msat`, sqltype `INTEGER`)
+  - `max_to_us_msat` (type `msat`, sqltype `INTEGER`)
+  - `last_commitment_txid` (type `hash`, sqltype `BLOB`)
+  - `last_commitment_fee_msat` (type `msat`, sqltype `INTEGER`)
+  - `close_cause` (type `string`, sqltype `TEXT`)
 
 - `forwards` indexed by `in_channel and in_htlc_id` (see lightning-listforwards(7))
   - `in_channel` (type `short_channel_id`, sqltype `TEXT`)
@@ -202,6 +242,14 @@ The following tables are currently supported:
   - `peer_connected` (type `boolean`, sqltype `INTEGER`)
   - `state` (type `string`, sqltype `TEXT`)
   - `scratch_txid` (type `txid`, sqltype `BLOB`)
+  - related table `peerchannels_channel_type_bits`, from JSON object `channel_type`
+    - `row` (reference to `peerchannels_channel_type.rowid`, sqltype `INTEGER`)
+    - `arrindex` (index within array, sqltype `INTEGER`)
+    - `bits` (type `u32`, sqltype `INTEGER`)
+  - related table `peerchannels_channel_type_names`, from JSON object `channel_type`
+    - `row` (reference to `peerchannels_channel_type.rowid`, sqltype `INTEGER`)
+    - `arrindex` (index within array, sqltype `INTEGER`)
+    - `names` (type `string`, sqltype `TEXT`)
   - `feerate_perkw` (type `u32`, sqltype `INTEGER`, from JSON object `feerate`)
   - `feerate_perkb` (type `u32`, sqltype `INTEGER`, from JSON object `feerate`)
   - `owner` (type `string`, sqltype `TEXT`)
@@ -293,6 +341,7 @@ The following tables are currently supported:
 - `peers` indexed by `id` (see lightning-listpeers(7))
   - `id` (type `pubkey`, sqltype `BLOB`)
   - `connected` (type `boolean`, sqltype `INTEGER`)
+  - `num_channels` (type `u32`, sqltype `INTEGER`)
   - related table `peers_netaddr`
     - `row` (reference to `peers.rowid`, sqltype `INTEGER`)
     - `arrindex` (index within array, sqltype `INTEGER`)
@@ -330,16 +379,12 @@ The following tables are currently supported:
     - `txid` (type `txid`, sqltype `BLOB`)
     - `idx` (type `u32`, sqltype `INTEGER`, from JSON field `index`)
     - `sequence` (type `u32`, sqltype `INTEGER`)
-    - `type` (type `string`, sqltype `TEXT`)
-    - `channel` (type `short_channel_id`, sqltype `TEXT`)
   - related table `transactions_outputs`
     - `row` (reference to `transactions.rowid`, sqltype `INTEGER`)
     - `arrindex` (index within array, sqltype `INTEGER`)
     - `idx` (type `u32`, sqltype `INTEGER`, from JSON field `index`)
     - `amount_msat` (type `msat`, sqltype `INTEGER`)
     - `scriptPubKey` (type `hex`, sqltype `BLOB`)
-    - `type` (type `string`, sqltype `TEXT`)
-    - `channel` (type `short_channel_id`, sqltype `TEXT`)
 
 [comment]: # (GENERATE-DOC-END)
 
@@ -465,4 +510,4 @@ RESOURCES
 ---------
 
 Main web site: <https://github.com/ElementsProject/lightning>
-[comment]: # ( SHA256STAMP:dbb9286cf31dc82b33143d5274b1c4eecc75c5ba1dfc18bdf21b4baab585bd45)
+[comment]: # ( SHA256STAMP:68c72c66bdc8b0515c6d5dddd5ffd14aa0342bd00f17a44929177c48c36a213f)

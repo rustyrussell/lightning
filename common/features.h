@@ -15,7 +15,6 @@ enum feature_place {
 	BOLT12_INVOICE_FEATURE,
 };
 #define NUM_FEATURE_PLACE (BOLT12_INVOICE_FEATURE+1)
-
 extern const char *feature_place_names[NUM_FEATURE_PLACE];
 
 /* The complete set of features for all contexts */
@@ -115,6 +114,7 @@ struct feature_set *feature_set_dup(const tal_t *ctx,
  * | 18/19 | `option_support_large_channel`    |... IN ...
  * | 20/21 | `option_anchor_outputs`           |... IN ...
  * | 22/23 | `option_anchors_zero_fee_htlc_tx` |... IN ...
+ * | 24/25 | `option_route_blinding`           |...IN9 ...
  * | 26/27 | `option_shutdown_anysegwit`       |... IN ...
  * | 44/45 | `option_channel_type`             |... IN ...
  * | 48/49 | `option_payment_metadata`         |...  9 ...
@@ -131,14 +131,10 @@ struct feature_set *feature_set_dup(const tal_t *ctx,
 #define OPT_LARGE_CHANNELS			18
 #define OPT_ANCHOR_OUTPUTS			20
 #define OPT_ANCHORS_ZERO_FEE_HTLC_TX		22
+#define OPT_ROUTE_BLINDING 			24
 #define OPT_SHUTDOWN_ANYSEGWIT			26
 #define OPT_CHANNEL_TYPE			44
 #define OPT_PAYMENT_METADATA			48
-
-/* BOLT-route-blinding #9:
- * | 24/25 | `option_route_blinding` | Node supports blinded paths | IN9 | `var_onion_optin` | ...
- */
-#define OPT_ROUTE_BLINDING 			24
 
 /* BOLT-f53ca2301232db780843e894f55d95d512f297f9 #9:
  * | 28/29 | `option_dual_fund` | ... IN9 ...
@@ -164,5 +160,13 @@ struct feature_set *feature_set_dup(const tal_t *ctx,
 #define OPT_ONION_MESSAGES			38
 
 #define OPT_SHUTDOWN_WRONG_FUNDING		104
+
+/* BOLT-peer-storage #9:
+ *
+ * | 40/41 | `want_peer_backup_storage`        | Want to use other nodes to store encrypted backup data    | IN ...
+ * | 42/43 | `provide_peer_backup_storage`     | Can store other nodes' encrypted backup data              | IN ...
+ */
+#define OPT_WANT_PEER_BACKUP_STORAGE		40
+#define OPT_PROVIDE_PEER_BACKUP_STORAGE		42
 
 #endif /* LIGHTNING_COMMON_FEATURES_H */

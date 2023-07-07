@@ -10,6 +10,7 @@
 #include <ccan/time/time.h>
 
 struct channel_id;
+struct channel_type;
 struct db_stmt;
 struct node_id;
 struct onionreply;
@@ -33,12 +34,13 @@ void db_bind_secret(struct db_stmt *stmt, int pos, const struct secret *s);
 void db_bind_secret_arr(struct db_stmt *stmt, int col, const struct secret *s);
 void db_bind_txid(struct db_stmt *stmt, int pos, const struct bitcoin_txid *t);
 void db_bind_channel_id(struct db_stmt *stmt, int pos, const struct channel_id *id);
+void db_bind_channel_type(struct db_stmt *stmt, int pos, const struct channel_type *type);
 void db_bind_node_id(struct db_stmt *stmt, int pos, const struct node_id *ni);
 void db_bind_node_id_arr(struct db_stmt *stmt, int col,
 			 const struct node_id *ids);
 void db_bind_pubkey(struct db_stmt *stmt, int pos, const struct pubkey *p);
-void db_bind_scid(struct db_stmt *stmt, int col,
-		  const struct short_channel_id *id);
+void db_bind_short_channel_id(struct db_stmt *stmt, int col,
+			      const struct short_channel_id *id);
 void db_bind_short_channel_id_arr(struct db_stmt *stmt, int col,
 				  const struct short_channel_id *id);
 void db_bind_signature(struct db_stmt *stmt, int col,
@@ -78,13 +80,15 @@ struct secret *db_col_secret_arr(const tal_t *ctx, struct db_stmt *stmt,
 				 const char *colname);
 void db_col_txid(struct db_stmt *stmt, const char *colname, struct bitcoin_txid *t);
 void db_col_channel_id(struct db_stmt *stmt, const char *colname, struct channel_id *dest);
+struct channel_type *db_col_channel_type(const tal_t *ctx, struct db_stmt *stmt,
+					 const char *colname);
 void db_col_node_id(struct db_stmt *stmt, const char *colname, struct node_id *ni);
 struct node_id *db_col_node_id_arr(const tal_t *ctx, struct db_stmt *stmt,
 				   const char *colname);
 void db_col_pubkey(struct db_stmt *stmt, const char *colname,
 		   struct pubkey *p);
-void db_col_scid(struct db_stmt *stmt, const char *colname,
-		 struct short_channel_id *dest);
+void db_col_short_channel_id(struct db_stmt *stmt, const char *colname,
+			      struct short_channel_id *dest);
 struct short_channel_id *
 db_col_short_channel_id_arr(const tal_t *ctx, struct db_stmt *stmt, const char *colname);
 bool db_col_signature(struct db_stmt *stmt, const char *colname,
@@ -104,6 +108,20 @@ struct onionreply *db_col_onionreply(const tal_t *ctx,
 void *db_col_arr_(const tal_t *ctx, struct db_stmt *stmt, const char *colname,
 		     size_t bytes, const char *label, const char *caller);
 
+
+/* Assumes void db_col_@type(stmt, colname, addr), and struct @type! */
+#define db_col_optional(ctx, stmt, colname, type)			\
+	((struct type *)db_col_optional_(tal(ctx, struct type),		\
+					 (stmt), (colname),		\
+					 typesafe_cb_cast(void (*)(struct db_stmt *, const char *, void *), \
+							  void (*)(struct db_stmt *, const char *, struct type *), \
+							  db_col_##type)))
+
+void *WARN_UNUSED_RESULT db_col_optional_(tal_t *dst,
+					  struct db_stmt *stmt,
+					  const char *colname,
+					  void (*colfn)(struct db_stmt *,
+							const char *, void *));
 
 /* Some useful default variants */
 int db_col_int_or_default(struct db_stmt *stmt, const char *colname, int def);

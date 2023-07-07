@@ -24,7 +24,6 @@ DEVTOOLS_COMMON_OBJS :=				\
 	common/bolt11.o				\
 	common/blockheight_states.o		\
 	common/channel_id.o			\
-	common/configdir.o			\
 	common/decode_array.o			\
 	common/features.o			\
 	common/fee_states.o			\
@@ -43,8 +42,8 @@ DEVTOOLS_COMMON_OBJS :=				\
 	common/utils.o				\
 	common/version.o			\
 	common/wireaddr.o			\
-	wire/onion$(EXP)_wiregen.o		\
-	wire/peer$(EXP)_wiregen.o		\
+	wire/onion_wiregen.o			\
+	wire/peer_wiregen.o			\
 	wire/channel_type_wiregen.o		\
 	wire/tlvstream.o
 
@@ -58,7 +57,7 @@ devtools/bolt11-cli: $(DEVTOOLS_COMMON_OBJS) $(JSMN_OBJS) $(BITCOIN_OBJS) wire/f
 
 devtools/encodeaddr: common/utils.o common/bech32.o devtools/encodeaddr.o
 
-devtools/bolt12-cli: $(DEVTOOLS_COMMON_OBJS) $(BITCOIN_OBJS) wire/bolt12$(EXP)_wiregen.o wire/fromwire.o wire/towire.o common/bolt12.o common/bolt12_merkle.o devtools/bolt12-cli.o common/setup.o common/iso4217.o
+devtools/bolt12-cli: $(DEVTOOLS_COMMON_OBJS) $(BITCOIN_OBJS) wire/bolt12_wiregen.o wire/fromwire.o wire/towire.o common/bolt12.o common/bolt12_merkle.o devtools/bolt12-cli.o common/setup.o common/iso4217.o
 
 devtools/decodemsg: $(DEVTOOLS_COMMON_OBJS) $(JSMN_OBJS) $(BITCOIN_OBJS) $(WIRE_PRINT_OBJS) wire/fromwire.o wire/towire.o devtools/print_wire.o devtools/decodemsg.o
 
@@ -73,7 +72,7 @@ devtools/onion.c: ccan/config.h
 
 devtools/onion: $(DEVTOOLS_COMMON_OBJS) $(JSMN_OBJS) $(BITCOIN_OBJS) common/onion_decode.o common/onion_encode.o common/onionreply.o wire/fromwire.o wire/towire.o devtools/onion.o common/sphinx.o
 
-devtools/gossipwith: $(DEVTOOLS_COMMON_OBJS) $(JSMN_OBJS) $(BITCOIN_OBJS) wire/fromwire.o wire/towire.o wire/peer$(EXP)_wiregen.o devtools/gossipwith.o common/cryptomsg.o common/cryptomsg.o
+devtools/gossipwith: $(DEVTOOLS_COMMON_OBJS) $(JSMN_OBJS) $(BITCOIN_OBJS) wire/fromwire.o wire/towire.o wire/peer_wiregen.o devtools/gossipwith.o common/cryptomsg.o common/cryptomsg.o
 
 $(DEVTOOLS_OBJS) $(DEVTOOLS_TOOL_OBJS): wire/wire.h
 
@@ -87,7 +86,7 @@ devtools/mkgossip: $(DEVTOOLS_COMMON_OBJS) $(BITCOIN_OBJS) wire/fromwire.o wire/
 
 devtools/mkencoded: $(DEVTOOLS_COMMON_OBJS) $(BITCOIN_OBJS) wire/fromwire.o wire/towire.o devtools/mkencoded.o
 
-devtools/checkchannels: $(DEVTOOLS_COMMON_OBJS) $(BITCOIN_OBJS) common/configdir.o wire/fromwire.o wire/towire.o devtools/checkchannels.o
+devtools/checkchannels: $(DEVTOOLS_COMMON_OBJS) $(BITCOIN_OBJS) wire/fromwire.o wire/towire.o devtools/checkchannels.o common/configdir.o common/configvar.o
 
 devtools/mkquery: $(DEVTOOLS_COMMON_OBJS) $(BITCOIN_OBJS) wire/fromwire.o wire/towire.o devtools/mkquery.o
 

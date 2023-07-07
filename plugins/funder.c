@@ -5,6 +5,7 @@
  */
 #include "config.h"
 #include <bitcoin/feerate.h>
+#include <bitcoin/psbt.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/json_out/json_out.h>
 #include <ccan/tal/str/str.h>
@@ -212,14 +213,14 @@ remember_channel_utxos(struct command *cmd,
 				    signed_psbt);
 
 	utxos_bin = tal_arr(cmd, u8, 0);
-	for (size_t i = 0; i < signed_psbt->tx->num_inputs; i++) {
+	for (size_t i = 0; i < signed_psbt->num_inputs; i++) {
 		struct bitcoin_outpoint outpoint;
 
 		/* Don't save peer's UTXOS */
 		if (!psbt_input_is_ours(&signed_psbt->inputs[i]))
 			continue;
 
-		wally_tx_input_get_outpoint(&signed_psbt->tx->inputs[i],
+		wally_psbt_input_get_outpoint(&signed_psbt->inputs[i],
 					    &outpoint);
 		towire_bitcoin_outpoint(&utxos_bin, &outpoint);
 	}
@@ -440,8 +441,7 @@ psbt_funded(struct command *cmd,
 	response = jsonrpc_stream_success(cmd);
 	json_add_string(response, "result", "continue");
 	json_add_psbt(response, "psbt", psbt);
-	json_add_amount_msat_only(response, "our_funding_msat",
-				  our_funding_msat);
+	json_add_amount_msat(response, "our_funding_msat", our_funding_msat);
 
 	/* If we're accepting an lease request, *and* they've
 	 * requested one, fill in our most recent infos */
@@ -586,7 +586,7 @@ listfunds_success(struct command *cmd,
 	avail_prev_outs = tal_arr(info, struct bitcoin_outpoint *, 0);
 	json_for_each_arr(i, tok, outputs_tok) {
 		struct funder_utxo *utxo;
-		bool is_reserved, is_p2sh;
+		bool is_reserved;
 		struct bitcoin_outpoint *prev_out;
 		char *status;
 		const char *err;
@@ -609,15 +609,13 @@ listfunds_success(struct command *cmd,
 				   err, json_tok_full_len(result),
 				   json_tok_full(buf, result));
 
-		/* is it a p2sh output? */
+		/* v2 opens don't support p2sh-wrapped inputs */
 		if (json_get_member(buf, tok, "redeemscript"))
-			is_p2sh = true;
-		else
-			is_p2sh = false;
+			continue;
 
 		/* The estimated fee per utxo. */
 		est_fee = amount_tx_fee(info->funding_feerate_perkw,
-					bitcoin_tx_input_weight(is_p2sh, 110));
+					bitcoin_tx_input_weight(false, 110));
 
 		/* Did we use this utxo on a previous attempt? */
 		prev_out = previously_reserved(info->prev_outs, &utxo->out);
@@ -697,12 +695,15 @@ listfunds_success(struct command *cmd,
 					     committed_funds,
 					     avail_utxos);
 		json_add_bool(req->js, "reservedok", true);
-	} else
+	} else {
 		req = jsonrpc_request_start(cmd->plugin, cmd,
 					    "fundpsbt",
 					    &psbt_funded,
 					    &psbt_fund_failed,
 					    info);
+
+		json_add_bool(req->js, "nonwrapped", true);
+	}
 	json_add_string(req->js, "satoshi",
 			type_to_string(tmpctx, struct amount_sat,
 				       &info->our_funding));

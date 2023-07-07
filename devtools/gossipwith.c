@@ -82,9 +82,10 @@ static char *opt_set_network(const char *arg, void *unused)
 	return NULL;
 }
 
-static void opt_show_network(char buf[OPT_SHOW_LEN], const void *unused)
+static bool opt_show_network(char *buf, size_t len, const void *unused)
 {
-	snprintf(buf, OPT_SHOW_LEN, "%s", chainparams->network_name);
+	snprintf(buf, len, "%s", chainparams->network_name);
+	return true;
 }
 
 void ecdh(const struct pubkey *point, struct secret *ss)
@@ -168,6 +169,7 @@ static struct io_plan *handshake_success(struct io_conn *conn,
 					 const struct wireaddr_internal *addr,
 					 struct crypto_state *cs,
 					 struct oneshot *timer,
+					 enum is_websocket is_websocket,
 					 char **args)
 {
 	int peer_fd = io_conn_fd(conn);
@@ -254,9 +256,9 @@ static char *opt_set_secret(const char *arg, struct secret *s)
 	return NULL;
 }
 
-static void opt_show_secret(char buf[OPT_SHOW_LEN], const struct secret *s)
+static bool opt_show_secret(char *buf, size_t len, const struct secret *s)
 {
-	hex_encode(s->data, sizeof(s->data), buf, OPT_SHOW_LEN);
+	return hex_encode(s->data, sizeof(s->data), buf, len);
 }
 
 static char *opt_set_features(const char *arg, u8 **features)
@@ -325,8 +327,8 @@ int main(int argc, char *argv[])
 		opt_usage_exit_fail("Invalid id %.*s",
 				    (int)(at - argv[1]), argv[1]);
 
-	if (!parse_wireaddr_internal(at+1, &addr, chainparams_get_ln_port(chainparams), NULL,
-				     true, false, &err_msg))
+	err_msg = parse_wireaddr_internal(tmpctx, at+1, chainparams_get_ln_port(chainparams), true, &addr);
+	if (err_msg)
 		opt_usage_exit_fail("%s '%s'", err_msg, argv[1]);
 
 	switch (addr.itype) {
@@ -341,13 +343,13 @@ int main(int argc, char *argv[])
 		opt_usage_exit_fail("Don't support proxy use");
 
 	case ADDR_INTERNAL_WIREADDR:
-		switch (addr.u.wireaddr.type) {
+		if (addr.u.wireaddr.is_websocket)
+			opt_usage_exit_fail("Don't support websocket use");
+
+		switch (addr.u.wireaddr.wireaddr.type) {
 		case ADDR_TYPE_TOR_V2_REMOVED:
 		case ADDR_TYPE_TOR_V3:
 			opt_usage_exit_fail("Don't support proxy use");
-			break;
-		case ADDR_TYPE_WEBSOCKET:
-			opt_usage_exit_fail("Don't support websockets");
 			break;
 		case ADDR_TYPE_DNS:
 			opt_usage_exit_fail("Don't support DNS");
@@ -359,7 +361,7 @@ int main(int argc, char *argv[])
 			af = AF_INET6;
 			break;
 		}
-		ai = wireaddr_to_addrinfo(tmpctx, &addr.u.wireaddr);
+		ai = wireaddr_to_addrinfo(tmpctx, &addr.u.wireaddr.wireaddr);
 	}
 
 	if (af == -1 || ai == NULL)
@@ -375,7 +377,7 @@ int main(int argc, char *argv[])
 	if (connect(conn->fd, ai->ai_addr, ai->ai_addrlen) != 0)
 		err(1, "Connecting to %s", at+1);
 
-	initiator_handshake(conn, &us, &them, &addr, NULL,
+	initiator_handshake(conn, &us, &them, &addr, NULL, NORMAL_SOCKET,
 			    handshake_success, argv+2);
 	exit(0);
 }

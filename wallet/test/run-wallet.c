@@ -30,6 +30,7 @@ void db_fatal(const char *fmt, ...)
 #endif /* DB_FATAL */
 
 #include "wallet/wallet.c"
+#include "lightningd/hsm_control.c"
 #include "lightningd/htlc_end.c"
 #include "lightningd/peer_control.c"
 #include "lightningd/peer_htlcs.c"
@@ -67,14 +68,17 @@ bool blinding_next_pubkey(const struct pubkey *pk UNNEEDED,
 			  const struct sha256 *h UNNEEDED,
 			  struct pubkey *next UNNEEDED)
 { fprintf(stderr, "blinding_next_pubkey called!\n"); abort(); }
-/* Generated stub for broadcast_tx */
-void broadcast_tx(struct chain_topology *topo UNNEEDED,
-		  struct channel *channel UNNEEDED, const struct bitcoin_tx *tx UNNEEDED,
-		  const char *cmd_id UNNEEDED, bool allowhighfees UNNEEDED,
-		  void (*failed)(struct channel * UNNEEDED,
-				 bool success UNNEEDED,
-				 const char *err))
-{ fprintf(stderr, "broadcast_tx called!\n"); abort(); }
+/* Generated stub for broadcast_tx_ */
+void broadcast_tx_(struct chain_topology *topo UNNEEDED,
+		   struct channel *channel UNNEEDED,
+		   const struct bitcoin_tx *tx TAKES UNNEEDED,
+		   const char *cmd_id UNNEEDED, bool allowhighfees UNNEEDED, u32 minblock UNNEEDED,
+		   void (*finished)(struct channel * UNNEEDED,
+				    bool success UNNEEDED,
+				    const char *err) UNNEEDED,
+		   bool (*refresh)(struct channel * UNNEEDED, const struct bitcoin_tx ** UNNEEDED, void *) UNNEEDED,
+		   void *refresh_arg TAKES UNNEEDED)
+{ fprintf(stderr, "broadcast_tx_ called!\n"); abort(); }
 /* Generated stub for channel_tell_depth */
 bool channel_tell_depth(struct lightningd *ld UNNEEDED,
 				 struct channel *channel UNNEEDED,
@@ -170,15 +174,33 @@ bool fromwire_connectd_peer_spoke(const void *p UNNEEDED, struct node_id *id UNN
 /* Generated stub for fromwire_dualopend_dev_memleak_reply */
 bool fromwire_dualopend_dev_memleak_reply(const void *p UNNEEDED, bool *leak UNNEEDED)
 { fprintf(stderr, "fromwire_dualopend_dev_memleak_reply called!\n"); abort(); }
+/* Generated stub for fromwire_hsmd_check_pubkey_reply */
+bool fromwire_hsmd_check_pubkey_reply(const void *p UNNEEDED, bool *ok UNNEEDED)
+{ fprintf(stderr, "fromwire_hsmd_check_pubkey_reply called!\n"); abort(); }
+/* Generated stub for fromwire_hsmd_client_hsmfd_reply */
+bool fromwire_hsmd_client_hsmfd_reply(const void *p UNNEEDED)
+{ fprintf(stderr, "fromwire_hsmd_client_hsmfd_reply called!\n"); abort(); }
+/* Generated stub for fromwire_hsmd_derive_secret_reply */
+bool fromwire_hsmd_derive_secret_reply(const void *p UNNEEDED, struct secret *secret UNNEEDED)
+{ fprintf(stderr, "fromwire_hsmd_derive_secret_reply called!\n"); abort(); }
 /* Generated stub for fromwire_hsmd_get_output_scriptpubkey_reply */
 bool fromwire_hsmd_get_output_scriptpubkey_reply(const tal_t *ctx UNNEEDED, const void *p UNNEEDED, u8 **script UNNEEDED)
 { fprintf(stderr, "fromwire_hsmd_get_output_scriptpubkey_reply called!\n"); abort(); }
+/* Generated stub for fromwire_hsmd_init_reply_v2 */
+bool fromwire_hsmd_init_reply_v2(const void *p UNNEEDED, struct node_id *node_id UNNEEDED, struct ext_key *bip32 UNNEEDED, struct pubkey *bolt12 UNNEEDED)
+{ fprintf(stderr, "fromwire_hsmd_init_reply_v2 called!\n"); abort(); }
+/* Generated stub for fromwire_hsmd_init_reply_v4 */
+bool fromwire_hsmd_init_reply_v4(const tal_t *ctx UNNEEDED, const void *p UNNEEDED, u32 *hsm_version UNNEEDED, u32 **hsm_capabilities UNNEEDED, struct node_id *node_id UNNEEDED, struct ext_key *bip32 UNNEEDED, struct pubkey *bolt12 UNNEEDED)
+{ fprintf(stderr, "fromwire_hsmd_init_reply_v4 called!\n"); abort(); }
 /* Generated stub for fromwire_hsmd_new_channel_reply */
 bool fromwire_hsmd_new_channel_reply(const void *p UNNEEDED)
 { fprintf(stderr, "fromwire_hsmd_new_channel_reply called!\n"); abort(); }
 /* Generated stub for fromwire_hsmd_sign_commitment_tx_reply */
 bool fromwire_hsmd_sign_commitment_tx_reply(const void *p UNNEEDED, struct bitcoin_signature *sig UNNEEDED)
 { fprintf(stderr, "fromwire_hsmd_sign_commitment_tx_reply called!\n"); abort(); }
+/* Generated stub for fromwire_hsmstatus_client_bad_request */
+bool fromwire_hsmstatus_client_bad_request(const tal_t *ctx UNNEEDED, const void *p UNNEEDED, struct node_id *id UNNEEDED, wirestring **description UNNEEDED, u8 **msg UNNEEDED)
+{ fprintf(stderr, "fromwire_hsmstatus_client_bad_request called!\n"); abort(); }
 /* Generated stub for fromwire_onchaind_dev_memleak_reply */
 bool fromwire_onchaind_dev_memleak_reply(const void *p UNNEEDED, bool *leak UNNEEDED)
 { fprintf(stderr, "fromwire_onchaind_dev_memleak_reply called!\n"); abort(); }
@@ -191,6 +213,9 @@ u32 get_block_height(const struct chain_topology *topo UNNEEDED)
 /* Generated stub for get_channel_update */
 const u8 *get_channel_update(struct channel *channel UNNEEDED)
 { fprintf(stderr, "get_channel_update called!\n"); abort(); }
+/* Generated stub for hsmd_wire_name */
+const char *hsmd_wire_name(int e UNNEEDED)
+{ fprintf(stderr, "hsmd_wire_name called!\n"); abort(); }
 /* Generated stub for htlc_is_trimmed */
 bool htlc_is_trimmed(enum side htlc_owner UNNEEDED,
 		     struct amount_msat htlc_amount UNNEEDED,
@@ -283,6 +308,9 @@ void invoices_waitone(const tal_t *ctx UNNEEDED,
 		      void (*cb)(const struct invoice * UNNEEDED, void*) UNNEEDED,
 		      void *cbarg UNNEEDED)
 { fprintf(stderr, "invoices_waitone called!\n"); abort(); }
+/* Generated stub for is_hsm_secret_encrypted */
+int is_hsm_secret_encrypted(const char *path UNNEEDED)
+{ fprintf(stderr, "is_hsm_secret_encrypted called!\n"); abort(); }
 /* Generated stub for json_add_address */
 void json_add_address(struct json_stream *response UNNEEDED, const char *fieldname UNNEEDED,
 		      const struct wireaddr *addr UNNEEDED)
@@ -292,26 +320,12 @@ void json_add_address_internal(struct json_stream *response UNNEEDED,
 			       const char *fieldname UNNEEDED,
 			       const struct wireaddr_internal *addr UNNEEDED)
 { fprintf(stderr, "json_add_address_internal called!\n"); abort(); }
-/* Generated stub for json_add_amount_msat_compat */
-void json_add_amount_msat_compat(struct json_stream *result UNNEEDED,
-				 struct amount_msat msat UNNEEDED,
-				 const char *rawfieldname UNNEEDED,
-				 const char *msatfieldname)
-
-{ fprintf(stderr, "json_add_amount_msat_compat called!\n"); abort(); }
-/* Generated stub for json_add_amount_msat_only */
-void json_add_amount_msat_only(struct json_stream *result UNNEEDED,
+/* Generated stub for json_add_amount_msat */
+void json_add_amount_msat(struct json_stream *result UNNEEDED,
 			  const char *msatfieldname UNNEEDED,
 			  struct amount_msat msat)
 
-{ fprintf(stderr, "json_add_amount_msat_only called!\n"); abort(); }
-/* Generated stub for json_add_amount_sat_compat */
-void json_add_amount_sat_compat(struct json_stream *result UNNEEDED,
-				struct amount_sat sat UNNEEDED,
-				const char *rawfieldname UNNEEDED,
-				const char *msatfieldname)
-
-{ fprintf(stderr, "json_add_amount_sat_compat called!\n"); abort(); }
+{ fprintf(stderr, "json_add_amount_msat called!\n"); abort(); }
 /* Generated stub for json_add_amount_sat_msat */
 void json_add_amount_sat_msat(struct json_stream *result UNNEEDED,
 			      const char *msatfieldname UNNEEDED,
@@ -502,6 +516,14 @@ struct chain_coin_mvt *new_coin_wallet_deposit(const tal_t *ctx UNNEEDED,
 					       enum mvt_tag tag)
 
 { fprintf(stderr, "new_coin_wallet_deposit called!\n"); abort(); }
+/* Generated stub for new_global_subd */
+struct subd *new_global_subd(struct lightningd *ld UNNEEDED,
+			     const char *name UNNEEDED,
+			     const char *(*msgname)(int msgtype) UNNEEDED,
+			     unsigned int (*msgcb)(struct subd * UNNEEDED, const u8 * UNNEEDED,
+						   const int *fds) UNNEEDED,
+			     ...)
+{ fprintf(stderr, "new_global_subd called!\n"); abort(); }
 /* Generated stub for new_peer_fd */
 struct peer_fd *new_peer_fd(const tal_t *ctx UNNEEDED, int peer_fd UNNEEDED)
 { fprintf(stderr, "new_peer_fd called!\n"); abort(); }
@@ -588,6 +610,11 @@ void outpointfilter_remove(struct outpointfilter *of UNNEEDED,
 bool param(struct command *cmd UNNEEDED, const char *buffer UNNEEDED,
 	   const jsmntok_t params[] UNNEEDED, ...)
 { fprintf(stderr, "param called!\n"); abort(); }
+/* Generated stub for param_bin_from_hex */
+struct command_result *param_bin_from_hex(struct command *cmd UNNEEDED, const char *name UNNEEDED,
+					  const char *buffer UNNEEDED, const jsmntok_t *tok UNNEEDED,
+					  u8 **bin UNNEEDED)
+{ fprintf(stderr, "param_bin_from_hex called!\n"); abort(); }
 /* Generated stub for param_bool */
 struct command_result *param_bool(struct command *cmd UNNEEDED, const char *name UNNEEDED,
 				  const char *buffer UNNEEDED, const jsmntok_t *tok UNNEEDED,
@@ -631,6 +658,11 @@ struct command_result *param_short_channel_id(struct command *cmd UNNEEDED,
 					      const jsmntok_t *tok UNNEEDED,
 					      struct short_channel_id **scid UNNEEDED)
 { fprintf(stderr, "param_short_channel_id called!\n"); abort(); }
+/* Generated stub for param_string */
+struct command_result *param_string(struct command *cmd UNNEEDED, const char *name UNNEEDED,
+				    const char * buffer UNNEEDED, const jsmntok_t *tok UNNEEDED,
+				    const char **str UNNEEDED)
+{ fprintf(stderr, "param_string called!\n"); abort(); }
 /* Generated stub for param_u64 */
 struct command_result *param_u64(struct command *cmd UNNEEDED, const char *name UNNEEDED,
 				 const char *buffer UNNEEDED, const jsmntok_t *tok UNNEEDED,
@@ -692,6 +724,9 @@ struct route_step *process_onionpacket(
 	bool has_realm
 	)
 { fprintf(stderr, "process_onionpacket called!\n"); abort(); }
+/* Generated stub for psbt_fixup */
+const u8 *psbt_fixup(const tal_t *ctx UNNEEDED, const u8 *psbtblob UNNEEDED)
+{ fprintf(stderr, "psbt_fixup called!\n"); abort(); }
 /* Generated stub for report_subd_memleak */
 void report_subd_memleak(struct leak_detect *leak_detect UNNEEDED, struct subd *leaker UNNEEDED)
 { fprintf(stderr, "report_subd_memleak called!\n"); abort(); }
@@ -800,9 +835,21 @@ u8 *towire_final_incorrect_htlc_amount(const tal_t *ctx UNNEEDED, struct amount_
 /* Generated stub for towire_gossipd_discovered_ip */
 u8 *towire_gossipd_discovered_ip(const tal_t *ctx UNNEEDED, const struct wireaddr *discovered_ip UNNEEDED)
 { fprintf(stderr, "towire_gossipd_discovered_ip called!\n"); abort(); }
+/* Generated stub for towire_hsmd_check_pubkey */
+u8 *towire_hsmd_check_pubkey(const tal_t *ctx UNNEEDED, u32 index UNNEEDED, const struct pubkey *pubkey UNNEEDED)
+{ fprintf(stderr, "towire_hsmd_check_pubkey called!\n"); abort(); }
+/* Generated stub for towire_hsmd_client_hsmfd */
+u8 *towire_hsmd_client_hsmfd(const tal_t *ctx UNNEEDED, const struct node_id *id UNNEEDED, u64 dbid UNNEEDED, u64 capabilities UNNEEDED)
+{ fprintf(stderr, "towire_hsmd_client_hsmfd called!\n"); abort(); }
+/* Generated stub for towire_hsmd_derive_secret */
+u8 *towire_hsmd_derive_secret(const tal_t *ctx UNNEEDED, const u8 *info UNNEEDED)
+{ fprintf(stderr, "towire_hsmd_derive_secret called!\n"); abort(); }
 /* Generated stub for towire_hsmd_get_output_scriptpubkey */
 u8 *towire_hsmd_get_output_scriptpubkey(const tal_t *ctx UNNEEDED, u64 channel_id UNNEEDED, const struct node_id *peer_id UNNEEDED, const struct pubkey *commitment_point UNNEEDED)
 { fprintf(stderr, "towire_hsmd_get_output_scriptpubkey called!\n"); abort(); }
+/* Generated stub for towire_hsmd_init */
+u8 *towire_hsmd_init(const tal_t *ctx UNNEEDED, const struct bip32_key_version *bip32_key_version UNNEEDED, const struct chainparams *chainparams UNNEEDED, const struct secret *hsm_encryption_key UNNEEDED, const struct privkey *dev_force_privkey UNNEEDED, const struct secret *dev_force_bip32_seed UNNEEDED, const struct secrets *dev_force_channel_secrets UNNEEDED, const struct sha256 *dev_force_channel_secrets_shaseed UNNEEDED, u32 hsm_wire_min_version UNNEEDED, u32 hsm_wire_max_version UNNEEDED)
+{ fprintf(stderr, "towire_hsmd_init called!\n"); abort(); }
 /* Generated stub for towire_hsmd_new_channel */
 u8 *towire_hsmd_new_channel(const tal_t *ctx UNNEEDED, const struct node_id *id UNNEEDED, u64 dbid UNNEEDED)
 { fprintf(stderr, "towire_hsmd_new_channel called!\n"); abort(); }
@@ -994,10 +1041,10 @@ static struct wallet *create_test_wallet(struct lightningd *ld, const tal_t *ctx
 	w->ld = ld;
 	ld->wallet = w;
 
-	w->bip32_base = tal(w, struct ext_key);
+	ld->bip32_base = tal(ld, struct ext_key);
 	CHECK(bip32_key_from_seed(badseed, sizeof(badseed),
 				  BIP32_VER_TEST_PRIVATE, 0,
-				  w->bip32_base) == WALLY_OK);
+				  ld->bip32_base) == WALLY_OK);
 
 	CHECK_MSG(w->db, "Failed opening the db");
 	w->db->data_version = 0;
@@ -1050,13 +1097,14 @@ static bool test_wallet_outputs(struct lightningd *ld, const tal_t *ctx)
 	/* Arbitrarily set scriptpubkey len to 20 */
 	u.scriptPubkey = tal_arr(w, u8, 20);
 	memset(u.scriptPubkey, 1, 20);
-	CHECK_MSG(wallet_add_utxo(w, &u, p2sh_wpkh),
+	CHECK_MSG(wallet_add_utxo(w, &u, our_change),
 		  "wallet_add_utxo with close_info");
 
 	/* Now select them */
 	utxos = tal_arr(w, const struct utxo *, 0);
 	while ((one_utxo = wallet_find_utxo(w, w, 100, NULL, 253,
 					    0 /* no confirmations required */,
+					    false,
 					    utxos)) != NULL) {
 		tal_arr_expand(&utxos, one_utxo);
 	}
@@ -1123,8 +1171,7 @@ static bool test_wallet_outputs(struct lightningd *ld, const tal_t *ctx)
 	CHECK_MSG(!wallet_err, wallet_err);
 
 	/* Add another utxo that's CSV-locked for 5 blocks */
-	parse_wireaddr_internal("localhost:1234", &addr, 0, false, false, false,
-				NULL);
+	assert(parse_wireaddr_internal(tmpctx, "localhost:1234", 0, false, &addr) == NULL);
 	channel.peer = new_peer(ld, 0, &id, &addr, false);
 	channel.dbid = 1;
 	channel.type = channel_type_anchor_outputs(tmpctx);
@@ -1145,6 +1192,7 @@ static bool test_wallet_outputs(struct lightningd *ld, const tal_t *ctx)
 	utxos = tal_arr(w, const struct utxo *, 0);
 	while ((one_utxo = wallet_find_utxo(w, w, 100, NULL, 253,
 					    0 /* no confirmations required */,
+					    false,
 					    utxos)) != NULL) {
 		tal_arr_expand(&utxos, one_utxo);
 	}
@@ -1166,6 +1214,7 @@ static bool test_wallet_outputs(struct lightningd *ld, const tal_t *ctx)
 	utxos = tal_arr(w, const struct utxo *, 0);
 	while ((one_utxo = wallet_find_utxo(w, w, 104, NULL, 253,
 					    0 /* no confirmations required */,
+					    false,
 					    utxos)) != NULL) {
 		tal_arr_expand(&utxos, one_utxo);
 	}
@@ -1182,6 +1231,35 @@ static bool test_wallet_outputs(struct lightningd *ld, const tal_t *ctx)
 	}
 	/* Now un-reserve them */
 	tal_free(utxos);
+
+	/* Check that nonwrapped flag works */
+	utxos = tal_arr(w, const struct utxo *, 0);
+	while ((one_utxo = wallet_find_utxo(w, w, 100, NULL, 253,
+					    0 /* no confirmations required */,
+					    true,
+					    utxos)) != NULL) {
+		tal_arr_expand(&utxos, one_utxo);
+	}
+	/* No nonwrapped outputs available */
+	CHECK(tal_count(utxos) == 0);
+	tal_free(utxos);
+
+	/* So we add one... */
+	memset(&u.outpoint, 4, sizeof(u.outpoint));
+	u.amount = AMOUNT_SAT(4);
+	u.close_info = tal_free(u.close_info);
+	CHECK_MSG(wallet_add_utxo(w, &u, p2wpkh),
+		  "wallet_add_utxo failed, p2wpkh");
+
+	utxos = tal_arr(w, const struct utxo *, 0);
+	while ((one_utxo = wallet_find_utxo(w, w, 100, NULL, 253,
+					    0 /* no confirmations required */,
+					    true,
+					    utxos)) != NULL) {
+		tal_arr_expand(&utxos, one_utxo);
+	}
+	/* And that's what comes back */
+	CHECK(tal_count(utxos) == 1);
 
 	db_commit_transaction(w->db);
 	return true;
@@ -1252,6 +1330,7 @@ static bool channel_inflightseq(struct channel_inflight *i1,
 		    &i2->last_sig, sizeof(i2->last_sig)));
 	CHECK(bitcoin_tx_eq(i1->last_tx, i2->last_tx));
 
+	CHECK(amount_sat_eq(i1->lease_amt, i2->lease_amt));
 	CHECK(!i1->lease_commit_sig == !i2->lease_commit_sig);
 	if (i1->lease_commit_sig)
 		CHECK(memeq(i1->lease_commit_sig, sizeof(*i1->lease_commit_sig),
@@ -1421,8 +1500,7 @@ static bool test_channel_crud(struct lightningd *ld, const tal_t *ctx)
 	c1.blockheight_states = new_height_states(w, c1.opener, &blockheight);
 	mempat(scriptpubkey, tal_count(scriptpubkey));
 	c1.first_blocknum = 1;
-	parse_wireaddr_internal("localhost:1234", &addr, 0, false, false, false,
-				NULL);
+	assert(parse_wireaddr_internal(tmpctx, "localhost:1234", 0, false, &addr) == NULL);
 	c1.final_key_idx = 1337;
 	p = new_peer(ld, 0, &id, &addr, false);
 	c1.peer = p;
@@ -1584,8 +1662,7 @@ static bool test_channel_inflight_crud(struct lightningd *ld, const tal_t *ctx)
 
 	pubkey_from_der(tal_hexdata(w, "02a1633cafcc01ebfb6d78e39f687a1f0995c62fc95f51ead10a02ee0be551b5dc", 66), 33, &pk);
 	node_id_from_pubkey(&id, &pk);
-	parse_wireaddr_internal("localhost:1234", &addr, 0, false, false, false,
-				NULL);
+	assert(parse_wireaddr_internal(tmpctx, "localhost:1234", 0, false, &addr) == NULL);
 
 	/* new channel! */
 	p = new_peer(ld, 0, &id, &addr, false);
@@ -1622,7 +1699,7 @@ static bool test_channel_inflight_crud(struct lightningd *ld, const tal_t *ctx)
 			   NULL,
 			   DUALOPEND_AWAITING_LOCKIN,
 			   LOCAL, NULL, "billboard",
-			   8, &our_config,
+			   8, false, false, &our_config,
 			   101, 1, 1, 1,
 			   &outpoint,
 			   funding_sats, AMOUNT_MSAT(0),
@@ -1674,7 +1751,8 @@ static bool test_channel_inflight_crud(struct lightningd *ld, const tal_t *ctx)
 				last_tx,
 				sig,
 				1, lease_commit_sig, 2, 4, 22,
-				AMOUNT_MSAT(10));
+				AMOUNT_MSAT(10),
+				AMOUNT_SAT(1111));
 
 	/* do inflights get correctly added to the channel? */
 	wallet_inflight_add(w, inflight);
@@ -1697,7 +1775,8 @@ static bool test_channel_inflight_crud(struct lightningd *ld, const tal_t *ctx)
 				last_tx,
 				sig,
 				0, NULL, 0, 0, 0,
-				AMOUNT_MSAT(0));
+				AMOUNT_MSAT(0),
+				AMOUNT_SAT(0));
 	wallet_inflight_add(w, inflight);
 	CHECK_MSG(c2 = wallet_channel_load(w, chan->dbid),
 		  tal_fmt(w, "Load from DB"));
@@ -1708,7 +1787,7 @@ static bool test_channel_inflight_crud(struct lightningd *ld, const tal_t *ctx)
 
 	/* Update the PSBT for both inflights, check that are updated
 	 * correctly on save */
-	funding_psbt = psbt_from_b64(w, "cHNidP8BAD8CAAAAAf//////////////////////////////////////////AAAAAAD/////AQAAAAAAAAAAA2oBAAAAAAAACg8BAgMEBQYHCAkPAQIDBAUGBwgJCgsMDQ4PAAA=", strlen("cHNidP8BAD8CAAAAAf//////////////////////////////////////////AAAAAAD/////AQAAAAAAAAAAA2oBAAAAAAAACg8BAgMEBQYHCAkPAQIDBAUGBwgJCgsMDQ4PAAA="));
+	funding_psbt = psbt_from_b64(w, "cHNidP8BAD8CAAAAAf//////////////////////////////////////////AAAAAAD/////AQAAAAAAAAAAA2oBAAAAAAAADfwB7g8BAgMEBQYHCAkPAQIDBAUGBwgJCgsMDQ4PAAA=", strlen("cHNidP8BAD8CAAAAAf//////////////////////////////////////////AAAAAAD/////AQAAAAAAAAAAA2oBAAAAAAAADfwB7g8BAgMEBQYHCAkPAQIDBAUGBwgJCgsMDQ4PAAA="));
 	list_for_each(&chan->inflights, inflight, list)
 		inflight->funding_psbt = funding_psbt;
 	wallet_channel_save(w, chan);
@@ -1930,6 +2009,7 @@ int main(int argc, const char *argv[])
 
 	ld = tal(tmpctx, struct lightningd);
 	ld->config = test_config;
+	ld->hsm_capabilities = NULL;
 
 	/* Only elements in ld we should access */
 	ld->peers = tal(ld, struct peer_node_id_map);

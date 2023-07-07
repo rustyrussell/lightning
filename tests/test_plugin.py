@@ -68,7 +68,7 @@ def test_option_passthrough(node_factory, directory):
         ], capture_output=True, check=True).stderr.decode('utf-8')
 
         # first come first serve
-        assert("error starting plugin '{}': option name '--greeting' is already taken".format(plugin_path2) in err_out)
+        assert("error starting plugin '{}': option name 'greeting' is already taken".format(plugin_path2) in err_out)
 
 
 def test_option_types(node_factory):
@@ -113,34 +113,46 @@ def test_option_types(node_factory):
     # the node should fail after start, and we get a stderr msg
     n.daemon.start(wait_for_initialized=False, stderr_redir=True)
     assert n.daemon.wait() == 1
-    wait_for(lambda: n.daemon.is_in_stderr('bool_opt: ! does not parse as type bool'))
+    wait_for(lambda: n.daemon.is_in_stderr("--bool_opt=!: Invalid argument '!'"))
 
     # What happens if we give it a bad int-option?
     n = node_factory.get_node(options={
         'plugin': plugin_path,
         'str_opt': 'ok',
         'int_opt': 'notok',
-        'bool_opt': 1,
+        'bool_opt': True,
     }, may_fail=True, start=False)
 
     # the node should fail after start, and we get a stderr msg
     n.daemon.start(wait_for_initialized=False, stderr_redir=True)
     assert n.daemon.wait() == 1
-    assert n.daemon.is_in_stderr('--int_opt: notok does not parse as type int')
+    assert n.daemon.is_in_stderr("--int_opt=notok: 'notok' is not a number")
+
+    # We no longer allow '1' or '0' as boolean options
+    n = node_factory.get_node(options={
+        'plugin': plugin_path,
+        'str_opt': 'ok',
+        'bool_opt': '1',
+    }, may_fail=True, start=False)
+
+    # the node should fail after start, and we get a stderr msg
+    n.daemon.start(wait_for_initialized=False, stderr_redir=True)
+    assert n.daemon.wait() == 1
+    assert n.daemon.is_in_stderr("--bool_opt=1: boolean plugin arguments must be true or false")
 
     # Flag opts shouldn't allow any input
     n = node_factory.get_node(options={
         'plugin': plugin_path,
         'str_opt': 'ok',
         'int_opt': 11,
-        'bool_opt': 1,
+        'bool_opt': True,
         'flag_opt': True,
     }, may_fail=True, start=False)
 
     # the node should fail after start, and we get a stderr msg
     n.daemon.start(wait_for_initialized=False, stderr_redir=True)
     assert n.daemon.wait() == 1
-    assert n.daemon.is_in_stderr("--flag_opt: doesn't allow an argument")
+    assert n.daemon.is_in_stderr("--flag_opt=True: doesn't allow an argument")
 
     n = node_factory.get_node(options={
         'plugin': plugin_path,
@@ -351,7 +363,7 @@ def test_plugin_disable(node_factory):
     n = node_factory.get_node(options={'disable-plugin':
                                        ['something-else.py', 'helloworld.py']})
 
-    assert n.rpc.listconfigs()['disable-plugin'] == ['something-else.py', 'helloworld.py']
+    assert n.rpc.listconfigs()['configs']['disable-plugin'] == {'values_str': ['something-else.py', 'helloworld.py'], 'sources': ['cmdline', 'cmdline']}
 
 
 def test_plugin_hook(node_factory, executor):
@@ -657,13 +669,14 @@ def test_openchannel_hook(node_factory, bitcoind):
         # openchannel2 var checks
         expected.update({
             'channel_id': '.*',
+            'channel_max_msat': 16777215000,
             'commitment_feerate_per_kw': '7500',
             'funding_feerate_per_kw': '7500',
             'feerate_our_max': '150000',
             'feerate_our_min': '1875',
             'locktime': '.*',
+            'require_confirmed_inputs': False,
             'their_funding_msat': 100000000,
-            'channel_max_msat': 16777215000,
         })
     else:
         expected.update({
@@ -742,8 +755,11 @@ def test_openchannel_hook_chaining(node_factory, bitcoind):
     # the third plugin must now not be called anymore
     assert not l2.daemon.is_in_log("reject on principle")
 
-    wait_for(lambda: l1.rpc.listpeers()['peers'] == [])
-    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    if not EXPERIMENTAL_DUAL_FUND:
+        wait_for(lambda: l1.rpc.listpeers()['peers'] == [])
+        l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    else:
+        assert only_one(l1.rpc.listpeers()['peers'])['connected']
     # 100000sat is good for hook_accepter, so it should fail 'on principle'
     # at third hook openchannel_reject.py
     with pytest.raises(RpcError, match=r'reject on principle'):
@@ -1328,13 +1344,13 @@ def test_forward_event_notification(node_factory, bitcoind, executor):
     l2.daemon.wait_for_log(' to ONCHAIN')
     l5.daemon.wait_for_log(' to ONCHAIN')
 
-    l2.daemon.wait_for_log('Propose handling THEIR_UNILATERAL/OUR_HTLC by OUR_HTLC_TIMEOUT_TO_US .* after 6 blocks')
-    bitcoind.generate_block(6)
+    _, txid, blocks = l2.wait_for_onchaind_tx('OUR_HTLC_TIMEOUT_TO_US',
+                                              'THEIR_UNILATERAL/OUR_HTLC')
+    assert blocks == 5
+    bitcoind.generate_block(5)
 
-    l2.wait_for_onchaind_broadcast('OUR_HTLC_TIMEOUT_TO_US',
-                                   'THEIR_UNILATERAL/OUR_HTLC')
-
-    bitcoind.generate_block(1)
+    # Could be RBF!
+    l2.mine_txid_or_rbf(txid)
     l2.daemon.wait_for_log('Resolved THEIR_UNILATERAL/OUR_HTLC by our proposal OUR_HTLC_TIMEOUT_TO_US')
     l5.daemon.wait_for_log('Ignoring output.*: OUR_UNILATERAL/THEIR_HTLC')
 
@@ -1495,8 +1511,8 @@ def test_libplugin(node_factory):
 
     # Test startup
     assert l1.daemon.is_in_log("test_libplugin initialised!")
-    assert l1.daemon.is_in_log("String name from datastore: NOT FOUND")
-    assert l1.daemon.is_in_log("Hex name from datastore: NOT FOUND")
+    assert l1.daemon.is_in_log("String name from datastore:.*token has no index 0")
+    assert l1.daemon.is_in_log("Hex name from datastore:.*token has no index 0")
 
     # This will look on datastore for default, won't find it.
     assert l1.rpc.call("helloworld") == {"hello": "NOT FOUND"}
@@ -1515,7 +1531,7 @@ def test_libplugin(node_factory):
     # yet whether strings are allowed:
     l1.daemon.wait_for_log(r"test_libplugin: [0-9]*\[OUT\]")
 
-    l1.daemon.wait_for_log("String name from datastore: NOT FOUND")
+    l1.daemon.wait_for_log("String name from datastore:.*object does not have member string")
     l1.daemon.wait_for_log("Hex name from datastore: 00010203")
 
     # Test commands
@@ -1556,7 +1572,7 @@ def test_libplugin(node_factory):
     with pytest.raises(RpcError, match=r"Deprecated command.*testrpc-deprecated"):
         l1.rpc.help('testrpc-deprecated')
 
-    assert 'somearg-deprecated' not in str(l1.rpc.listconfigs())
+    assert 'somearg-deprecated' not in str(l1.rpc.listconfigs()['configs'])
 
     l1.stop()
     l1.daemon.opts["somearg-deprecated"] = "test_opt"
@@ -1564,7 +1580,7 @@ def test_libplugin(node_factory):
     l1.daemon.start(wait_for_initialized=False, stderr_redir=True)
     # Will exit with failure code.
     assert l1.daemon.wait() == 1
-    assert l1.daemon.is_in_stderr(r"somearg-deprecated: deprecated option")
+    assert l1.daemon.is_in_stderr(r"somearg-deprecated=test_opt: deprecated option")
 
     del l1.daemon.opts["somearg-deprecated"]
     l1.start()
@@ -1606,15 +1622,10 @@ def test_plugin_feature_announce(node_factory):
         wait_for_announce=True
     )
 
-    extra = []
-    if l1.config('experimental-dual-fund'):
-        extra.append(21)  # option-anchor-outputs
-        extra.append(29)  # option-dual-fund
-
     # Check the featurebits we've set in the `init` message from
     # feature-test.py.
     assert l1.daemon.is_in_log(r'\[OUT\] 001000022100....{}'
-                               .format(expected_peer_features(extra=[201] + extra)))
+                               .format(expected_peer_features(extra=[201])))
 
     # Check the invoice featurebit we set in feature-test.py
     inv = l1.rpc.invoice(123, 'lbl', 'desc')['bolt11']
@@ -1623,7 +1634,7 @@ def test_plugin_feature_announce(node_factory):
 
     # Check the featurebit set in the `node_announcement`
     node = l1.rpc.listnodes(l1.info['id'])['nodes'][0]
-    assert node['features'] == expected_node_features(extra=[203] + extra)
+    assert node['features'] == expected_node_features(extra=[203])
 
 
 def test_hook_chaining(node_factory):
@@ -1745,12 +1756,10 @@ def test_bcli(node_factory, bitcoind, chainparams):
 
     # Failure case of feerate is tested in test_misc.py
     estimates = l1.rpc.call("estimatefees")
-    for est in ["opening", "mutual_close", "unilateral_close", "delayed_to_us",
-                "htlc_resolution", "penalty", "min_acceptable",
-                "max_acceptable"]:
-        assert est in estimates
+    assert 'feerate_floor' in estimates
+    assert [f['blocks'] for f in estimates['feerates']] == [2, 6, 12, 100]
 
-    resp = l1.rpc.call("getchaininfo")
+    resp = l1.rpc.call("getchaininfo", {"last_height": 0})
     assert resp["chain"] == chainparams['name']
     for field in ["headercount", "blockcount", "ibd"]:
         assert field in resp
@@ -2431,12 +2440,11 @@ def test_dynamic_args(node_factory):
     l1.rpc.plugin_start(plugin_path, greeting='Test arg parsing')
 
     assert l1.rpc.call("hello") == "Test arg parsing world"
-    plugin = only_one([p for p in l1.rpc.listconfigs()['plugins'] if p['path'] == plugin_path])
-    assert plugin['options']['greeting'] == 'Test arg parsing'
+    assert l1.rpc.listconfigs('greeting')['configs']['greeting']['value_str'] == 'Test arg parsing'
+    assert l1.rpc.listconfigs('greeting')['configs']['greeting']['plugin'] == plugin_path
 
     l1.rpc.plugin_stop(plugin_path)
-
-    assert [p for p in l1.rpc.listconfigs()['plugins'] if p['path'] == plugin_path] == []
+    assert 'greeting' not in l1.rpc.listconfigs()['configs']
 
 
 def test_pyln_request_notify(node_factory):
@@ -2523,7 +2531,7 @@ def test_custom_notification_topics(node_factory):
 
     # The plugin just dist what previously was a fatal mistake (emit
     # an unknown notification), make sure we didn't kill it.
-    assert 'custom_notifications.py' in [p['name'] for p in l1.rpc.listconfigs()['plugins']]
+    assert str(plugin) in [p['name'] for p in l1.rpc.plugin_list()['plugins']]
 
 
 def test_restart_on_update(node_factory):
@@ -2946,6 +2954,177 @@ def test_commando_rune(node_factory):
                              'params': params})
 
 
+def test_commando_listrunes(node_factory):
+    l1 = node_factory.get_node()
+    rune = l1.rpc.commando_rune()
+    assert rune == {
+        'rune': 'OSqc7ixY6F-gjcigBfxtzKUI54uzgFSA6YfBQoWGDV89MA==',
+        'unique_id': '0',
+        'warning_unrestricted_rune': 'WARNING: This rune has no restrictions! Anyone who has access to this rune could drain funds from your node. Be careful when giving this to apps that you don\'t trust. Consider using the restrictions parameter to only allow access to specific rpc methods.'
+    }
+    listrunes = l1.rpc.commando_listrunes()
+    assert len(l1.rpc.commando_listrunes()) == 1
+    rune = l1.rpc.commando_rune()
+    listrunes = l1.rpc.commando_listrunes()
+    assert len(listrunes['runes']) == 2
+    assert listrunes == {
+        'runes': [
+            {
+                'rune': 'OSqc7ixY6F-gjcigBfxtzKUI54uzgFSA6YfBQoWGDV89MA==',
+                'unique_id': '0',
+                'restrictions': [],
+                'restrictions_as_english': ''
+            },
+            {
+                'rune': 'geZmO6U7yqpHn-moaX93FVMVWrDRfSNY4AXx9ypLcqg9MQ==',
+                'unique_id': '1',
+                'restrictions': [],
+                'restrictions_as_english': ''
+            }
+        ]
+    }
+    our_unstored_rune = l1.rpc.commando_listrunes(rune='M8f4jNx9gSP2QoiRbr10ybwzFxUgd-rS4CR4yofMSuA9Mg==')['runes'][0]
+    assert our_unstored_rune['stored'] is False
+
+    not_our_rune = l1.rpc.commando_listrunes(rune='Am3W_wI0PRn4qVNEsJ2iInHyFPQK8wfdqEXztm8-icQ9MA==')['runes'][0]
+    assert not_our_rune['stored'] is False
+    assert not_our_rune['our_rune'] is False
+
+
+def test_commando_rune_pay_amount(node_factory):
+    l1, l2 = node_factory.line_graph(2)
+
+    # This doesn't really work, since amount_msat is illegal if invoice
+    # includes an amount, and runes aren't smart enough to decode bolt11!
+    rune = l1.rpc.commando_rune(restrictions=[['method=pay'],
+                                              ['pnameamountmsat<10000']])['rune']
+    inv1 = l2.rpc.invoice(amount_msat=12300, label='inv1', description='description1')['bolt11']
+    inv2 = l2.rpc.invoice(amount_msat='any', label='inv2', description='description2')['bolt11']
+
+    # Rune requires amount_msat!
+    with pytest.raises(RpcError, match='Not authorized:'):
+        l2.rpc.commando(peer_id=l1.info['id'],
+                        rune=rune,
+                        method='pay',
+                        params={'bolt11': inv1})
+
+    # As a named parameter!
+    with pytest.raises(RpcError, match='Not authorized:'):
+        l2.rpc.commando(peer_id=l1.info['id'],
+                        rune=rune,
+                        method='pay',
+                        params=[inv1])
+
+    # Can't get around it this way!
+    with pytest.raises(RpcError, match='Not authorized:'):
+        l2.rpc.commando(peer_id=l1.info['id'],
+                        rune=rune,
+                        method='pay',
+                        params=[inv2, 12000])
+
+    # Nor this way, using a string!
+    with pytest.raises(RpcError, match='Not authorized:'):
+        l2.rpc.commando(peer_id=l1.info['id'],
+                        rune=rune,
+                        method='pay',
+                        params={'bolt11': inv2, 'amount_msat': '10000sat'})
+
+    # Too much!
+    with pytest.raises(RpcError, match='Not authorized:'):
+        l2.rpc.commando(peer_id=l1.info['id'],
+                        rune=rune,
+                        method='pay',
+                        params={'bolt11': inv2, 'amount_msat': 12000})
+
+    # This works
+    l2.rpc.commando(peer_id=l1.info['id'],
+                    rune=rune,
+                    method='pay',
+                    params={'bolt11': inv2, 'amount_msat': 9999})
+
+
+def test_commando_blacklist(node_factory):
+    l1, l2 = node_factory.get_nodes(2)
+
+    l2.connect(l1)
+    rune0 = l1.rpc.commando_rune()
+    assert rune0['unique_id'] == '0'
+    rune1 = l1.rpc.commando_rune()
+    assert rune1['unique_id'] == '1'
+
+    # Make sure runes work!
+    assert l2.rpc.call(method='commando',
+                       payload={'peer_id': l1.info['id'],
+                                'rune': rune0['rune'],
+                                'method': 'getinfo',
+                                'params': []})['id'] == l1.info['id']
+
+    assert l2.rpc.call(method='commando',
+                       payload={'peer_id': l1.info['id'],
+                                'rune': rune1['rune'],
+                                'method': 'getinfo',
+                                'params': []})['id'] == l1.info['id']
+
+    blacklist = l1.rpc.commando_blacklist(start=1)
+    assert blacklist == {'blacklist': [{'start': 1, 'end': 1}]}
+
+    # Make sure rune id 1 does not work!
+    with pytest.raises(RpcError, match='Not authorized: Blacklisted rune'):
+        assert l2.rpc.call(method='commando',
+                           payload={'peer_id': l1.info['id'],
+                                    'rune': rune1['rune'],
+                                    'method': 'getinfo',
+                                    'params': []})['id'] == l1.info['id']
+
+    # But, other rune still works!
+    assert l2.rpc.call(method='commando',
+                       payload={'peer_id': l1.info['id'],
+                                'rune': rune0['rune'],
+                                'method': 'getinfo',
+                                'params': []})['id'] == l1.info['id']
+
+    blacklist = l1.rpc.commando_blacklist(start=2)
+    assert blacklist == {'blacklist': [{'start': 1, 'end': 2}]}
+
+    blacklist = l1.rpc.commando_blacklist(start=6)
+    assert blacklist == {'blacklist': [{'start': 1, 'end': 2},
+                                       {'start': 6, 'end': 6}]}
+
+    blacklist = l1.rpc.commando_blacklist(start=3, end=5)
+    assert blacklist == {'blacklist': [{'start': 1, 'end': 6}]}
+
+    blacklist = l1.rpc.commando_blacklist(start=9)
+    assert blacklist == {'blacklist': [{'start': 1, 'end': 6},
+                                       {'start': 9, 'end': 9}]}
+
+    blacklist = l1.rpc.commando_blacklist(start=0)
+    assert blacklist == {'blacklist': [{'start': 0, 'end': 6},
+                                       {'start': 9, 'end': 9}]}
+
+    # Now both runes fail!
+    with pytest.raises(RpcError, match='Not authorized: Blacklisted rune'):
+        assert l2.rpc.call(method='commando',
+                           payload={'peer_id': l1.info['id'],
+                                    'rune': rune0['rune'],
+                                    'method': 'getinfo',
+                                    'params': []})['id'] == l1.info['id']
+
+    with pytest.raises(RpcError, match='Not authorized: Blacklisted rune'):
+        assert l2.rpc.call(method='commando',
+                           payload={'peer_id': l1.info['id'],
+                                    'rune': rune1['rune'],
+                                    'method': 'getinfo',
+                                    'params': []})['id'] == l1.info['id']
+
+    blacklist = l1.rpc.commando_blacklist()
+    assert blacklist == {'blacklist': [{'start': 0, 'end': 6},
+                                       {'start': 9, 'end': 9}]}
+
+    blacklisted_rune = l1.rpc.commando_listrunes(rune='geZmO6U7yqpHn-moaX93FVMVWrDRfSNY4AXx9ypLcqg9MQ==')['runes'][0]['blacklisted']
+    assert blacklisted_rune is True
+
+
+@pytest.mark.slow_test
 def test_commando_stress(node_factory, executor):
     """Stress test to slam commando with many large queries"""
     nodes = node_factory.get_nodes(5)
@@ -3143,6 +3322,14 @@ def test_autoclean(node_factory):
     assert l2.rpc.getinfo()['fees_collected_msat'] == amt_before
 
 
+def test_autoclean_timer_crash(node_factory):
+    """Running two autocleans at once crashed timer code"""
+    node_factory.get_node(options={'autoclean-cycle': 1,
+                                   'autoclean-failedforwards-age': 31536000,
+                                   'autoclean-expiredinvoices-age': 31536000})
+    time.sleep(20)
+
+
 def test_autoclean_once(node_factory):
     l1, l2, l3 = node_factory.line_graph(3, opts={'may_reconnect': True},
                                          wait_for_announce=True)
@@ -3277,16 +3464,20 @@ def test_block_added_notifications(node_factory, bitcoind):
     assert len(ret) == 3 and ret[1] == next_l2_base + 1 and ret[2] == next_l2_base + 2
 
 
-@pytest.mark.openchannel('v2')
+@unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("wants dev-announce-localhost so we see listnodes.addresses")
 def test_sql(node_factory, bitcoind):
     opts = {'experimental-offers': None,
-            'dev-allow-localhost': None}
+            'experimental-dual-fund': None,
+            'dev-allow-localhost': None,
+            'may_reconnect': True}
     l2opts = {'lease-fee-basis': 50,
+              'experimental-dual-fund': None,
               'lease-fee-base-sat': '2000msat',
               'channel-fee-max-base-msat': '500sat',
               'channel-fee-max-proportional-thousandths': 200,
-              'sqlfilename': 'sql.sqlite3'}
+              'sqlfilename': 'sql.sqlite3',
+              'may_reconnect': True}
     l2opts.update(opts)
     l1, l2, l3 = node_factory.line_graph(3, wait_for_announce=True,
                                          opts=[opts, l2opts, opts])
@@ -3294,8 +3485,8 @@ def test_sql(node_factory, bitcoind):
     ret = l2.rpc.sql("SELECT * FROM forwards;")
     assert ret == {'rows': []}
 
-    # This should create a forward through l2
-    l1.rpc.pay(l3.rpc.invoice(amount_msat=12300, label='inv1', description='description')['bolt11'])
+    # Test that we correctly clean up subtables!
+    assert len(l2.rpc.sql("SELECT * from peerchannels_features")['rows']) == len(l2.rpc.sql("SELECT * from peerchannels_features")['rows'])
 
     expected_schemas = {
         'channels': {
@@ -3332,6 +3523,69 @@ def test_sql(node_factory, bitcoind):
                          'type': 'msat'},
                         {'name': 'features',
                          'type': 'hex'}]},
+        'closedchannels': {
+            'columns': [{'name': 'peer_id',
+                         'type': 'pubkey'},
+                        {'name': 'channel_id',
+                         'type': 'hash'},
+                        {'name': 'short_channel_id',
+                         'type': 'short_channel_id'},
+                        {'name': 'alias_local',
+                         'type': 'short_channel_id'},
+                        {'name': 'alias_remote',
+                         'type': 'short_channel_id'},
+                        {'name': 'opener',
+                         'type': 'string'},
+                        {'name': 'closer',
+                         'type': 'string'},
+                        {'name': 'private',
+                         'type': 'boolean'},
+                        {'name': 'total_local_commitments',
+                         'type': 'u64'},
+                        {'name': 'total_remote_commitments',
+                         'type': 'u64'},
+                        {'name': 'total_htlcs_sent',
+                         'type': 'u64'},
+                        {'name': 'funding_txid',
+                         'type': 'txid'},
+                        {'name': 'funding_outnum',
+                         'type': 'u32'},
+                        {'name': 'leased',
+                         'type': 'boolean'},
+                        {'name': 'funding_fee_paid_msat',
+                         'type': 'msat'},
+                        {'name': 'funding_fee_rcvd_msat',
+                         'type': 'msat'},
+                        {'name': 'funding_pushed_msat',
+                         'type': 'msat'},
+                        {'name': 'total_msat',
+                         'type': 'msat'},
+                        {'name': 'final_to_us_msat',
+                         'type': 'msat'},
+                        {'name': 'min_to_us_msat',
+                         'type': 'msat'},
+                        {'name': 'max_to_us_msat',
+                         'type': 'msat'},
+                        {'name': 'last_commitment_txid',
+                         'type': 'txid'},
+                        {'name': 'last_commitment_fee_msat',
+                         'type': 'msat'},
+                        {'name': 'close_cause',
+                         'type': 'string'}]},
+        'closedchannels_channel_type_bits': {
+            'columns': [{'name': 'row',
+                         'type': 'u64'},
+                        {'name': 'arrindex',
+                         'type': 'u64'},
+                        {'name': 'bits',
+                         'type': 'u64'}]},
+        'closedchannels_channel_type_names': {
+            'columns': [{'name': 'row',
+                         'type': 'u64'},
+                        {'name': 'arrindex',
+                         'type': 'u64'},
+                        {'name': 'names',
+                         'type': 'string'}]},
         'nodes': {
             'indices': [['nodeid']],
             'columns': [{'name': 'nodeid',
@@ -3462,6 +3716,8 @@ def test_sql(node_factory, bitcoind):
                          'type': 'pubkey'},
                         {'name': 'connected',
                          'type': 'boolean'},
+                        {'name': 'num_channels',
+                         'type': 'u32'},
                         {'name': 'remote_addr',
                          'type': 'string'},
                         {'name': 'features',
@@ -3684,6 +3940,20 @@ def test_sql(node_factory, bitcoind):
                          'type': 'string'},
                         {'name': 'message',
                          'type': 'string'}]},
+        'peerchannels_channel_type_bits': {
+            'columns': [{'name': 'row',
+                         'type': 'u64'},
+                        {'name': 'arrindex',
+                         'type': 'u64'},
+                        {'name': 'bits',
+                         'type': 'u64'}]},
+        'peerchannels_channel_type_names': {
+            'columns': [{'name': 'row',
+                         'type': 'u64'},
+                        {'name': 'arrindex',
+                         'type': 'u64'},
+                        {'name': 'names',
+                         'type': 'string'}]},
         'transactions': {
             'indices': [['hash']],
             'columns': [{'name': 'hash',
@@ -3708,11 +3978,7 @@ def test_sql(node_factory, bitcoind):
                         {'name': 'idx',
                          'type': 'u32'},
                         {'name': 'sequence',
-                         'type': 'u32'},
-                        {'name': 'type',
-                         'type': 'string'},
-                        {'name': 'channel',
-                         'type': 'short_channel_id'}]},
+                         'type': 'u32'}]},
         'transactions_outputs': {
             'columns': [{'name': 'row',
                          'type': 'u64'},
@@ -3723,11 +3989,7 @@ def test_sql(node_factory, bitcoind):
                         {'name': 'amount_msat',
                          'type': 'msat'},
                         {'name': 'scriptPubKey',
-                         'type': 'hex'},
-                        {'name': 'type',
-                         'type': 'string'},
-                        {'name': 'channel',
-                         'type': 'short_channel_id'}]},
+                         'type': 'hex'}]},
         'bkpr_accountevents': {
             'columns': [{'name': 'account',
                          'type': 'string'},
@@ -3798,18 +4060,33 @@ def test_sql(node_factory, bitcoind):
                   'number': 'REAL',
                   'short_channel_id': 'TEXT'}
 
-    # Check schemas match.
+    # Check schemas match (each one has rowid at start)
+    rowidcol = {'name': 'rowid', 'type': 'u64'}
     for table, schema in expected_schemas.items():
         res = only_one(l2.rpc.listsqlschemas(table)['schemas'])
         assert res['tablename'] == table
         assert res.get('indices') == schema.get('indices')
-        sqlcolumns = [{'name': c['name'], 'type': sqltypemap[c['type']]} for c in schema['columns']]
+        sqlcolumns = [{'name': c['name'], 'type': sqltypemap[c['type']]} for c in [rowidcol] + schema['columns']]
         assert res['columns'] == sqlcolumns
 
     # Make sure we didn't miss any
     assert (sorted([s['tablename'] for s in l1.rpc.listsqlschemas()['schemas']])
             == sorted(expected_schemas.keys()))
     assert len(l1.rpc.listsqlschemas()['schemas']) == len(expected_schemas)
+
+    # We need one closed channel (but open a new one)
+    l2.rpc.close(l1.info['id'])
+    bitcoind.generate_block(1, wait_for_mempool=1)
+    scid, _ = l1.fundchannel(l2)
+    # Completely forget old channel
+    bitcoind.generate_block(99)
+    wait_for(lambda: len(l2.rpc.listpeerchannels()['channels']) == 2)
+
+    # Make sure l3 sees new channel
+    wait_for(lambda: len(l3.rpc.listchannels(scid)['channels']) == 2)
+
+    # This should create a forward through l2
+    l1.rpc.pay(l3.rpc.invoice(amount_msat=12300, label='inv1', description='description')['bolt11'])
 
     # Very rough checks of other list commands (make sure l2 has one of each)
     l2.rpc.offer(1, 'desc')
@@ -3827,7 +4104,11 @@ def test_sql(node_factory, bitcoind):
 
     for table, schema in expected_schemas.items():
         ret = l2.rpc.sql("SELECT * FROM {};".format(table))
-        assert len(ret['rows'][0]) == len(schema['columns'])
+        assert len(ret['rows'][0]) == 1 + len(schema['columns'])
+
+        # First column is always rowid!
+        for row in ret['rows']:
+            assert row[0] > 0
 
         for col in schema['columns']:
             val = only_one(l2.rpc.sql("SELECT {} FROM {};".format(col['name'], table))['rows'][0])
@@ -3903,6 +4184,18 @@ def test_sql(node_factory, bitcoind):
                       " option_will_fund_compact_lease"
                       " FROM nodes WHERE HEX(nodeid) = '{}';".format(l1.info['id'].upper())) == {'rows': [[None] * 6]}
 
+    # Test that nodes get updated.
+    l2.stop()
+    l2.daemon.opts["alias"] = "TESTALIAS"
+    # Don't try to reuse the same db file!
+    del l2.daemon.opts["sqlfilename"]
+    l2.start()
+    # DEV appends stuff to alias!
+    alias = l2.rpc.getinfo()['alias']
+    assert alias == "TESTALIAS"
+    l2.rpc.connect(l3.info['id'], 'localhost', l3.port)
+    wait_for(lambda: l3.rpc.sql("SELECT * FROM nodes WHERE alias = '{}'".format(alias))['rows'] != [])
+
 
 def test_sql_deprecated(node_factory, bitcoind):
     # deprecated-apis breaks schemas...
@@ -3915,3 +4208,46 @@ def test_sql_deprecated(node_factory, bitcoind):
 
     #  ret = l1.rpc.sql("SELECT funding_local_msat, funding_remote_msat FROM peerchannels;")
     #  assert ret == {'rows': []}
+
+
+def test_plugin_persist_option(node_factory):
+    """test that options from config file get remembered across plugin stop/start"""
+    plugin_path = os.path.join(os.getcwd(), 'contrib/plugins/helloworld.py')
+
+    l1 = node_factory.get_node(options={"plugin": plugin_path,
+                                        "greeting": "Static option"})
+    assert l1.rpc.call("hello") == "Static option world"
+    c = l1.rpc.listconfigs('greeting')['configs']['greeting']
+    assert c['source'] == "cmdline"
+    assert c['value_str'] == "Static option"
+    assert c['plugin'] == plugin_path
+    l1.rpc.plugin_stop(plugin_path)
+    assert 'greeting' not in l1.rpc.listconfigs()['configs']
+
+    # Restart works
+    l1.rpc.plugin_start(plugin_path)
+    c = l1.rpc.listconfigs('greeting')['configs']['greeting']
+    assert c['source'] == "cmdline"
+    assert c['value_str'] == "Static option"
+    assert c['plugin'] == plugin_path
+    assert l1.rpc.call("hello") == "Static option world"
+    l1.rpc.plugin_stop(plugin_path)
+    assert 'greeting' not in l1.rpc.listconfigs()['configs']
+
+    # This overrides!
+    l1.rpc.plugin_start(plugin_path, greeting="Dynamic option")
+    c = l1.rpc.listconfigs('greeting')['configs']['greeting']
+    assert c['source'] == "pluginstart"
+    assert c['value_str'] == "Dynamic option"
+    assert c['plugin'] == plugin_path
+    assert l1.rpc.call("hello") == "Dynamic option world"
+    l1.rpc.plugin_stop(plugin_path)
+    assert 'greeting' not in l1.rpc.listconfigs()['configs']
+
+    # Now restored!
+    l1.rpc.plugin_start(plugin_path)
+    c = l1.rpc.listconfigs('greeting')['configs']['greeting']
+    assert c['source'] == "cmdline"
+    assert c['value_str'] == "Static option"
+    assert c['plugin'] == plugin_path
+    assert l1.rpc.call("hello") == "Static option world"

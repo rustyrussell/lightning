@@ -10,6 +10,10 @@ struct channel_type *channel_type_none(const tal_t *ctx);
 struct channel_type *channel_type_static_remotekey(const tal_t *ctx);
 struct channel_type *channel_type_anchor_outputs(const tal_t *ctx);
 
+/* channel_type variants */
+void channel_type_set_zeroconf(struct channel_type *channel_type);
+void channel_type_set_scid_alias(struct channel_type *channel_type);
+
 /* Duplicate a channel_type */
 struct channel_type *channel_type_dup(const tal_t *ctx,
 				      const struct channel_type *t);
@@ -34,5 +38,9 @@ bool channel_type_eq(const struct channel_type *a,
 struct channel_type *channel_type_accept(const tal_t *ctx,
 					 const u8 *t,
 					 const struct feature_set *our_features,
-					 const u8 *their_features);
+					 const u8 *their_features,
+					 bool accept_zeroconf);
+
+/* Return an array of feature strings indicating channel type. */
+const char **channel_type_name(const tal_t *ctx, const struct channel_type *t);
 #endif /* LIGHTNING_COMMON_CHANNEL_TYPE_H */

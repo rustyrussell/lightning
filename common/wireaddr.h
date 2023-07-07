@@ -30,10 +30,6 @@ struct sockaddr_un;
  *   * `5`: DNS hostname; data = `[byte:len][len*byte:hostname][u16:port]` (length up to 258)
  */
 
-/* BOLT-websockets #7:
- *    * `6`: WebSocket port; data = `[2:port]` (length 2)
- */
-
 #define	TOR_V2_ADDRLEN 10
 #define	TOR_V3_ADDRLEN 35
 #define	DNS_ADDRLEN 255
@@ -47,7 +43,6 @@ enum wire_addr_type {
 	ADDR_TYPE_TOR_V2_REMOVED = 3,
 	ADDR_TYPE_TOR_V3 = 4,
 	ADDR_TYPE_DNS = 5,
-	ADDR_TYPE_WEBSOCKET = 6
 };
 
 struct wireaddr {
@@ -75,10 +70,25 @@ enum addr_listen_announce fromwire_addr_listen_announce(const u8 **cursor,
 							size_t *max);
 void towire_addr_listen_announce(u8 **pptr, enum addr_listen_announce ala);
 
-/* If no_dns is non-NULL, we will set it to true and return false if
- * we wanted to do a DNS lookup. */
-bool parse_wireaddr(const char *arg, struct wireaddr *addr, u16 port,
-		    bool *no_dns, const char **err_msg);
+/**
+ * parse_wireaddr - parse a string into the various defaults we have.
+ * @ctx: context to allocate returned error string
+ * @arg: the string
+ * @defport: the port to use if none specified in string
+ * @no_dns: if non-NULL, don't do DNS lookups.
+ * @addr: the addr to write, set if non-NULL return.
+ *
+ * If it returns NULL, check addr->itype to see if it's suitable for
+ * you!  Otherwise, it returns a string allocated off @ctx.  If you
+ * handed @no_dns, it will be set to true if the failure was due to
+ * the fact we wanted to do an DNS lookup, and false for other
+ * failures.
+ */
+const char *parse_wireaddr(const tal_t *ctx,
+			   const char *arg,
+			   u16 defport,
+			   bool *no_dns,
+			   struct wireaddr *addr);
 
 char *fmt_wireaddr(const tal_t *ctx, const struct wireaddr *a);
 char *fmt_wireaddr_without_port(const tal_t *ctx, const struct wireaddr *a);
@@ -98,10 +108,8 @@ void wireaddr_from_ipv4(struct wireaddr *addr,
 void wireaddr_from_ipv6(struct wireaddr *addr,
 			const struct in6_addr *ip6,
 			const u16 port);
-void wireaddr_from_websocket(struct wireaddr *addr, const u16 port);
 bool wireaddr_to_ipv4(const struct wireaddr *addr, struct sockaddr_in *s4);
 bool wireaddr_to_ipv6(const struct wireaddr *addr, struct sockaddr_in6 *s6);
-bool wireaddr_to_websocket(const struct wireaddr *addr, u16 *port);
 
 bool wireaddr_is_wildcard(const struct wireaddr *addr);
 
@@ -119,9 +127,15 @@ struct wireaddr_internal {
 	enum wireaddr_internal_type itype;
 	union {
 		/* ADDR_INTERNAL_WIREADDR */
-		struct wireaddr wireaddr;
+		struct waddr {
+			struct wireaddr wireaddr;
+			bool is_websocket;
+		} wireaddr;
 		/* ADDR_INTERNAL_ALLPROTO */
-		u16 port;
+		struct allproto {
+			u16 port;
+			bool is_websocket;
+		} allproto;
 		/* ADDR_INTERNAL_AUTOTOR
 		 * ADDR_INTERNAL_STATICTOR */
 		struct torservice {
@@ -156,10 +170,21 @@ bool is_wildcardaddr(const char *arg);
 
 bool is_dnsaddr(const char *arg);
 
-bool parse_wireaddr_internal(const char *arg, struct wireaddr_internal *addr,
-			     u16 port, bool wildcard_ok, bool dns_ok,
-			     bool unresolved_ok,
-			     const char **err_msg);
+/**
+ * parse_wireaddr_internal - parse a string into the various defaults we have.
+ * @ctx: context to allocate returned error string
+ * @arg: the string
+ * @default_port: the port to use if none specified in string
+ * @dns_lookup_ok: true if it's OK to do DNS name lookups.
+ * @addr: the addr to write, set if non-NULL return.
+ *
+ * If it returns NULL, you want to check addr->itype to see if it's
+ * suitable for you! */
+const char *parse_wireaddr_internal(const tal_t *ctx,
+				    const char *arg,
+				    u16 default_port,
+				    bool dns_lookup_ok,
+				    struct wireaddr_internal *addr);
 
 void towire_wireaddr_internal(u8 **pptr,
 				 const struct wireaddr_internal *addr);

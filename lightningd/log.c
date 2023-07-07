@@ -1,11 +1,11 @@
 #include "config.h"
 #include <ccan/err/err.h>
 #include <ccan/io/io.h>
-#include <ccan/opt/opt.h>
 #include <ccan/read_write_all/read_write_all.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/link/link.h>
 #include <ccan/tal/str/str.h>
+#include <common/configvar.h>
 #include <common/json_command.h>
 #include <common/json_param.h>
 #include <common/memleak.h>
@@ -606,7 +606,7 @@ void json_add_opt_log_levels(struct json_stream *response, struct log *log)
 	}
 }
 
-static void show_log_level(char buf[OPT_SHOW_LEN], const struct log *log)
+static bool show_log_level(char *buf, size_t len, const struct log *log)
 {
 	enum log_level l;
 
@@ -614,8 +614,8 @@ static void show_log_level(char buf[OPT_SHOW_LEN], const struct log *log)
 		l = *log->lr->default_print_level;
 	else
 		l = DEFAULT_LOGLEVEL;
-	strncpy(buf, log_level_name(l), OPT_SHOW_LEN - 1);
-	buf[OPT_SHOW_LEN - 1] = '\0';
+	strncpy(buf, log_level_name(l), len);
+	return true;
 }
 
 static char *arg_log_prefix(const char *arg, struct log_book *log_book)
@@ -625,10 +625,11 @@ static char *arg_log_prefix(const char *arg, struct log_book *log_book)
 	return NULL;
 }
 
-static void show_log_prefix(char buf[OPT_SHOW_LEN], const struct log_book *log_book)
+static bool show_log_prefix(char *buf, size_t len, const struct log_book *log_book)
 {
-	strncpy(buf, log_book->prefix, OPT_SHOW_LEN - 1);
-	buf[OPT_SHOW_LEN - 1] = '\0';
+	strncpy(buf, log_book->prefix, len);
+	/* Default is empty, so don't print that! */
+	return !streq(log_book->prefix, "");
 }
 
 static int signalfds[2];
@@ -736,14 +737,17 @@ void opt_register_logging(struct lightningd *ld)
 	opt_register_early_arg("--log-level",
 			       opt_log_level, show_log_level, ld->log,
 			       "log level (io, debug, info, unusual, broken) [:prefix]");
-	opt_register_early_arg("--log-timestamps",
-			       opt_set_bool_arg, opt_show_bool, &ld->log->lr->print_timestamps,
-			       "prefix log messages with timestamp");
+	clnopt_witharg("--log-timestamps", OPT_EARLY|OPT_SHOWBOOL,
+		       opt_set_bool_arg, opt_show_bool,
+		       &ld->log->lr->print_timestamps,
+		       "prefix log messages with timestamp");
 	opt_register_early_arg("--log-prefix", arg_log_prefix, show_log_prefix,
 			       ld->log_book,
 			       "log prefix");
-	opt_register_early_arg("--log-file=<file>", arg_log_to_file, NULL, ld,
-			       "Also log to file (- for stdout)");
+	clnopt_witharg("--log-file=<file>",
+		       OPT_EARLY|OPT_MULTI,
+		       arg_log_to_file, NULL, ld,
+		       "Also log to file (- for stdout)");
 }
 
 void logging_options_parsed(struct log_book *lr)

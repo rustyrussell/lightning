@@ -6,6 +6,7 @@
 #include <ccan/tal/str/str.h>
 #include <ccan/tal/tal.h>
 #include <common/channel_id.h>
+#include <common/channel_type.h>
 #include <common/htlc_state.h>
 #include <common/node_id.h>
 #include <common/onionreply.h>
@@ -131,6 +132,11 @@ void db_bind_channel_id(struct db_stmt *stmt, int pos, const struct channel_id *
 	db_bind_blob(stmt, pos, id->id, sizeof(id->id));
 }
 
+void db_bind_channel_type(struct db_stmt *stmt, int pos, const struct channel_type *type)
+{
+	db_bind_talarr(stmt, pos, type->features);
+}
+
 void db_bind_node_id(struct db_stmt *stmt, int pos, const struct node_id *id)
 {
 	db_bind_blob(stmt, pos, id->k, sizeof(id->k));
@@ -159,8 +165,8 @@ void db_bind_pubkey(struct db_stmt *stmt, int pos, const struct pubkey *pk)
 	db_bind_blob(stmt, pos, der, PUBKEY_CMPR_LEN);
 }
 
-void db_bind_scid(struct db_stmt *stmt, int col,
-		  const struct short_channel_id *id)
+void db_bind_short_channel_id(struct db_stmt *stmt, int col,
+			      const struct short_channel_id *id)
 {
 	db_bind_u64(stmt, col, id->u64);
 }
@@ -361,10 +367,21 @@ void db_col_pubkey(struct db_stmt *stmt,
 	assert(ok);
 }
 
-void db_col_scid(struct db_stmt *stmt, const char *colname,
-		 struct short_channel_id *dest)
+void db_col_short_channel_id(struct db_stmt *stmt, const char *colname,
+				 struct short_channel_id *dest)
 {
 	dest->u64 = db_col_u64(stmt, colname);
+}
+
+void *db_col_optional_(tal_t *dst,
+		       struct db_stmt *stmt, const char *colname,
+		       void (*colfn)(struct db_stmt *, const char *, void *))
+{
+	if (db_col_is_null(stmt, colname))
+		return tal_free(dst);
+
+	colfn(stmt, colname, dst);
+	return dst;
 }
 
 struct short_channel_id *
@@ -413,19 +430,33 @@ struct bitcoin_tx *db_col_tx(const tal_t *ctx, struct db_stmt *stmt, const char 
 	size_t col = db_query_colnum(stmt, colname);
 	const u8 *src = db_column_blob(stmt, col);
 	size_t len = db_column_bytes(stmt, col);
+	struct bitcoin_tx *tx;
+	bool is_null;
 
-	db_column_null_warn(stmt, colname, col);
-	return pull_bitcoin_tx(ctx, &src, &len);
+	is_null = db_column_null_warn(stmt, colname, col);
+	tx = pull_bitcoin_tx(ctx, &src, &len);
+
+	if (is_null || tx) return tx;
+
+	/* Column wasn't null, but we couldn't retrieve a valid wally_tx! */
+	u8 *tx_dup = tal_dup_arr(stmt, u8, src, len, 0);
+
+	db_fatal("db_col_tx: Invalid bitcoin transaction bytes retrieved: %s",
+		 tal_hex(stmt, tx_dup));
+	return NULL;
 }
 
 struct wally_psbt *db_col_psbt(const tal_t *ctx, struct db_stmt *stmt, const char *colname)
 {
+	struct wally_psbt *psbt;
 	size_t col = db_query_colnum(stmt, colname);
 	const u8 *src = db_column_blob(stmt, col);
 	size_t len = db_column_bytes(stmt, col);
 
 	db_column_null_warn(stmt, colname, col);
-	return psbt_from_bytes(ctx, src, len);
+	psbt = psbt_from_bytes(ctx, src, len);
+	psbt_set_version(psbt, 2);
+	return psbt;
 }
 
 struct bitcoin_tx *db_col_psbt_to_tx(const tal_t *ctx, struct db_stmt *stmt, const char *colname)
@@ -434,6 +465,12 @@ struct bitcoin_tx *db_col_psbt_to_tx(const tal_t *ctx, struct db_stmt *stmt, con
 	if (!psbt)
 		return NULL;
 	return bitcoin_tx_with_psbt(ctx, psbt);
+}
+
+struct channel_type *db_col_channel_type(const tal_t *ctx, struct db_stmt *stmt,
+					 const char *colname)
+{
+	return channel_type_from(ctx, take(db_col_arr(NULL, stmt, colname, u8)));
 }
 
 void *db_col_arr_(const tal_t *ctx, struct db_stmt *stmt, const char *colname,
@@ -453,7 +490,8 @@ void *db_col_arr_(const tal_t *ctx, struct db_stmt *stmt, const char *colname,
 			 caller, colname, col, sourcelen, label, bytes);
 
 	p = tal_arr_label(ctx, char, sourcelen, label);
-	memcpy(p, db_column_blob(stmt, col), sourcelen);
+	if (sourcelen != 0)
+		memcpy(p, db_column_blob(stmt, col), sourcelen);
 	return p;
 }
 

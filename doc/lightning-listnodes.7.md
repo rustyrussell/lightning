@@ -38,7 +38,7 @@ If **last\_timestamp** is present:
   - **color** (hex): The favorite RGB color this node advertized (always 6 characters)
   - **features** (hex): BOLT #9 features bitmap this node advertized
   - **addresses** (array of objects): The addresses this node advertized:
-    - **type** (string): Type of connection (one of "dns", "ipv4", "ipv6", "torv2", "torv3", "websocket")
+    - **type** (string): Type of connection (until 23.08, `websocket` was also allowed) (one of "dns", "ipv4", "ipv6", "torv2", "torv3")
     - **port** (u16): port number
 
     If **type** is "dns", "ipv4", "ipv6", "torv2" or "torv3":
@@ -100,4 +100,4 @@ RESOURCES
 
 Main web site: <https://github.com/ElementsProject/lightning>
 
-[comment]: # ( SHA256STAMP:99d22f32acd7d5181f731342d7b9245cfa17cc4257c1f87d78eb809fe7c6931d)
+[comment]: # ( SHA256STAMP:d74d92ee8839258837055e65823f74cae9775cf1c111565366c034c62e1c3021)

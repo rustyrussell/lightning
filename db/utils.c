@@ -21,9 +21,13 @@ size_t db_query_colnum(const struct db_stmt *stmt,
 	assert(stmt->query->colnames != NULL);
 
 	col = hash_djb2(colname) % stmt->query->num_colnames;
-	/* Will crash on NULL, which is the Right Thing */
-	while (!streq(stmt->query->colnames[col].sqlname,
-		      colname)) {
+	for (;;) {
+		const char *n = stmt->query->colnames[col].sqlname;
+		if (!n)
+			db_fatal("Unknown column name %s in query %s",
+				 colname, stmt->query->query);
+		if (streq(n, colname))
+			break;
 		col = (col + 1) % stmt->query->num_colnames;
 	}
 
@@ -135,7 +139,7 @@ struct db_stmt *db_prepare_untranslated(struct db *db, const char *query)
 	return stmt;
 }
 
-bool db_query_prepared(struct db_stmt *stmt)
+bool db_query_prepared_canfail(struct db_stmt *stmt)
 {
 	/* Make sure we don't accidentally execute a modifying query using a
 	 * read-only path. */
@@ -145,6 +149,13 @@ bool db_query_prepared(struct db_stmt *stmt)
 	stmt->executed = true;
 	list_del_from(&stmt->db->pending_statements, &stmt->list);
 	return ret;
+}
+
+void db_query_prepared(struct db_stmt *stmt)
+{
+	if (!db_query_prepared_canfail(stmt))
+		db_fatal("query failed: %s: %s",
+			 stmt->location, stmt->query->query);
 }
 
 bool db_step(struct db_stmt *stmt)
@@ -164,7 +175,7 @@ bool db_step(struct db_stmt *stmt)
 	return ret;
 }
 
-bool db_exec_prepared_v2(struct db_stmt *stmt TAKES)
+void db_exec_prepared_v2(struct db_stmt *stmt TAKES)
 {
 	bool ret = stmt->db->config->exec_fn(stmt);
 
@@ -184,8 +195,6 @@ bool db_exec_prepared_v2(struct db_stmt *stmt TAKES)
 
 	if (taken(stmt))
 	    tal_free(stmt);
-
-	return ret;
 }
 
 size_t db_count_changes(struct db_stmt *stmt)

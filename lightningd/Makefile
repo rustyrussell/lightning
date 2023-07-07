@@ -8,6 +8,7 @@ LIGHTNINGD_SRC :=				\
 	lightningd/closing_control.c		\
 	lightningd/coin_mvts.c			\
 	lightningd/dual_open_control.c		\
+	lightningd/closed_channel.c		\
 	lightningd/connect_control.c		\
 	lightningd/onion_message.c		\
 	lightningd/feerate.c			\
@@ -84,6 +85,7 @@ LIGHTNINGD_COMMON_OBJS :=			\
 	common/channel_type.o			\
 	common/coin_mvt.o			\
 	common/configdir.o			\
+	common/configvar.o			\
 	common/daemon.o				\
 	common/derive_basepoints.o		\
 	common/ecdh_hsmd.o			\
@@ -98,6 +100,7 @@ LIGHTNINGD_COMMON_OBJS :=			\
 	common/hsm_encryption.o			\
 	common/htlc_state.o			\
 	common/htlc_trim.o			\
+	common/htlc_tx.o			\
 	common/htlc_wire.o			\
 	common/invoice_path_id.o		\
 	common/key_derive.o			\
@@ -126,6 +129,7 @@ LIGHTNINGD_COMMON_OBJS :=			\
 	common/sphinx.o				\
 	common/status_wire.o			\
 	common/timeout.o			\
+	common/tx_roles.o			\
 	common/type_to_string.o			\
 	common/utils.o				\
 	common/utxo.o				\

@@ -20,6 +20,7 @@ FUZZ_COMMON_OBJS := \
 	common/channel_config.o				\
 	common/close_tx.o				\
 	common/configdir.o				\
+	common/configvar.o				\
 	common/channel_id.o				\
 	common/channel_type.o				\
 	common/daemon.o					\
@@ -50,7 +51,7 @@ FUZZ_COMMON_OBJS := \
 	wire/fromwire.o					\
 	wire/onion_wiregen.o				\
 	wire/peer_wire.o				\
-	wire/peer$(EXP)_wiregen.o			\
+	wire/peer_wiregen.o				\
 	wire/channel_type_wiregen.o			\
 	wire/tlvstream.o				\
 	wire/towire.o					\

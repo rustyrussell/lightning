@@ -201,7 +201,7 @@ static void gossipd_new_blockheight_reply(struct subd *gossipd,
 	}
 
 	/* Now, finally update getinfo's blockheight */
-	gossipd->ld->blockheight = ptr2int(blockheight);
+	gossipd->ld->gossip_blockheight = ptr2int(blockheight);
 }
 
 void gossip_notify_new_block(struct lightningd *ld, u32 blockheight)
@@ -437,8 +437,8 @@ static struct command_result *json_setleaserates(struct command *cmd,
 				 amount_sat(rates->lease_fee_base_sat));
 	json_add_num(res, "lease_fee_basis", rates->lease_fee_basis);
 	json_add_num(res, "funding_weight", rates->funding_weight);
-	json_add_amount_msat_only(res, "channel_fee_max_base_msat",
-				  amount_msat(rates->channel_fee_max_base_msat));
+	json_add_amount_msat(res, "channel_fee_max_base_msat",
+			     amount_msat(rates->channel_fee_max_base_msat));
 	json_add_num(res, "channel_fee_max_proportional_thousandths",
 		     rates->channel_fee_max_proportional_thousandths);
 

@@ -370,7 +370,8 @@ bool routing_add_channel_update(struct routing_state *rstate,
 				u32 index,
 				struct peer *peer,
 				bool ignore_timestamp,
-				bool force_spam_flag);
+				bool force_spam_flag,
+				bool force_zombie_flag);
 /**
  * Add a node_announcement to the network view without checking it
  *
@@ -433,6 +434,9 @@ void routing_expire_channels(struct routing_state *rstate, u32 blockheight);
 bool would_ratelimit_cupdate(struct routing_state *rstate,
 			     const struct half_chan *hc,
 			     u32 timestamp);
+
+/* Does this node have public, non-zombie channels? */
+bool node_has_broadcastable_channels(const struct node *node);
 
 /* Returns an error string if there are unfinalized entries after load */
 const char *unfinalized_entries(const tal_t *ctx, struct routing_state *rstate);

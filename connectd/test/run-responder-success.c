@@ -28,12 +28,18 @@ struct amount_sat amount_sat(u64 satoshis UNNEEDED)
 				       struct amount_sat a UNNEEDED,
 				       struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_add called!\n"); abort(); }
+/* Generated stub for amount_sat_div */
+struct amount_sat amount_sat_div(struct amount_sat sat UNNEEDED, u64 div UNNEEDED)
+{ fprintf(stderr, "amount_sat_div called!\n"); abort(); }
 /* Generated stub for amount_sat_eq */
 bool amount_sat_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_eq called!\n"); abort(); }
 /* Generated stub for amount_sat_greater_eq */
 bool amount_sat_greater_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_greater_eq called!\n"); abort(); }
+/* Generated stub for amount_sat_mul */
+bool amount_sat_mul(struct amount_sat *res UNNEEDED, struct amount_sat sat UNNEEDED, u64 mul UNNEEDED)
+{ fprintf(stderr, "amount_sat_mul called!\n"); abort(); }
 /* Generated stub for amount_sat_sub */
  bool amount_sat_sub(struct amount_sat *val UNNEEDED,
 				       struct amount_sat a UNNEEDED,
@@ -278,6 +284,7 @@ static struct io_plan *success(struct io_conn *conn UNUSED,
 			       const struct wireaddr_internal *addr UNUSED,
 			       struct crypto_state *cs,
 			       struct oneshot *timeout UNUSED,
+			       enum is_websocket is_websocket UNUSED,
 			       void *unused UNUSED)
 {
 	assert(secret_eq_str(&cs->sk, expect_sk));
@@ -314,8 +321,8 @@ int main(int argc, char *argv[])
 	e_pub = pubkey("02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27");
 
 	dummy.itype = ADDR_INTERNAL_WIREADDR;
-	dummy.u.wireaddr.addrlen = 0;
-	responder_handshake((void *)tmpctx, &ls_pub, &dummy, NULL, success, NULL);
+	dummy.u.wireaddr.wireaddr.addrlen = 0;
+	responder_handshake((void *)tmpctx, &ls_pub, &dummy, NULL, NORMAL_SOCKET, success, NULL);
 	/* Should not exit! */
 	abort();
 }

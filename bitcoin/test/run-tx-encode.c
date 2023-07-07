@@ -25,12 +25,18 @@ struct amount_sat amount_sat(u64 satoshis UNNEEDED)
 				       struct amount_sat a UNNEEDED,
 				       struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_add called!\n"); abort(); }
+/* Generated stub for amount_sat_div */
+struct amount_sat amount_sat_div(struct amount_sat sat UNNEEDED, u64 div UNNEEDED)
+{ fprintf(stderr, "amount_sat_div called!\n"); abort(); }
 /* Generated stub for amount_sat_eq */
 bool amount_sat_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_eq called!\n"); abort(); }
 /* Generated stub for amount_sat_greater_eq */
 bool amount_sat_greater_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_greater_eq called!\n"); abort(); }
+/* Generated stub for amount_sat_mul */
+bool amount_sat_mul(struct amount_sat *res UNNEEDED, struct amount_sat sat UNNEEDED, u64 mul UNNEEDED)
+{ fprintf(stderr, "amount_sat_mul called!\n"); abort(); }
 /* Generated stub for amount_sat_sub */
  bool amount_sat_sub(struct amount_sat *val UNNEEDED,
 				       struct amount_sat a UNNEEDED,
@@ -64,18 +70,15 @@ u8 fromwire_u8(const u8 **cursor UNNEEDED, size_t *max UNNEEDED)
 /* Generated stub for fromwire_u8_array */
 void fromwire_u8_array(const u8 **cursor UNNEEDED, size_t *max UNNEEDED, u8 *arr UNNEEDED, size_t num UNNEEDED)
 { fprintf(stderr, "fromwire_u8_array called!\n"); abort(); }
-/* Generated stub for is_anchor_witness_script */
-bool is_anchor_witness_script(const u8 *script UNNEEDED, size_t script_len UNNEEDED)
-{ fprintf(stderr, "is_anchor_witness_script called!\n"); abort(); }
+/* Generated stub for is_to_remote_anchored_witness_script */
+bool is_to_remote_anchored_witness_script(const u8 *script UNNEEDED, size_t script_len UNNEEDED)
+{ fprintf(stderr, "is_to_remote_anchored_witness_script called!\n"); abort(); }
 /* Generated stub for pubkey_to_der */
 void pubkey_to_der(u8 der[PUBKEY_CMPR_LEN] UNNEEDED, const struct pubkey *key UNNEEDED)
 { fprintf(stderr, "pubkey_to_der called!\n"); abort(); }
 /* Generated stub for pubkey_to_hash160 */
 void pubkey_to_hash160(const struct pubkey *pk UNNEEDED, struct ripemd160 *hash UNNEEDED)
 { fprintf(stderr, "pubkey_to_hash160 called!\n"); abort(); }
-/* Generated stub for script_push_bytes */
-void script_push_bytes(u8 **scriptp UNNEEDED, const void *mem UNNEEDED, size_t len UNNEEDED)
-{ fprintf(stderr, "script_push_bytes called!\n"); abort(); }
 /* Generated stub for scriptpubkey_p2wsh */
 u8 *scriptpubkey_p2wsh(const tal_t *ctx UNNEEDED, const u8 *witnessscript UNNEEDED)
 { fprintf(stderr, "scriptpubkey_p2wsh called!\n"); abort(); }

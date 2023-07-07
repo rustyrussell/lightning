@@ -2,7 +2,7 @@ from fixtures import *  # noqa: F401,F403
 from fixtures import TEST_NETWORK
 from pyln.client import RpcError, Millisatoshi
 from utils import (
-    only_one, wait_for, sync_blockheight, first_channel_id, calc_lease_fee, check_coin_moves
+    only_one, wait_for, sync_blockheight, first_channel_id, calc_lease_fee, check_coin_moves, anchor_expected
 )
 
 from pathlib import Path
@@ -19,9 +19,15 @@ def find_next_feerate(node, peer):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
-@pytest.mark.developer("requres 'dev-queryrates'")
+@pytest.mark.developer("requres 'dev-queryrates' + 'dev-force-features'")
 def test_queryrates(node_factory, bitcoind):
-    l1, l2 = node_factory.get_nodes(2, opts={'dev-no-reconnect': None})
+
+    opts = {'dev-no-reconnect': None}
+
+    if not anchor_expected():
+        opts['dev-force-features'] = '+21'
+
+    l1, l2 = node_factory.get_nodes(2, opts=opts)
 
     amount = 10 ** 6
 
@@ -42,8 +48,6 @@ def test_queryrates(node_factory, bitcoind):
                                  'channel_fee_max_base_msat': '3sat',
                                  'channel_fee_max_proportional_thousandths': 101})
 
-    wait_for(lambda: l1.rpc.listpeers()['peers'] == [])
-    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     result = l1.rpc.dev_queryrates(l2.info['id'], amount, amount)
     assert result['our_funding_msat'] == Millisatoshi(amount * 1000)
     assert result['their_funding_msat'] == Millisatoshi(amount * 1000)
@@ -181,6 +185,44 @@ def test_v2_open_sigs_restart(node_factory, bitcoind):
     # Make sure we're ok.
     l1.daemon.wait_for_log(r'to CHANNELD_NORMAL')
     l2.daemon.wait_for_log(r'to CHANNELD_NORMAL')
+
+
+@pytest.mark.openchannel('v2')
+def test_v2_fail_second(node_factory, bitcoind):
+    """ Open a channel succeeds; opening a second channel
+    failure should not drop the connection """
+    l1, l2 = node_factory.line_graph(2, wait_for_announce=True)
+
+    # Should have one channel between them.
+    only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])
+
+    amount = 2**24 - 1
+    l1.fundwallet(amount + 10000000)
+
+    # make sure we can generate PSBTs.
+    addr = l1.rpc.newaddr()['bech32']
+    bitcoind.rpc.sendtoaddress(addr, (amount + 1000000) / 10**8)
+    bitcoind.generate_block(1)
+    wait_for(lambda: len(l1.rpc.listfunds()["outputs"]) != 0)
+
+    # Some random (valid) psbt
+    psbt = l1.rpc.fundpsbt(amount, '253perkw', 250, reserve=0)['psbt']
+    start = l1.rpc.openchannel_init(l2.info['id'], amount, psbt)
+
+    # They will both see a pair of channels
+    assert len(l1.rpc.listpeerchannels(l2.info['id'])['channels']) == 2
+    assert len(l2.rpc.listpeerchannels(l1.info['id'])['channels']) == 2
+
+    # We can abort a channel
+    l1.rpc.openchannel_abort(start['channel_id'])
+
+    # We should have deleted the 'in-progress' channel info
+    only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])
+
+    # FIXME: check that tx-abort was sent
+    # Should be able to reattempt without reconnecting
+    start = l1.rpc.openchannel_init(l2.info['id'], amount, psbt)
+    assert len(l1.rpc.listpeerchannels(l2.info['id'])['channels']) == 2
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
@@ -340,11 +382,16 @@ def test_v2_rbf_single(node_factory, bitcoind, chainparams):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
+@pytest.mark.developer("requres 'dev-force-features'")
 def test_v2_rbf_liquidity_ad(node_factory, bitcoind, chainparams):
 
     opts = {'funder-policy': 'match', 'funder-policy-mod': 100,
             'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
             'may_reconnect': True}
+
+    if not anchor_expected():
+        opts['dev-force-features'] = '+21'
+
     l1, l2 = node_factory.get_nodes(2, opts=opts)
 
     # what happens when we RBF?
@@ -356,8 +403,6 @@ def test_v2_rbf_liquidity_ad(node_factory, bitcoind, chainparams):
     # l1 leases a channel from l2
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     rates = l1.rpc.dev_queryrates(l2.info['id'], amount, amount)
-    wait_for(lambda: l1.rpc.listpeers()['peers'] == [])
-    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     chan_id = l1.rpc.fundchannel(l2.info['id'], amount, request_amt=amount,
                                  feerate='{}perkw'.format(feerate),
                                  compact_lease=rates['compact_lease'])['channel_id']
@@ -383,6 +428,9 @@ def test_v2_rbf_liquidity_ad(node_factory, bitcoind, chainparams):
     # We 4x the feerate to beat the min-relay fee
     next_feerate = '{}perkw'.format(rate * 4)
 
+    # Restart the node between open + rbf; works as expected
+    l1.restart()
+
     # Initiate an RBF
     startweight = 42 + 172  # base weight, funding output
     initpsbt = l1.rpc.utxopsbt(amount, next_feerate, startweight,
@@ -390,6 +438,8 @@ def test_v2_rbf_liquidity_ad(node_factory, bitcoind, chainparams):
                                min_witness_weight=110,
                                excess_as_change=True)['psbt']
 
+    # reconnect after restart
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     # do the bump
     bump = l1.rpc.openchannel_bump(chan_id, amount, initpsbt,
                                    funding_feerate=next_feerate)
@@ -410,7 +460,7 @@ def test_v2_rbf_liquidity_ad(node_factory, bitcoind, chainparams):
 
     # Datastore should be cleaned up!
     assert l1.rpc.listdatastore() == {'datastore': []}
-    assert l2.rpc.listdatastore() == {'datastore': []}
+    wait_for(lambda: l2.rpc.listdatastore() == {'datastore': []})
 
     # This should be the accepter's amount
     fundings = only_one(l1.rpc.listpeerchannels()['channels'])['funding']
@@ -479,10 +529,10 @@ def test_v2_rbf_multi(node_factory, bitcoind, chainparams):
     # Abort this open attempt! We will re-try
     aborted = l1.rpc.openchannel_abort(chan_id)
     assert not aborted['channel_canceled']
-    wait_for(lambda: only_one(l1.rpc.listpeers()['peers'])['connected'] is False)
+    # We no longer disconnect on aborts, because magic!
+    assert only_one(l1.rpc.listpeers()['peers'])['connected']
 
     # Do the bump, again, same feerate
-    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     bump = l1.rpc.openchannel_bump(chan_id, chan_amount,
                                    initpsbt['psbt'],
                                    funding_feerate=next_feerate)
@@ -526,8 +576,8 @@ def test_v2_rbf_multi(node_factory, bitcoind, chainparams):
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v2')
 def test_rbf_reconnect_init(node_factory, bitcoind, chainparams):
-    disconnects = ['-WIRE_INIT_RBF',
-                   '+WIRE_INIT_RBF']
+    disconnects = ['-WIRE_TX_INIT_RBF',
+                   '+WIRE_TX_INIT_RBF']
 
     l1, l2 = node_factory.get_nodes(2,
                                     opts=[{'disconnect': disconnects,
@@ -576,8 +626,8 @@ def test_rbf_reconnect_init(node_factory, bitcoind, chainparams):
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v2')
 def test_rbf_reconnect_ack(node_factory, bitcoind, chainparams):
-    disconnects = ['-WIRE_ACK_RBF',
-                   '+WIRE_ACK_RBF']
+    disconnects = ['-WIRE_TX_ACK_RBF',
+                   '+WIRE_TX_ACK_RBF']
 
     l1, l2 = node_factory.get_nodes(2,
                                     opts=[{'may_reconnect': True},
@@ -1144,8 +1194,12 @@ def test_funder_options(node_factory, bitcoind):
     l3.rpc.connect(l1.info['id'], 'localhost', l1.port)
     l3.fundchannel(l1, 10**6)
     chan_info = only_one(l3.rpc.listpeerchannels(l1.info['id'])['channels'])
+    log = l1.daemon.wait_for_log(r'Policy available \(100%\) returned funding amount of')
+    match = re.search(r'Policy available \(100%\) returned funding amount of (\d*sat)', log)
+    assert match and len(match.groups()) == 1
+
     # l1 contributed all its funds!
-    assert chan_info['funding']['remote_funds_msat'] == Millisatoshi('9994945000msat')
+    assert chan_info['funding']['remote_funds_msat'] == Millisatoshi(match.groups()[0])
     assert chan_info['funding']['local_funds_msat'] == Millisatoshi('1000000000msat')
 
 
@@ -1212,21 +1266,23 @@ def test_funder_contribution_limits(node_factory, bitcoind):
 
 
 @pytest.mark.openchannel('v2')
-@pytest.mark.developer("requres 'dev-disconnect'")
+@pytest.mark.developer("requres 'dev-disconnect', 'dev-force-features'")
 def test_inflight_dbload(node_factory, bitcoind):
     """Bad db field access breaks Postgresql on startup with opening leases"""
     disconnects = ["@WIRE_COMMITMENT_SIGNED"]
-    l1, l2 = node_factory.get_nodes(2, opts=[{'experimental-dual-fund': None,
-                                              'dev-no-reconnect': None,
-                                              'may_reconnect': True,
-                                              'disconnect': disconnects},
-                                             {'experimental-dual-fund': None,
-                                              'dev-no-reconnect': None,
-                                              'may_reconnect': True,
-                                              'funder-policy': 'match',
-                                              'funder-policy-mod': 100,
-                                              'lease-fee-base-sat': '100sat',
-                                              'lease-fee-basis': 100}])
+
+    opts = [{'experimental-dual-fund': None, 'dev-no-reconnect': None,
+             'may_reconnect': True, 'disconnect': disconnects},
+            {'experimental-dual-fund': None, 'dev-no-reconnect': None,
+             'may_reconnect': True, 'funder-policy': 'match',
+             'funder-policy-mod': 100, 'lease-fee-base-sat': '100sat',
+             'lease-fee-basis': 100}]
+
+    if not anchor_expected():
+        for opt in opts:
+            opt['dev-force-features'] = '+21'
+
+    l1, l2 = node_factory.get_nodes(2, opts=opts)
 
     feerate = 2000
     amount = 500000
@@ -1236,8 +1292,6 @@ def test_inflight_dbload(node_factory, bitcoind):
     # l1 leases a channel from l2
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     rates = l1.rpc.dev_queryrates(l2.info['id'], amount, amount)
-    wait_for(lambda: len(l1.rpc.listpeers(l2.info['id'])['peers']) == 0)
-    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     l1.rpc.fundchannel(l2.info['id'], amount, request_amt=amount,
                        feerate='{}perkw'.format(feerate),
                        compact_lease=rates['compact_lease'])
@@ -1524,6 +1578,7 @@ def test_buy_liquidity_ad_no_v2(node_factory, bitcoind):
 
 
 @pytest.mark.openchannel('v2')
+@pytest.mark.developer("dev-force-features required")
 def test_v2_replay_bookkeeping(node_factory, bitcoind):
     """ Test that your bookkeeping for a liquidity ad is good
         even if we replay the opening and locking tx!
@@ -1535,6 +1590,11 @@ def test_v2_replay_bookkeeping(node_factory, bitcoind):
             {'funder-policy': 'match', 'funder-policy-mod': 100,
              'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
              'may_reconnect': True}]
+
+    if not anchor_expected():
+        for opt in opts:
+            opt['dev-force-features'] = '+21'
+
     l1, l2, = node_factory.get_nodes(2, opts=opts)
     amount = 500000
     feerate = 2000
@@ -1544,8 +1604,6 @@ def test_v2_replay_bookkeeping(node_factory, bitcoind):
 
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     rates = l1.rpc.dev_queryrates(l2.info['id'], amount, amount)
-    wait_for(lambda: len(l1.rpc.listpeers(l2.info['id'])['peers']) == 0)
-    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
 
     # l1 leases a channel from l2
     l1.rpc.fundchannel(l2.info['id'], amount, request_amt=amount,
@@ -1587,6 +1645,7 @@ def test_v2_replay_bookkeeping(node_factory, bitcoind):
 
 
 @pytest.mark.openchannel('v2')
+@pytest.mark.developer("dev-force-features required")
 def test_buy_liquidity_ad_check_bookkeeping(node_factory, bitcoind):
     """ Test that your bookkeeping for a liquidity ad is good."""
 
@@ -1597,6 +1656,11 @@ def test_buy_liquidity_ad_check_bookkeeping(node_factory, bitcoind):
             {'funder-policy': 'match', 'funder-policy-mod': 100,
              'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
              'may_reconnect': True}]
+
+    if not anchor_expected():
+        for opt in opts:
+            opt['dev-force-features'] = '+21'
+
     l1, l2, = node_factory.get_nodes(2, opts=opts)
     amount = 500000
     feerate = 2000
@@ -1606,8 +1670,6 @@ def test_buy_liquidity_ad_check_bookkeeping(node_factory, bitcoind):
 
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     rates = l1.rpc.dev_queryrates(l2.info['id'], amount, amount)
-    wait_for(lambda: len(l1.rpc.listpeers(l2.info['id'])['peers']) == 0)
-    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
 
     # l1 leases a channel from l2
     l1.rpc.fundchannel(l2.info['id'], amount, request_amt=amount,
@@ -1750,6 +1812,7 @@ def test_zeroconf_multichan_forward(node_factory):
                                .format(normal_scid, zeroconf_scid))
 
 
+@pytest.mark.developer("dev-allowdustreserve")
 def test_zeroreserve(node_factory, bitcoind):
     """Ensure we can set the reserves.
 
@@ -1829,6 +1892,7 @@ def test_zeroreserve(node_factory, bitcoind):
     assert len(decoded['vout']) == 1 if TEST_NETWORK == 'regtest' else 2
 
 
+@pytest.mark.developer("dev-allowdustreserve")
 def test_zeroreserve_mixed(node_factory, bitcoind):
     """l1 runs with zeroreserve, l2 and l3 without, should still work
 
@@ -1859,6 +1923,7 @@ def test_zeroreserve_mixed(node_factory, bitcoind):
     l3.rpc.fundchannel(l1.info['id'], 10**6)
 
 
+@pytest.mark.developer("dev-allowdustreserve")
 def test_zeroreserve_alldust(node_factory):
     """If we allow dust reserves we need larger fundings
 
@@ -1945,3 +2010,169 @@ def test_coinbase_unspendable(node_factory, bitcoind):
     # Mine one block, assert one more is spendable
     bitcoind.rpc.generatetoaddress(1, l1.rpc.newaddr()['bech32'])
     assert len([out for out in l1.rpc.listfunds()['outputs'] if out['status'] == 'confirmed']) == 1
+
+
+@pytest.mark.openchannel('v2')
+def test_openchannel_no_confirmed_inputs_opener(node_factory, bitcoind):
+    """ If the opener flags 'require-confirmed-inputs' for an open,
+        and accepter sends unconfirmed inputs check that the
+        accepter aborts the open """
+
+    l1_opts = {'funder-policy': 'match', 'funder-policy-mod': 100,
+               'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
+               'may_reconnect': True, 'funder-lease-requests-only': False,
+               'allow_warning': True}
+    l2_opts = l1_opts.copy()
+    l1_opts['require-confirmed-inputs'] = True
+    l1, l2 = node_factory.get_nodes(2, opts=[l1_opts, l2_opts])
+    assert l1.rpc.listconfigs()['configs']['require-confirmed-inputs']['value_bool'] is True
+
+    amount = 500000
+    l1.fundwallet(20000000)
+    l2.fundwallet(20000000)
+    utxo_lookups = set()
+
+    def _no_utxo_response(r):
+        utxo_lookups.add(tuple(r['params']))
+        return {'id': r['id'], 'result': None}
+
+    # We mock l1 out such that it thinks no inputs are confirmed
+    l1.daemon.rpcproxy.mock_rpc('gettxout', _no_utxo_response)
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+
+    # l1 should return an error + abort the open as it thinks it's
+    # sending unconfirmed inputs to a peer that's requested only
+    # confirmed inputs
+    with pytest.raises(RpcError, match=r'Input .* is not confirmed'):
+        l1.rpc.fundchannel(l2.info['id'], amount)
+    assert l1.daemon.is_in_log('validating psbt for role: accepter')
+
+    # Verify that the looked up utxo is l2's
+    # Build a set of outpoints for node (l2)
+    outs = {(out['txid'], out['output']) for out in l2.rpc.listfunds()['outputs']}
+    # Confirm that seen utxo lookups are a subset of l2's outpoints
+    assert utxo_lookups <= outs
+
+
+@pytest.mark.openchannel('v2')
+def test_openchannel_no_unconfirmed_inputs_accepter(node_factory, bitcoind):
+    """ If the accepter flags 'require-confirmed-inputs' for an open,
+        and opener send unconfirmed inputs check that the
+        accepter aborts the open """
+    l1_opts = {'funder-policy': 'match', 'funder-policy-mod': 100,
+               'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
+               'may_reconnect': True, 'funder-lease-requests-only': False,
+               'allow_warning': True}
+    l2_opts = l1_opts.copy()
+    l2_opts['require-confirmed-inputs'] = True
+    l1, l2 = node_factory.get_nodes(2, opts=[l1_opts, l2_opts])
+    assert l2.rpc.listconfigs()['configs']['require-confirmed-inputs']['value_bool'] is True
+
+    amount = 500000
+    l1.fundwallet(20000000)
+    l1.fundwallet(20000000)
+    l2.fundwallet(20000000)
+    utxo_lookups = set()
+
+    def _verify_utxos(n, lookedup):
+        # Build a set of outpoints for node (l2)
+        outs = {(out['txid'], out['output']) for out in n.rpc.listfunds()['outputs']}
+        # Confirm that seen utxo lookups are a subset of l2's outpoints
+        assert lookedup <= outs
+        lookedup.clear()
+
+    def _no_utxo_response(r):
+        utxo_lookups.add(tuple(r['params']))
+        # Check that the utxo belongs to l2
+        return {'id': r['id'], 'result': None}
+
+    l1.daemon.rpcproxy.mock_rpc('gettxout', _no_utxo_response)
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    # l1 should return an error + abort the open as it thinks it's
+    # sending unconfirmed inputs to a peer that's requested only
+    # confirmed inputs
+    with pytest.raises(RpcError, match=r'Input .* is not confirmed'):
+        l1.rpc.fundchannel(l2.info['id'], amount)
+
+    _verify_utxos(l1, utxo_lookups)
+
+    l1.daemon.rpcproxy.mock_rpc('gettxout', None)
+    l2.daemon.rpcproxy.mock_rpc('gettxout', _no_utxo_response)
+
+    # l2 should return an error + abort the open
+    with pytest.raises(RpcError, match=r'Input .* is not confirmed'):
+        l1.rpc.fundchannel(l2.info['id'], amount)
+
+    _verify_utxos(l1, utxo_lookups)
+
+    # Let's negotiate the open, remove option from l2, and then RBF
+
+    # Turn the txout unconfirmed off, so we can open a channel
+    l2.daemon.rpcproxy.mock_rpc('gettxout', None)
+    res = l1.rpc.fundchannel(l2.info['id'], amount)
+    l1.daemon.wait_for_log(' to DUALOPEND_AWAITING_LOCKIN')
+    l2.daemon.wait_for_log(' to DUALOPEND_AWAITING_LOCKIN')
+
+    # Remove option from l2
+    l2.stop()
+    del l2.daemon.opts['require-confirmed-inputs']
+    l2.start()
+    assert l2.rpc.listconfigs()['configs']['require-confirmed-inputs']['value_bool'] is False
+
+    # Turn the mock back on so we pretend everything l1 sends is unconf
+    l2.daemon.rpcproxy.mock_rpc('gettxout', _no_utxo_response)
+
+    # Prep for RBF
+    startweight = 42 + 172  # base weight, funding output
+    next_feerate = find_next_feerate(l1, l2)
+    psbt = l1.rpc.fundpsbt(amount, next_feerate, startweight,
+                           min_witness_weight=110,
+                           excess_as_change=True)['psbt']
+
+    # Attempt bump, fail. L2 should remember required-confirmed-inputs
+    # from original channel negotiation, despite node-wide setting
+    # being flagged off
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    bump = l1.rpc.openchannel_bump(res['channel_id'], amount, psbt)
+    with pytest.raises(RpcError, match=r'Input .* is not confirmed'):
+        l1.rpc.openchannel_update(res['channel_id'], bump['psbt'])
+
+    _verify_utxos(l1, utxo_lookups)
+
+
+@unittest.skip("anchors not available")
+@pytest.mark.developer("dev-force-features, dev-queryrates required")
+@pytest.mark.openchannel('v2')
+def test_no_anchor_liquidity_ads(node_factory, bitcoind):
+    """ Liquidity ads requires anchors, which are no longer a
+    requirement for dual-funded channels. """
+
+    l1_opts = {'funder-policy': 'match', 'funder-policy-mod': 100,
+               'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
+               'may_reconnect': True, 'funder-lease-requests-only': False}
+    l2_opts = l1_opts.copy()
+    l2_opts['dev-force-features'] = ["-21"]
+    l1, l2 = node_factory.get_nodes(2, opts=[l1_opts, l2_opts])
+
+    feerate = 2000
+    amount = 10**6
+
+    l1.fundwallet(10**8)
+    l2.fundwallet(10**8)
+
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    with pytest.raises(RpcError, match=r'liquidity ads not supported, no anchors.'):
+        l1.rpc.fundchannel(l2.info['id'], amount, request_amt=amount,
+                           feerate='{}perkw'.format(feerate),
+                           compact_lease='029a002d000000004b2003e8')
+
+    # But you can make it work without the liquidity ad request
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    l1.rpc.fundchannel(l2.info['id'], amount,
+                       feerate='{}perkw'.format(feerate))
+
+    # Confirm that we used the DUAL_FUND flow
+    chan = only_one(only_one(l1.rpc.listpeers()['peers'])['channels'])
+    assert chan['state'] == 'DUALOPEND_AWAITING_LOCKIN'
+    assert chan['funding']['local_funds_msat'] == chan['funding']['remote_funds_msat']
+    assert 'option_anchor_outputs' not in chan['features']

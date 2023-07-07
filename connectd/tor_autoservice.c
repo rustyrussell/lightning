@@ -1,5 +1,4 @@
 #include "config.h"
-#include <ccan/err/err.h>
 #include <ccan/rbuf/rbuf.h>
 #include <ccan/read_write_all/read_write_all.h>
 #include <ccan/tal/grab_file/grab_file.h>
@@ -114,7 +113,7 @@ static struct wireaddr *make_onion(const tal_t *ctx,
 			     port, fmt_wireaddr(tmpctx, local)));
 
 	while ((line = tor_response_line(rbuf)) != NULL) {
-		const char *name;
+		const char *name, *err;
 
 		if (!strstarts(line, "ServiceID="))
 			continue;
@@ -125,9 +124,10 @@ static struct wireaddr *make_onion(const tal_t *ctx,
 
 		name = tal_fmt(tmpctx, "%s.onion", line);
 		onion = tal(ctx, struct wireaddr);
-		if (!parse_wireaddr(name, onion, local->port, false, NULL))
+		err = parse_wireaddr(tmpctx, name, local->port, NULL, onion);
+		if (err)
 			status_failed(STATUS_FAIL_INTERNAL_ERROR,
-				      "Tor gave bad onion name '%s'", name);
+				      "Tor gave bad onion name '%s': %s", name, err);
 		status_info("New autotor service onion address: \"%s:%d\" bound from extern port:%d", name, local->port, port);
 		discard_remaining_response(rbuf);
 		return onion;
@@ -151,7 +151,7 @@ static struct wireaddr *make_fixed_onion(const tal_t *ctx,
 			 blob64, port, fmt_wireaddr(tmpctx, local)));
 
 	while ((line = tor_response_line_wfail(rbuf))) {
-		const char *name;
+		const char *name, *err;
 		if (strstarts(line, "Onion address collision"))
 			status_failed(STATUS_FAIL_INTERNAL_ERROR,
 				      "Tor address in use");
@@ -165,9 +165,10 @@ static struct wireaddr *make_fixed_onion(const tal_t *ctx,
 
 		name = tal_fmt(tmpctx, "%s.onion", line);
 		onion = tal(ctx, struct wireaddr);
-		if (!parse_wireaddr(name, onion, port, false, NULL))
+		err = parse_wireaddr(tmpctx, name, port, false, onion);
+		if (err)
 			status_failed(STATUS_FAIL_INTERNAL_ERROR,
-				      "Tor gave bad onion name '%s'", name);
+				      "Tor gave bad onion name '%s': %s", name, err);
 		#ifdef SUPERVERBOSE
 		 status_info("Static Tor service onion address: \"%s:%d,%s\"from blob %s base64 %s ",
 						name, port ,fmt_wireaddr(tmpctx, local), blob ,blob64);
@@ -272,10 +273,12 @@ struct wireaddr *tor_autoservice(const tal_t *ctx,
 
 	fd = socket(ai_tor->ai_family, SOCK_STREAM, 0);
 	if (fd < 0)
-		err(1, "Creating stream socket for Tor");
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "Creating stream socket for Tor");
 
 	if (connect(fd, ai_tor->ai_addr, ai_tor->ai_addrlen) != 0)
-		err(1, "Connecting stream socket to Tor service");
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "Connecting stream socket to Tor service");
 
 	buffer = tal_arr(tmpctx, char, rbuf_good_size(fd));
 	rbuf_init(&rbuf, fd, buffer, tal_count(buffer), buf_resize);
@@ -312,10 +315,12 @@ struct wireaddr *tor_fixed_service(const tal_t *ctx,
 
 	fd = socket(ai_tor->ai_family, SOCK_STREAM, 0);
 	if (fd < 0)
-		err(1, "Creating stream socket for Tor");
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "Creating stream socket for Tor");
 
 	if (connect(fd, ai_tor->ai_addr, ai_tor->ai_addrlen) != 0)
-		err(1, "Connecting stream socket to Tor service");
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "Connecting stream socket to Tor service");
 
 	buffer = tal_arr(tmpctx, char, rbuf_good_size(fd));
 	rbuf_init(&rbuf, fd, buffer, tal_count(buffer), buf_resize);

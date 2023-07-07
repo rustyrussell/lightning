@@ -34,7 +34,7 @@ bool db_step(struct db_stmt *stmt);
  *
  * @stmt: The prepared statement to execute
  */
-bool db_exec_prepared_v2(struct db_stmt *stmt TAKES);
+void db_exec_prepared_v2(struct db_stmt *stmt TAKES);
 
 /**
  * db_query_prepared -- Execute a prepared query
@@ -49,7 +49,12 @@ bool db_exec_prepared_v2(struct db_stmt *stmt TAKES);
  *
  * @stmt: The prepared statement to execute
  */
-bool db_query_prepared(struct db_stmt *stmt);
+void db_query_prepared(struct db_stmt *stmt);
+
+/**
+ * Variation which allows failure.
+ */
+bool db_query_prepared_canfail(struct db_stmt *stmt);
 
 size_t db_count_changes(struct db_stmt *stmt);
 void db_report_changes(struct db *db, const char *final, size_t min);

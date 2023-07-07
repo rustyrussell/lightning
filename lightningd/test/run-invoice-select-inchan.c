@@ -13,6 +13,9 @@ struct channel *any_channel_by_scid(struct lightningd *ld UNNEEDED,
 				    const struct short_channel_id *scid UNNEEDED,
 				    bool privacy_leak_ok UNNEEDED)
 { fprintf(stderr, "any_channel_by_scid called!\n"); abort(); }
+/* Generated stub for bip32_pubkey */
+void bip32_pubkey(struct lightningd *ld UNNEEDED, struct pubkey *pubkey UNNEEDED, u32 index UNNEEDED)
+{ fprintf(stderr, "bip32_pubkey called!\n"); abort(); }
 /* Generated stub for bitcoind_getutxout_ */
 void bitcoind_getutxout_(struct bitcoind *bitcoind UNNEEDED,
 			 const struct bitcoin_outpoint *outpoint UNNEEDED,
@@ -47,14 +50,17 @@ char *bolt11_encode_(const tal_t *ctx UNNEEDED,
 				  void *arg) UNNEEDED,
 		     void *arg UNNEEDED)
 { fprintf(stderr, "bolt11_encode_ called!\n"); abort(); }
-/* Generated stub for broadcast_tx */
-void broadcast_tx(struct chain_topology *topo UNNEEDED,
-		  struct channel *channel UNNEEDED, const struct bitcoin_tx *tx UNNEEDED,
-		  const char *cmd_id UNNEEDED, bool allowhighfees UNNEEDED,
-		  void (*failed)(struct channel * UNNEEDED,
-				 bool success UNNEEDED,
-				 const char *err))
-{ fprintf(stderr, "broadcast_tx called!\n"); abort(); }
+/* Generated stub for broadcast_tx_ */
+void broadcast_tx_(struct chain_topology *topo UNNEEDED,
+		   struct channel *channel UNNEEDED,
+		   const struct bitcoin_tx *tx TAKES UNNEEDED,
+		   const char *cmd_id UNNEEDED, bool allowhighfees UNNEEDED, u32 minblock UNNEEDED,
+		   void (*finished)(struct channel * UNNEEDED,
+				    bool success UNNEEDED,
+				    const char *err) UNNEEDED,
+		   bool (*refresh)(struct channel * UNNEEDED, const struct bitcoin_tx ** UNNEEDED, void *) UNNEEDED,
+		   void *refresh_arg TAKES UNNEEDED)
+{ fprintf(stderr, "broadcast_tx_ called!\n"); abort(); }
 /* Generated stub for channel_change_state_reason_str */
 const char *channel_change_state_reason_str(enum state_change reason UNNEEDED)
 { fprintf(stderr, "channel_change_state_reason_str called!\n"); abort(); }
@@ -74,10 +80,6 @@ void channel_fail_permanent(struct channel *channel UNNEEDED,
 void channel_fail_transient(struct channel *channel UNNEEDED,
 			    const char *fmt UNNEEDED, ...)
 { fprintf(stderr, "channel_fail_transient called!\n"); abort(); }
-/* Generated stub for channel_fail_transient_delayreconnect */
-void channel_fail_transient_delayreconnect(struct channel *channel UNNEEDED,
-					   const char *fmt UNNEEDED,...)
-{ fprintf(stderr, "channel_fail_transient_delayreconnect called!\n"); abort(); }
 /* Generated stub for channel_has_htlc_in */
 struct htlc_in *channel_has_htlc_in(struct channel *channel UNNEEDED)
 { fprintf(stderr, "channel_has_htlc_in called!\n"); abort(); }
@@ -114,6 +116,9 @@ bool channel_tell_depth(struct lightningd *ld UNNEEDED,
 /* Generated stub for channel_type_has */
 bool channel_type_has(const struct channel_type *type UNNEEDED, int feature UNNEEDED)
 { fprintf(stderr, "channel_type_has called!\n"); abort(); }
+/* Generated stub for channel_type_name */
+const char **channel_type_name(const tal_t *ctx UNNEEDED, const struct channel_type *t UNNEEDED)
+{ fprintf(stderr, "channel_type_name called!\n"); abort(); }
 /* Generated stub for channel_unsaved_close_conn */
 void channel_unsaved_close_conn(struct channel *channel UNNEEDED, const char *why UNNEEDED)
 { fprintf(stderr, "channel_unsaved_close_conn called!\n"); abort(); }
@@ -251,15 +256,15 @@ bool fromwire_connectd_peer_spoke(const void *p UNNEEDED, struct node_id *id UNN
 /* Generated stub for fromwire_dualopend_dev_memleak_reply */
 bool fromwire_dualopend_dev_memleak_reply(const void *p UNNEEDED, bool *leak UNNEEDED)
 { fprintf(stderr, "fromwire_dualopend_dev_memleak_reply called!\n"); abort(); }
-/* Generated stub for fromwire_hsmd_sign_bolt12_reply */
-bool fromwire_hsmd_sign_bolt12_reply(const void *p UNNEEDED, struct bip340sig *sig UNNEEDED)
-{ fprintf(stderr, "fromwire_hsmd_sign_bolt12_reply called!\n"); abort(); }
 /* Generated stub for fromwire_hsmd_preapprove_invoice_reply */
 bool fromwire_hsmd_preapprove_invoice_reply(const void *p UNNEEDED, bool *approved UNNEEDED)
 { fprintf(stderr, "fromwire_hsmd_preapprove_invoice_reply called!\n"); abort(); }
 /* Generated stub for fromwire_hsmd_preapprove_keysend_reply */
 bool fromwire_hsmd_preapprove_keysend_reply(const void *p UNNEEDED, bool *approved UNNEEDED)
 { fprintf(stderr, "fromwire_hsmd_preapprove_keysend_reply called!\n"); abort(); }
+/* Generated stub for fromwire_hsmd_sign_bolt12_reply */
+bool fromwire_hsmd_sign_bolt12_reply(const void *p UNNEEDED, struct bip340sig *sig UNNEEDED)
+{ fprintf(stderr, "fromwire_hsmd_sign_bolt12_reply called!\n"); abort(); }
 /* Generated stub for fromwire_hsmd_sign_commitment_tx_reply */
 bool fromwire_hsmd_sign_commitment_tx_reply(const void *p UNNEEDED, struct bitcoin_signature *sig UNNEEDED)
 { fprintf(stderr, "fromwire_hsmd_sign_commitment_tx_reply called!\n"); abort(); }
@@ -286,6 +291,11 @@ u32 get_feerate(const struct fee_states *fee_states UNNEEDED,
 /* Generated stub for hash_htlc_key */
 size_t hash_htlc_key(const struct htlc_key *htlc_key UNNEEDED)
 { fprintf(stderr, "hash_htlc_key called!\n"); abort(); }
+/* Generated stub for hsm_sync_req */
+const u8 *hsm_sync_req(const tal_t *ctx UNNEEDED,
+		       struct lightningd *ld UNNEEDED,
+		       const u8 *msg TAKES UNNEEDED)
+{ fprintf(stderr, "hsm_sync_req called!\n"); abort(); }
 /* Generated stub for htlc_is_trimmed */
 bool htlc_is_trimmed(enum side htlc_owner UNNEEDED,
 		     struct amount_msat htlc_amount UNNEEDED,
@@ -337,26 +347,12 @@ void json_add_address_internal(struct json_stream *response UNNEEDED,
 			       const char *fieldname UNNEEDED,
 			       const struct wireaddr_internal *addr UNNEEDED)
 { fprintf(stderr, "json_add_address_internal called!\n"); abort(); }
-/* Generated stub for json_add_amount_msat_compat */
-void json_add_amount_msat_compat(struct json_stream *result UNNEEDED,
-				 struct amount_msat msat UNNEEDED,
-				 const char *rawfieldname UNNEEDED,
-				 const char *msatfieldname)
-
-{ fprintf(stderr, "json_add_amount_msat_compat called!\n"); abort(); }
-/* Generated stub for json_add_amount_msat_only */
-void json_add_amount_msat_only(struct json_stream *result UNNEEDED,
+/* Generated stub for json_add_amount_msat */
+void json_add_amount_msat(struct json_stream *result UNNEEDED,
 			  const char *msatfieldname UNNEEDED,
 			  struct amount_msat msat)
 
-{ fprintf(stderr, "json_add_amount_msat_only called!\n"); abort(); }
-/* Generated stub for json_add_amount_sat_compat */
-void json_add_amount_sat_compat(struct json_stream *result UNNEEDED,
-				struct amount_sat sat UNNEEDED,
-				const char *rawfieldname UNNEEDED,
-				const char *msatfieldname)
-
-{ fprintf(stderr, "json_add_amount_sat_compat called!\n"); abort(); }
+{ fprintf(stderr, "json_add_amount_msat called!\n"); abort(); }
 /* Generated stub for json_add_amount_sat_msat */
 void json_add_amount_sat_msat(struct json_stream *result UNNEEDED,
 			      const char *msatfieldname UNNEEDED,
@@ -779,15 +775,15 @@ u8 *towire_errorfmt(const tal_t *ctx UNNEEDED,
 /* Generated stub for towire_gossipd_discovered_ip */
 u8 *towire_gossipd_discovered_ip(const tal_t *ctx UNNEEDED, const struct wireaddr *discovered_ip UNNEEDED)
 { fprintf(stderr, "towire_gossipd_discovered_ip called!\n"); abort(); }
-/* Generated stub for towire_hsmd_sign_bolt12 */
-u8 *towire_hsmd_sign_bolt12(const tal_t *ctx UNNEEDED, const wirestring *messagename UNNEEDED, const wirestring *fieldname UNNEEDED, const struct sha256 *merkleroot UNNEEDED, const u8 *publictweak UNNEEDED)
-{ fprintf(stderr, "towire_hsmd_sign_bolt12 called!\n"); abort(); }
 /* Generated stub for towire_hsmd_preapprove_invoice */
 u8 *towire_hsmd_preapprove_invoice(const tal_t *ctx UNNEEDED, const wirestring *invstring UNNEEDED)
 { fprintf(stderr, "towire_hsmd_preapprove_invoice called!\n"); abort(); }
 /* Generated stub for towire_hsmd_preapprove_keysend */
-u8 *towire_hsmd_preapprove_keysend(const tal_t *ctx UNNEEDED, const struct node_id *destination UNNEEDED, const struct sha256 *payment_hash UNNEEDED, struct amount_msat amount UNNEEDED)
+u8 *towire_hsmd_preapprove_keysend(const tal_t *ctx UNNEEDED, const struct node_id *destination UNNEEDED, const struct sha256 *payment_hash UNNEEDED, struct amount_msat amount_msat UNNEEDED)
 { fprintf(stderr, "towire_hsmd_preapprove_keysend called!\n"); abort(); }
+/* Generated stub for towire_hsmd_sign_bolt12 */
+u8 *towire_hsmd_sign_bolt12(const tal_t *ctx UNNEEDED, const wirestring *messagename UNNEEDED, const wirestring *fieldname UNNEEDED, const struct sha256 *merkleroot UNNEEDED, const u8 *publictweak UNNEEDED)
+{ fprintf(stderr, "towire_hsmd_sign_bolt12 called!\n"); abort(); }
 /* Generated stub for towire_hsmd_sign_commitment_tx */
 u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx UNNEEDED, const struct node_id *peer_id UNNEEDED, u64 channel_dbid UNNEEDED, const struct bitcoin_tx *tx UNNEEDED, const struct pubkey *remote_funding_key UNNEEDED, u64 commit_num UNNEEDED)
 { fprintf(stderr, "towire_hsmd_sign_commitment_tx called!\n"); abort(); }
@@ -835,6 +831,9 @@ void wallet_channeltxs_add(struct wallet *w UNNEEDED, struct channel *chan UNNEE
 			    const int type UNNEEDED, const struct bitcoin_txid *txid UNNEEDED,
 			   const u32 input_num UNNEEDED, const u32 blockheight UNNEEDED)
 { fprintf(stderr, "wallet_channeltxs_add called!\n"); abort(); }
+/* Generated stub for wallet_delete_peer_if_unused */
+void wallet_delete_peer_if_unused(struct wallet *w UNNEEDED, u64 peer_dbid UNNEEDED)
+{ fprintf(stderr, "wallet_delete_peer_if_unused called!\n"); abort(); }
 /* Generated stub for wallet_htlcs_load_in_for_channel */
 bool wallet_htlcs_load_in_for_channel(struct wallet *wallet UNNEEDED,
 				      struct channel *chan UNNEEDED,
@@ -930,9 +929,6 @@ char *wallet_offer_find(const tal_t *ctx UNNEEDED,
 			enum offer_status *status)
 
 { fprintf(stderr, "wallet_offer_find called!\n"); abort(); }
-/* Generated stub for wallet_peer_delete */
-void wallet_peer_delete(struct wallet *w UNNEEDED, u64 peer_dbid UNNEEDED)
-{ fprintf(stderr, "wallet_peer_delete called!\n"); abort(); }
 /* Generated stub for wallet_state_change_get */
 struct state_change_entry *wallet_state_change_get(struct wallet *w UNNEEDED,
 						   const tal_t *ctx UNNEEDED,

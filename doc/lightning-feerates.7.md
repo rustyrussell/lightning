@@ -17,8 +17,11 @@ CLN will also smoothen feerate estimations from the backend.
 
 *style* is either of the two strings:
 
-* *perkw* - provide feerate in units of satoshis per 1000 weight.
-* *perkb* - provide feerate in units of satoshis per 1000 virtual bytes.
+* *perkw* - provide feerate in units of satoshis per 1000 weight (e.g. the minimum fee is usually `253perkw`)
+* *perkb* - provide feerate in units of satoshis per 1000 virtual bytes (eg. the minimum fee is usually `1000perkb`)
+
+Explorers often present fees in "sat/vB": 4 sat/vB is `4000perkb` or
+`1000perkw`.
 
 Bitcoin transactions have non-witness and witness bytes:
 
@@ -48,27 +51,37 @@ RETURN VALUE
 On success, an object is returned, containing:
 
 - **perkb** (object, optional): If *style* parameter was perkb:
-  - **min\_acceptable** (u32): The smallest feerate that you can use, usually the minimum relayed feerate of the backend
+  - **min\_acceptable** (u32): The smallest feerate that we allow peers to specify: half the 100-block estimate
   - **max\_acceptable** (u32): The largest feerate we will accept from remote negotiations.  If a peer attempts to set the feerate higher than this we will unilaterally close the channel (or simply forget it if it's not open yet).
+  - **floor** (u32): The smallest feerate that our backend tells us it will accept (i.e. minrelayfee or mempoolminfee) *(added v23.05)*
+  - **estimates** (array of objects): Feerate estimates from plugin which we are using (usuallly bcli) *(added v23.05)*:
+    - **blockcount** (u32): The number of blocks the feerate is expected to get a transaction in *(added v23.05)*
+    - **feerate** (u32): The feerate for this estimate, in given *style* *(added v23.05)*
+    - **smoothed\_feerate** (u32): The feerate, smoothed over time (useful for coordinating with other nodes) *(added v23.05)*
   - **opening** (u32, optional): Default feerate for lightning-fundchannel(7) and lightning-withdraw(7)
   - **mutual\_close** (u32, optional): Feerate to aim for in cooperative shutdown.  Note that since mutual close is a **negotiation**, the actual feerate used in mutual close will be somewhere between this and the corresponding mutual close feerate of the peer.
   - **unilateral\_close** (u32, optional): Feerate for commitment\_transaction in a live channel which we originally funded
-  - **delayed\_to\_us** (u32, optional): Feerate for returning unilateral close funds to our wallet
-  - **htlc\_resolution** (u32, optional): Feerate for returning unilateral close HTLC outputs to our wallet
-  - **penalty** (u32, optional): Feerate to start at when penalizing a cheat attempt
+  - **delayed\_to\_us** (u32, optional): Feerate for returning unilateral close funds to our wallet **deprecated, removal in v24.02**
+  - **htlc\_resolution** (u32, optional): Feerate for returning unilateral close HTLC outputs to our wallet **deprecated, removal in v24.02**
+  - **penalty** (u32, optional): Feerate to use when creating penalty tx for watchtowers
 - **perkw** (object, optional): If *style* parameter was perkw:
   - **min\_acceptable** (u32): The smallest feerate that you can use, usually the minimum relayed feerate of the backend
   - **max\_acceptable** (u32): The largest feerate we will accept from remote negotiations.  If a peer attempts to set the feerate higher than this we will unilaterally close the channel (or simply forget it if it's not open yet).
+  - **floor** (u32): The smallest feerate that our backend tells us it will accept (i.e. minrelayfee or mempoolminfee) *(added v23.05)*
+  - **estimates** (array of objects): Feerate estimates from plugin which we are using (usuallly bcli) *(added v23.05)*:
+    - **blockcount** (u32): The number of blocks the feerate is expected to get a transaction in *(added v23.05)*
+    - **feerate** (u32): The feerate for this estimate, in given *style* *(added v23.05)*
+    - **smoothed\_feerate** (u32): The feerate, smoothed over time (useful for coordinating with other nodes) *(added v23.05)*
   - **opening** (u32, optional): Default feerate for lightning-fundchannel(7) and lightning-withdraw(7)
   - **mutual\_close** (u32, optional): Feerate to aim for in cooperative shutdown.  Note that since mutual close is a **negotiation**, the actual feerate used in mutual close will be somewhere between this and the corresponding mutual close feerate of the peer.
   - **unilateral\_close** (u32, optional): Feerate for commitment\_transaction in a live channel which we originally funded
-  - **delayed\_to\_us** (u32, optional): Feerate for returning unilateral close funds to our wallet
-  - **htlc\_resolution** (u32, optional): Feerate for returning unilateral close HTLC outputs to our wallet
-  - **penalty** (u32, optional): Feerate to start at when penalizing a cheat attempt
+  - **delayed\_to\_us** (u32, optional): Feerate for returning unilateral close funds to our wallet **deprecated, removal in v24.02**
+  - **htlc\_resolution** (u32, optional): Feerate for returning unilateral close HTLC outputs to our wallet **deprecated, removal in v24.02**
+  - **penalty** (u32, optional): Feerate to use when creating penalty tx for watchtowers
 - **onchain\_fee\_estimates** (object, optional):
   - **opening\_channel\_satoshis** (u64): Estimated cost of typical channel open
   - **mutual\_close\_satoshis** (u64): Estimated cost of typical channel close
-  - **unilateral\_close\_satoshis** (u64): Estimated cost of typical unilateral close (without HTLCs)
+  - **unilateral\_close\_satoshis** (u64): Estimated cost of typical (non-anchor) unilateral close (without HTLCs)
   - **htlc\_timeout\_satoshis** (u64): Estimated cost of typical HTLC timeout transaction
   - **htlc\_success\_satoshis** (u64): Estimated cost of typical HTLC fulfillment transaction
 
@@ -88,13 +101,20 @@ if feerate estimates for that kind of transaction are unavailable.
 NOTES
 -----
 
-Many other commands have a *feerate* parameter, which can be the strings
-*urgent*, *normal*, or *slow*.
-These are mapped to the **feerates** outputs as:
+Many other commands have a *feerate* parameter.  This can be:
 
-* *urgent* - equal to *unilateral\_close*
-* *normal* - equal to *opening*
-* *slow* - equal to *min\_acceptable*.
+* One of the strings to use lightningd's internal estimates:
+  * *urgent* (next 6 blocks or so)
+  * *normal* (next 12 blocks or so)
+  * *slow* (next 100 blocks or so)
+  * *minimum* for the lowest value bitcoind will currently accept (added in v23.05)
+
+* A number, with an optional suffix:
+  * *blocks* means aim for confirmation in that many blocks (added in v23.05)
+  * *perkw* means the number is interpreted as satoshi-per-kilosipa (weight)
+  * *perkb* means it is interpreted bitcoind-style as satoshi-per-kilobyte. 
+  
+Omitting the suffix is equivalent to *perkb*.
 
 TRIVIA
 ------
@@ -121,4 +141,4 @@ RESOURCES
 
 Main web site: <https://github.com/ElementsProject/lightning>
 
-[comment]: # ( SHA256STAMP:a34af89895413ee57defa1df715d9e50d34a49196972a81b31a4666b4fc05a10)
+[comment]: # ( SHA256STAMP:4921275aec48da8b9ddcba5d4237efa72f06b6e005008f2c3aa7029d3bd187fd)

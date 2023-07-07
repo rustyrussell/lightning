@@ -62,10 +62,8 @@ void json_add_uncommitted_channel(struct json_stream *response,
 	/* These should never fail. */
 	if (amount_sat_to_msat(&total, uc->fc->funding_sats)
 	    && amount_msat_sub(&ours, total, uc->fc->push)) {
-		json_add_amount_msat_compat(response, ours,
-					    "msatoshi_to_us", "to_us_msat");
-		json_add_amount_msat_compat(response, total,
-					    "msatoshi_total", "total_msat");
+		json_add_amount_msat(response, "to_us_msat", ours);
+		json_add_amount_msat(response, "total_msat", total);
 	}
 
 	json_array_start(response, "features");
@@ -178,6 +176,7 @@ wallet_commit_channel(struct lightningd *ld,
 			      uc->log,
 			      take(uc->transient_billboard),
 			      channel_flags,
+			      false, false,
 			      &uc->our_config,
 			      uc->minimum_depth,
 			      1, 1, 0,
@@ -645,17 +644,17 @@ static void openchannel_hook_serialize(struct openchannel_hook_payload *payload,
 	struct uncommitted_channel *uc = payload->openingd->channel;
 	json_object_start(stream, "openchannel");
 	json_add_node_id(stream, "id", &uc->peer->id);
-	json_add_amount_sats_deprecated(stream, "funding_satoshis", "funding_msat",
-					payload->funding_satoshis);
-	json_add_amount_msat_only(stream, "push_msat", payload->push_msat);
-	json_add_amount_sats_deprecated(stream, "dust_limit_satoshis", "dust_limit_msat",
-					payload->dust_limit_satoshis);
-	json_add_amount_msat_only(stream, "max_htlc_value_in_flight_msat",
-				  payload->max_htlc_value_in_flight_msat);
-	json_add_amount_sats_deprecated(stream, "channel_reserve_satoshis", "channel_reserve_msat",
+	json_add_amount_sat_msat(stream, "funding_msat",
+				 payload->funding_satoshis);
+	json_add_amount_msat(stream, "push_msat", payload->push_msat);
+	json_add_amount_sat_msat(stream, "dust_limit_msat",
+				 payload->dust_limit_satoshis);
+	json_add_amount_msat(stream, "max_htlc_value_in_flight_msat",
+			     payload->max_htlc_value_in_flight_msat);
+	json_add_amount_sat_msat(stream, "channel_reserve_msat",
 				 payload->channel_reserve_satoshis);
-	json_add_amount_msat_only(stream, "htlc_minimum_msat",
-				  payload->htlc_minimum_msat);
+	json_add_amount_msat(stream, "htlc_minimum_msat",
+			     payload->htlc_minimum_msat);
 	json_add_num(stream, "feerate_per_kw", payload->feerate_per_kw);
 	json_add_num(stream, "to_self_delay", payload->to_self_delay);
 	json_add_num(stream, "max_accepted_htlcs", payload->max_accepted_htlcs);
@@ -1010,10 +1009,15 @@ static struct command_result *json_fundchannel_complete(struct command *cmd,
 
 	fc = peer->uncommitted_channel->fc;
 
+	/* We only deal with V2 internally */
+	if (!psbt_set_version(funding_psbt, 2)) {
+		return command_fail(cmd, LIGHTNINGD, "Could not set PSBT version.");
+	}
+
 	/* Figure out the correct output, and perform sanity checks. */
-	for (size_t i = 0; i < funding_psbt->tx->num_outputs; i++) {
-		if (memeq(funding_psbt->tx->outputs[i].script,
-			  funding_psbt->tx->outputs[i].script_len,
+	for (size_t i = 0; i < funding_psbt->num_outputs; i++) {
+		if (memeq(funding_psbt->outputs[i].script,
+			  funding_psbt->outputs[i].script_len,
 			  fc->funding_scriptpubkey,
 			  tal_bytelen(fc->funding_scriptpubkey))) {
 			if (funding_txout_num)
@@ -1029,14 +1033,14 @@ static struct command_result *json_fundchannel_complete(struct command *cmd,
 
 	/* Can't really check amounts for elements. */
 	if (!chainparams->is_elements
-	    && !amount_sat_eq(amount_sat(funding_psbt->tx->outputs
-					 [*funding_txout_num].satoshi),
+	    && !amount_sat_eq(amount_sat(funding_psbt->outputs
+					 [*funding_txout_num].amount),
 			      fc->funding_sats))
 		return command_fail(cmd, FUNDING_PSBT_INVALID,
 				    "Output to open channel is %"PRIu64"sat,"
 				    " should be %s",
-				    funding_psbt->tx->outputs
-				    [*funding_txout_num].satoshi,
+				    funding_psbt->outputs
+				    [*funding_txout_num].amount,
 				    type_to_string(tmpctx, struct amount_sat,
 						   &fc->funding_sats));
 
@@ -1155,9 +1159,10 @@ static struct command_result *json_fundchannel_start(struct command *cmd,
 		}
 	}
 
-	if (*feerate_per_kw < feerate_floor()) {
+	if (*feerate_per_kw < get_feerate_floor(cmd->ld->topology)) {
 		return command_fail(cmd, LIGHTNINGD,
-				    "Feerate below feerate floor");
+				    "Feerate below feerate floor %u perkw",
+				    get_feerate_floor(cmd->ld->topology));
 	}
 
 	if (!topology_synced(cmd->ld->topology)) {
@@ -1303,7 +1308,7 @@ static struct channel *stub_chan(struct command *cmd,
 				 struct node_id nodeid,
 				 struct channel_id cid,
 				 struct bitcoin_outpoint funding,
-				 struct wireaddr_internal addr,
+				 struct wireaddr addr,
 				 struct amount_sat funding_sats,
 				 struct channel_type *type)
 {
@@ -1336,10 +1341,15 @@ static struct channel *stub_chan(struct command *cmd,
 			return NULL;
 		}
 	} else {
+		struct wireaddr_internal wint;
+
+		wint.itype = ADDR_INTERNAL_WIREADDR;
+		wint.u.wireaddr.is_websocket = false;
+		wint.u.wireaddr.wireaddr = addr;
 		peer = new_peer(cmd->ld,
 				0,
 				&nodeid,
-				&addr,
+				&wint,
 				false);
 	}
 
@@ -1397,7 +1407,8 @@ static struct channel *stub_chan(struct command *cmd,
 			      LOCAL,
 			      NULL,
 			      "restored from static channel backup",
-			      0, our_config,
+			      0, false, false,
+			      our_config,
 			      0,
 			      1, 1, 1,
 			      &funding,

@@ -1,5 +1,5 @@
 PLUGIN_PAY_SRC := plugins/pay.c
-PLUGIN_PAY_HEADER := 
+PLUGIN_PAY_HEADER :=
 PLUGIN_PAY_OBJS := $(PLUGIN_PAY_SRC:.c=.o)
 
 PLUGIN_AUTOCLEAN_SRC := plugins/autoclean.c
@@ -40,7 +40,7 @@ PLUGIN_FETCHINVOICE_OBJS := $(PLUGIN_FETCHINVOICE_SRC:.c=.o)
 PLUGIN_FETCHINVOICE_HEADER :=
 
 PLUGIN_SQL_SRC := plugins/sql.c
-PLUGIN_SQL_HEADER := 
+PLUGIN_SQL_HEADER :=
 PLUGIN_SQL_OBJS := $(PLUGIN_SQL_SRC:.c=.o)
 
 PLUGIN_SPENDER_SRC :=				\
@@ -87,7 +87,6 @@ PLUGIN_ALL_HEADER :=				\
 	$(PLUGIN_PAY_LIB_HEADER)		\
 	$(PLUGIN_OFFERS_HEADER)			\
 	$(PLUGIN_SPENDER_HEADER)
-PLUGIN_ALL_OBJS := $(PLUGIN_ALL_SRC:.c=.o)
 
 C_PLUGINS :=					\
 	plugins/autoclean			\
@@ -101,10 +100,16 @@ C_PLUGINS :=					\
 	plugins/offers				\
 	plugins/pay				\
 	plugins/txprepare			\
-	plugins/sql				\
 	plugins/spenderp
 
+ifeq ($(HAVE_SQLITE3),1)
+C_PLUGINS += plugins/sql
+PLUGIN_ALL_SRC += $(PLUGIN_SQL_SRC)
+PLUGIN_ALL_HEADER += $(PLUGIN_SQL_HEADER)
+endif
+
 PLUGINS := $(C_PLUGINS)
+PLUGIN_ALL_OBJS := $(PLUGIN_ALL_SRC:.c=.o)
 
 ifneq ($(RUST),0)
 # Builtin plugins must be in this plugins dir to work when we're executed
@@ -162,8 +167,8 @@ PLUGIN_COMMON_OBJS :=				\
 	common/wireaddr.o			\
 	wire/channel_type_wiregen.o		\
 	wire/fromwire.o				\
-	wire/onion$(EXP)_wiregen.o		\
-	wire/peer$(EXP)_wiregen.o		\
+	wire/onion_wiregen.o			\
+	wire/peer_wiregen.o			\
 	wire/tlvstream.o			\
 	wire/towire.o
 
@@ -177,23 +182,23 @@ ALL_PROGRAMS += $(C_PLUGINS)
 # Make all plugins depend on all plugin headers, for simplicity.
 $(PLUGIN_ALL_OBJS): $(PLUGIN_ALL_HEADER)
 
-plugins/pay: $(PLUGIN_PAY_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_PAY_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS) common/gossmap.o common/fp16.o common/route.o common/dijkstra.o common/bolt12.o common/bolt12_merkle.o wire/bolt12$(EXP)_wiregen.o bitcoin/block.o common/blindedpay.o common/blindedpath.o common/hmac.o common/blinding.o common/onion_encode.o
+plugins/pay: $(PLUGIN_PAY_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_PAY_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS) common/gossmap.o common/fp16.o common/route.o common/dijkstra.o common/bolt12.o common/bolt12_merkle.o wire/bolt12_wiregen.o bitcoin/block.o common/blindedpay.o common/blindedpath.o common/hmac.o common/blinding.o common/onion_encode.o
 
 plugins/autoclean: $(PLUGIN_AUTOCLEAN_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS)
 
 plugins/chanbackup: $(PLUGIN_chanbackup_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS)
 
-plugins/commando: $(PLUGIN_COMMANDO_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS) 
+plugins/commando: $(PLUGIN_COMMANDO_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS)
 
 # Topology wants to decode node_announcement, and peer_wiregen which
 # pulls in some of bitcoin/.
-plugins/topology: common/route.o common/dijkstra.o common/gossmap.o common/fp16.o wire/peer$(EXP)_wiregen.o wire/channel_type_wiregen.o bitcoin/block.o bitcoin/preimage.o  $(PLUGIN_TOPOLOGY_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS)
+plugins/topology: common/route.o common/dijkstra.o common/gossmap.o common/fp16.o wire/peer_wiregen.o wire/channel_type_wiregen.o bitcoin/block.o bitcoin/preimage.o  $(PLUGIN_TOPOLOGY_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS)
 
 plugins/txprepare: $(PLUGIN_TXPREPARE_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS)
 
 plugins/bcli: $(PLUGIN_BCLI_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS)
 
-plugins/keysend: wire/tlvstream.o wire/onion$(EXP)_wiregen.o $(PLUGIN_KEYSEND_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_PAY_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS) common/gossmap.o common/fp16.o common/route.o common/dijkstra.o common/blindedpay.o common/blindedpath.o common/hmac.o common/blinding.o common/onion_encode.o
+plugins/keysend: wire/tlvstream.o wire/onion_wiregen.o $(PLUGIN_KEYSEND_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_PAY_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS) common/gossmap.o common/fp16.o common/route.o common/dijkstra.o common/blindedpay.o common/blindedpath.o common/hmac.o common/blinding.o common/onion_encode.o
 $(PLUGIN_KEYSEND_OBJS): $(PLUGIN_PAY_LIB_HEADER)
 
 plugins/spenderp: bitcoin/block.o bitcoin/preimage.o bitcoin/psbt.o common/psbt_open.o wire/peer${EXP}_wiregen.o $(PLUGIN_SPENDER_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS)
@@ -205,7 +210,7 @@ plugins/fetchinvoice: $(PLUGIN_FETCHINVOICE_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_CO
 plugins/funder: bitcoin/psbt.o common/psbt_open.o $(PLUGIN_FUNDER_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS)
 
 # This covers all the low-level list RPCs which return simple arrays
-SQL_LISTRPCS := listchannels listforwards listhtlcs listinvoices listnodes listoffers listpeers listpeerchannels listtransactions listsendpays bkpr-listaccountevents bkpr-listincome
+SQL_LISTRPCS := listchannels listforwards listhtlcs listinvoices listnodes listoffers listpeers listpeerchannels listclosedchannels listtransactions listsendpays bkpr-listaccountevents bkpr-listincome
 SQL_LISTRPCS_SCHEMAS := $(foreach l,$(SQL_LISTRPCS),doc/schemas/$l.schema.json)
 # We squeeze:
 #  descriptions (we don't need)
@@ -215,7 +220,7 @@ SQL_LISTRPCS_SCHEMAS := $(foreach l,$(SQL_LISTRPCS),doc/schemas/$l.schema.json)
 # make invalid JSON. Grr!
 # But these simple removals drop us from 100k to 29k.
 plugins/sql-schema_gen.h: plugins/Makefile $(SQL_LISTRPCS_SCHEMAS)
-	@$(call VERBOSE,GEN $@, (SEP=""; echo -n '"{'; for f in $(SQL_LISTRPCS); do echo -n "$$SEP\\\"$$f\\\":"; sed -e s/\"description\":\ *\".\*\"/\"\":\"\"/ -e s/\".*\":\ *{}/\"\":{}/ -e s/\"/\\\\\"/g < doc/schemas/$$f.schema.json | tr -d ' \n'; SEP=","; done; echo '}"') > $@)
+	@$(call VERBOSE,GEN $@, (SEP=""; echo '"{'; for f in $(SQL_LISTRPCS); do echo "$$SEP\\\"$$f\\\":"; sed -e s/\"description\":\ *\".\*\"/\"\":\"\"/ -e s/\".*\":\ *{}/\"\":{}/ -e s/\"/\\\\\"/g < doc/schemas/$$f.schema.json; SEP=","; done; echo '}"') | tr -d ' \n' > $@)
 
 plugins/sql.o: plugins/sql-schema_gen.h
 plugins/sql: $(PLUGIN_SQL_OBJS) $(PLUGIN_LIB_OBJS) $(PLUGIN_COMMON_OBJS) $(JSMN_OBJS) common/gossip_store.o gossipd/gossip_store_wiregen.o
@@ -227,6 +232,7 @@ plugins/list_of_builtin_plugins_gen.h: plugins/Makefile Makefile config.vars
 
 CLN_PLUGIN_EXAMPLES := \
 	target/${RUST_PROFILE}/examples/cln-plugin-startup \
+	target/${RUST_PROFILE}/examples/cln-plugin-reentrant \
 	target/${RUST_PROFILE}/examples/cln-rpc-getinfo
 
 CLN_PLUGIN_SRC = $(shell find plugins/src -name "*.rs")
@@ -237,5 +243,10 @@ target/${RUST_PROFILE}/cln-grpc: ${CLN_PLUGIN_SRC}
 ifneq ($(RUST),0)
 DEFAULT_TARGETS += $(CLN_PLUGIN_EXAMPLES) plugins/cln-grpc
 endif
+
+clean: plugins-clean
+plugins-clean:
+	$(RM) $(PLUGINS) $(CLN_PLUGIN_EXAMPLES)
+	$(RM) plugins/sql-schema_gen.h
 
 include plugins/test/Makefile

@@ -9,6 +9,7 @@
 struct bitcoin_blkid;
 struct bitcoin_tx_output;
 struct block;
+struct feerate_est;
 struct lightningd;
 struct ripemd160;
 struct bitcoin_tx;
@@ -57,19 +58,10 @@ struct bitcoind *new_bitcoind(const tal_t *ctx,
 			      struct lightningd *ld,
 			      struct log *log);
 
-void bitcoind_estimate_fees_(struct bitcoind *bitcoind,
-			     size_t num_estimates,
-			     void (*cb)(struct bitcoind *bitcoind,
-					const u32 satoshi_per_kw[], void *),
-			     void *arg);
-
-#define bitcoind_estimate_fees(bitcoind_, num, cb, arg) \
-	bitcoind_estimate_fees_((bitcoind_), (num), \
-				typesafe_cb_preargs(void, void *,	\
-						    (cb), (arg),	\
-						    struct bitcoind *,	\
-						    const u32 *),	\
-				(arg))
+void bitcoind_estimate_fees(struct bitcoind *bitcoind,
+			    void (*cb)(struct lightningd *ld,
+				       u32 feerate_floor,
+				       const struct feerate_est *feerates));
 
 void bitcoind_sendrawtx_(struct bitcoind *bitcoind,
 			 const char *id_prefix TAKES,
@@ -103,6 +95,7 @@ void bitcoind_getfilteredblock_(struct bitcoind *bitcoind, u32 height,
 
 void bitcoind_getchaininfo_(struct bitcoind *bitcoind,
 			    const bool first_call,
+			    const u32 height,
 			    void (*cb)(struct bitcoind *bitcoind,
 				       const char *chain,
 				       u32 headercount,
@@ -110,8 +103,8 @@ void bitcoind_getchaininfo_(struct bitcoind *bitcoind,
 				       const bool ibd,
 				       const bool first_call, void *),
 			    void *cb_arg);
-#define bitcoind_getchaininfo(bitcoind_, first_call_, cb, arg)		   \
-	bitcoind_getchaininfo_((bitcoind_), (first_call_),		   \
+#define bitcoind_getchaininfo(bitcoind_, first_call_, height_, cb, arg)		   \
+	bitcoind_getchaininfo_((bitcoind_), (first_call_), (height_),      \
 			      typesafe_cb_preargs(void, void *,		   \
 						  (cb), (arg),		   \
 						  struct bitcoind *,	   \

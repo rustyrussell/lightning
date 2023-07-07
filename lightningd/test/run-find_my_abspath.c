@@ -20,6 +20,9 @@ void connectd_activate(struct lightningd *ld UNNEEDED)
 /* Generated stub for connectd_init */
 int connectd_init(struct lightningd *ld UNNEEDED)
 { fprintf(stderr, "connectd_init called!\n"); abort(); }
+/* Generated stub for connectd_start_shutdown */
+void connectd_start_shutdown(struct subd *connectd UNNEEDED)
+{ fprintf(stderr, "connectd_start_shutdown called!\n"); abort(); }
 /* Generated stub for daemon_poll */
 int daemon_poll(struct pollfd *fds UNNEEDED, nfds_t nfds UNNEEDED, int timeout UNNEEDED)
 { fprintf(stderr, "daemon_poll called!\n"); abort(); }
@@ -38,7 +41,7 @@ void db_begin_transaction_(struct db *db UNNEEDED, const char *location UNNEEDED
 void db_commit_transaction(struct db *db UNNEEDED)
 { fprintf(stderr, "db_commit_transaction called!\n"); abort(); }
 /* Generated stub for db_get_intvar */
-s64 db_get_intvar(struct db *db UNNEEDED, char *varname UNNEEDED, s64 defval UNNEEDED)
+s64 db_get_intvar(struct db *db UNNEEDED, const char *varname UNNEEDED, s64 defval UNNEEDED)
 { fprintf(stderr, "db_get_intvar called!\n"); abort(); }
 /* Generated stub for db_in_transaction */
 bool db_in_transaction(struct db *db UNNEEDED)
@@ -96,7 +99,7 @@ void gossip_notify_new_block(struct lightningd *ld UNNEEDED, u32 blockheight UNN
 void handle_early_opts(struct lightningd *ld UNNEEDED, int argc UNNEEDED, char *argv[])
 { fprintf(stderr, "handle_early_opts called!\n"); abort(); }
 /* Generated stub for handle_opts */
-void handle_opts(struct lightningd *ld UNNEEDED, int argc UNNEEDED, char *argv[])
+void handle_opts(struct lightningd *ld UNNEEDED)
 { fprintf(stderr, "handle_opts called!\n"); abort(); }
 /* Generated stub for hash_htlc_key */
 size_t hash_htlc_key(const struct htlc_key *htlc_key UNNEEDED)
@@ -109,7 +112,7 @@ void htlcs_notify_new_block(struct lightningd *ld UNNEEDED, u32 height UNNEEDED)
 { fprintf(stderr, "htlcs_notify_new_block called!\n"); abort(); }
 /* Generated stub for htlcs_resubmit */
 void htlcs_resubmit(struct lightningd *ld UNNEEDED,
-		    struct htlc_in_map *unconnected_htlcs_in UNNEEDED)
+		    struct htlc_in_map *unconnected_htlcs_in STEALS UNNEEDED)
 { fprintf(stderr, "htlcs_resubmit called!\n"); abort(); }
 /* Generated stub for jsonrpc_listen */
 void jsonrpc_listen(struct jsonrpc *rpc UNNEEDED, struct lightningd *ld UNNEEDED)
@@ -230,8 +233,7 @@ void waitblockheight_notify_new_block(struct lightningd *ld UNNEEDED,
 void wallet_blocks_heights(struct wallet *w UNNEEDED, u32 def UNNEEDED, u32 *min UNNEEDED, u32 *max UNNEEDED)
 { fprintf(stderr, "wallet_blocks_heights called!\n"); abort(); }
 /* Generated stub for wallet_new */
-struct wallet *wallet_new(struct lightningd *ld UNNEEDED, struct timers *timers UNNEEDED,
-			  struct ext_key *bip32_base UNNEEDED)
+struct wallet *wallet_new(struct lightningd *ld UNNEEDED, struct timers *timers UNNEEDED)
 { fprintf(stderr, "wallet_new called!\n"); abort(); }
 /* Generated stub for wallet_sanity_check */
 bool wallet_sanity_check(struct wallet *w UNNEEDED)

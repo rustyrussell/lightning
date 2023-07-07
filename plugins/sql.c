@@ -117,6 +117,7 @@ static struct sqlite3 *db;
 static const char *dbfilename;
 static int gosstore_fd = -1;
 static size_t gosstore_nodes_off = 0, gosstore_channels_off = 0;
+static u64 next_rowid = 1;
 
 /* It was tempting to put these in the schema, but they're really
  * just for our usage.  Though that would allow us to autogen the
@@ -224,6 +225,10 @@ static struct sqlite3 *sqlite_setup(struct plugin *plugin)
 			   NULL, NULL, &errmsg);
 	if (err != SQLITE_OK)
 		plugin_err(plugin, "Could not set max_page_count: %s", errmsg);
+
+	err = sqlite3_exec(db, "PRAGMA foreign_keys = ON;", NULL, NULL, &errmsg);
+	if (err != SQLITE_OK)
+		plugin_err(plugin, "Could not set foreign_keys: %s", errmsg);
 
 	return db;
 }
@@ -417,22 +422,55 @@ static struct command_result *process_json_list(struct command *cmd,
 						const u64 *rowid,
 						const struct table_desc *td);
 
+/* Process all subobject columns */
+static struct command_result *process_json_subobjs(struct command *cmd,
+						   const char *buf,
+						   const jsmntok_t *t,
+						   const struct table_desc *td,
+						   u64 this_rowid)
+{
+	for (size_t i = 0; i < tal_count(td->columns); i++) {
+		const struct column *col = &td->columns[i];
+		struct command_result *ret;
+		const jsmntok_t *coltok;
+
+		if (!col->sub)
+			continue;
+
+		coltok = json_get_member(buf, t, col->jsonname);
+		if (!coltok)
+			continue;
+
+		/* If it's an array, use process_json_list */
+		if (!col->sub->is_subobject) {
+			ret = process_json_list(cmd, buf, coltok, &this_rowid,
+						col->sub);
+		} else {
+			ret = process_json_subobjs(cmd, buf, coltok, col->sub,
+						   this_rowid);
+		}
+		if (ret)
+			return ret;
+	}
+	return NULL;
+}
+
 /* Returns NULL on success, otherwise has failed cmd. */
 static struct command_result *process_json_obj(struct command *cmd,
 					       const char *buf,
 					       const jsmntok_t *t,
 					       const struct table_desc *td,
 					       size_t row,
-					       const u64 *rowid,
+					       u64 this_rowid,
+					       const u64 *parent_rowid,
 					       size_t *sqloff,
 					       sqlite3_stmt *stmt)
 {
 	int err;
-	u64 parent_rowid;
 
 	/* Subtables have row, arrindex as first two columns. */
-	if (rowid) {
-		sqlite3_bind_int64(stmt, (*sqloff)++, *rowid);
+	if (parent_rowid) {
+		sqlite3_bind_int64(stmt, (*sqloff)++, *parent_rowid);
 		sqlite3_bind_int64(stmt, (*sqloff)++, row);
 	}
 
@@ -448,8 +486,8 @@ static struct command_result *process_json_obj(struct command *cmd,
 				continue;
 
 			coltok = json_get_member(buf, t, col->jsonname);
-			ret = process_json_obj(cmd, buf, coltok, col->sub, row, NULL,
-					       sqloff, stmt);
+			ret = process_json_obj(cmd, buf, coltok, col->sub, row, this_rowid,
+					       NULL, sqloff, stmt);
 			if (ret)
 				return ret;
 			continue;
@@ -564,32 +602,14 @@ static struct command_result *process_json_obj(struct command *cmd,
 				    sqlite3_errmsg(db));
 	}
 
-	/* Now we have rowid, we can insert into any subtables. */
-	parent_rowid = sqlite3_last_insert_rowid(db);
-	for (size_t i = 0; i < tal_count(td->columns); i++) {
-		const struct column *col = &td->columns[i];
-		const jsmntok_t *coltok;
-		struct command_result *ret;
-
-		if (!col->sub || col->sub->is_subobject)
-			continue;
-
-		coltok = json_get_member(buf, t, col->jsonname);
-		if (!coltok)
-			continue;
-
-		ret = process_json_list(cmd, buf, coltok, &parent_rowid, col->sub);
-		if (ret)
-			return ret;
-	}
-	return NULL;
+	return process_json_subobjs(cmd, buf, t, td, this_rowid);
 }
 
 /* A list, such as in the top-level reply, or for a sub-table */
 static struct command_result *process_json_list(struct command *cmd,
 						const char *buf,
 						const jsmntok_t *arr,
-						const u64 *rowid,
+						const u64 *parent_rowid,
 						const struct table_desc *td)
 {
 	size_t i;
@@ -608,7 +628,11 @@ static struct command_result *process_json_list(struct command *cmd,
 	json_for_each_arr(i, t, arr) {
 		/* sqlite3 columns are 1-based! */
 		size_t off = 1;
-		ret = process_json_obj(cmd, buf, t, td, i, rowid, &off, stmt);
+		u64 this_rowid = next_rowid++;
+
+		/* First entry is always the rowid */
+		sqlite3_bind_int64(stmt, off++, this_rowid);
+		ret = process_json_obj(cmd, buf, t, td, i, this_rowid, parent_rowid, &off, stmt);
 		if (ret)
 			break;
 		sqlite3_reset(stmt);
@@ -843,7 +867,7 @@ static void delete_node_from_db(struct command *cmd,
 	err = sqlite3_exec(db,
 			   tal_fmt(tmpctx,
 				   "DELETE FROM nodes"
-				   " WHERE nodeid = %s",
+				   " WHERE nodeid = X'%s'",
 				   node_id_to_hexstr(tmpctx, id)),
 			   NULL, NULL, &errmsg);
 	if (err != SQLITE_OK)
@@ -873,7 +897,7 @@ static bool extract_node_id(int gosstore_fd, size_t off, u16 type,
 	    != sizeof(flen))
 		return false;
 
-	node_id_off = off + feature_len_off + 2 + flen + 4;
+	node_id_off = off + feature_len_off + 2 + be16_to_cpu(flen) + 4;
 	if (pread(gosstore_fd, id, sizeof(*id), node_id_off) != sizeof(*id))
 		return false;
 
@@ -1049,6 +1073,7 @@ static void json_add_schema(struct json_stream *js,
 	/* This needs to be an array, not a dictionary, since dicts
 	 * are often treated as unordered, and order is critical! */
 	json_array_start(js, "columns");
+	json_add_column(js, "rowid", "INTEGER");
 	if (td->parent) {
 		json_add_column(js, "row", "INTEGER");
 		json_add_column(js, "arrindex", "INTEGER");
@@ -1106,6 +1131,32 @@ static struct command_result *json_listsqlschemas(struct command *cmd,
 	return command_finished(cmd, ret);
 }
 
+/* Adds a sub_object to this sql statement (and sub-sub etc) */
+static void add_sub_object(char **update_stmt, char **create_stmt,
+			   const char **sep, struct table_desc *sub)
+{
+	/* sub-arrays are a completely separate table. */
+	if (!sub->is_subobject)
+		return;
+
+	/* sub-objects are folded into this table. */
+	for (size_t j = 0; j < tal_count(sub->columns); j++) {
+		const struct column *subcol = &sub->columns[j];
+
+		if (subcol->sub) {
+			add_sub_object(update_stmt, create_stmt, sep,
+				       subcol->sub);
+			continue;
+		}
+		tal_append_fmt(update_stmt, "%s?", *sep);
+		tal_append_fmt(create_stmt, "%s%s %s",
+			       *sep,
+			       subcol->dbname,
+			       fieldtypemap[subcol->ftype].sqltype);
+		*sep = ",";
+	}
+}
+
 /* Creates sql statements, initializes table */
 static void finish_td(struct plugin *plugin, struct table_desc *td)
 {
@@ -1116,17 +1167,25 @@ static void finish_td(struct plugin *plugin, struct table_desc *td)
 
 	/* subobject are separate at JSON level, folded at db level! */
 	if (td->is_subobject)
-		return;
+		/* But it might have sub-sub objects! */
+		goto do_subtables;
 
-	create_stmt = tal_fmt(tmpctx, "CREATE TABLE %s (", td->name);
-	td->update_stmt = tal_fmt(td, "INSERT INTO %s VALUES (", td->name);
+	/* We make an explicit rowid in each table, for subtables to access.  This is
+	 * becuase the implicit rowid can't be used as a foreign key! */
+	create_stmt = tal_fmt(tmpctx, "CREATE TABLE %s (rowid INTEGER PRIMARY KEY, ",
+			      td->name);
+	td->update_stmt = tal_fmt(td, "INSERT INTO %s VALUES (?, ", td->name);
 
 	/* If we're a child array, we reference the parent column */
 	if (td->parent) {
+		/* But if parent is a subobject, we reference the outer! */
+		struct table_desc *parent = td->parent;
+		while (parent->is_subobject)
+			parent = parent->parent;
 		tal_append_fmt(&create_stmt,
 			       "row INTEGER REFERENCES %s(rowid) ON DELETE CASCADE,"
 			       " arrindex INTEGER",
-			       td->parent->name);
+			       parent->name);
 		tal_append_fmt(&td->update_stmt, "?,?");
 		sep = ",";
 	}
@@ -1135,19 +1194,8 @@ static void finish_td(struct plugin *plugin, struct table_desc *td)
 		const struct column *col = &td->columns[i];
 
 		if (col->sub) {
-			/* sub-arrays are a completely separate table. */
-			if (!col->sub->is_subobject)
-				continue;
-			/* sub-objects are folded into this table. */
-			for (size_t j = 0; j < tal_count(col->sub->columns); j++) {
-				const struct column *subcol = &col->sub->columns[j];
-				tal_append_fmt(&td->update_stmt, "%s?", sep);
-				tal_append_fmt(&create_stmt, "%s%s %s",
-					       sep,
-					       subcol->dbname,
-					       fieldtypemap[subcol->ftype].sqltype);
-				sep = ",";
-			}
+			add_sub_object(&td->update_stmt, &create_stmt,
+				       &sep, col->sub);
 			continue;
 		}
 		tal_append_fmt(&td->update_stmt, "%s?", sep);
@@ -1164,6 +1212,7 @@ static void finish_td(struct plugin *plugin, struct table_desc *td)
 	if (err != SQLITE_OK)
 		plugin_err(plugin, "Could not create %s: %s", td->name, errmsg);
 
+do_subtables:
 	/* Now do any children */
 	for (size_t i = 0; i < tal_count(td->columns); i++) {
 		const struct column *col = &td->columns[i];

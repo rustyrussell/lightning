@@ -594,12 +594,13 @@ static char *opt_set_level(const char *arg, enum log_level *level)
 	return NULL;
 }
 
-static void opt_show_level(char buf[OPT_SHOW_LEN], const enum log_level *level)
+static bool opt_show_level(char *buf, size_t len, const enum log_level *level)
 {
 	if (*level == LOG_LEVEL_MAX + 1)
-		strncpy(buf, "none", OPT_SHOW_LEN-1);
+		strncpy(buf, "none", len);
 	else
-		strncpy(buf, log_level_name(*level), OPT_SHOW_LEN-1);
+		strncpy(buf, log_level_name(*level), len);
+	return true;
 }
 
 /* The standard opt_log_stderr_exit exits with status 1 */
@@ -649,7 +650,7 @@ int main(int argc, char *argv[])
 	jsmntok_t *toks;
 	const jsmntok_t *result, *error, *id;
 	const tal_t *ctx = tal(NULL, char);
-	char *config_filename, *lightning_dir, *net_dir, *rpc_filename;
+	char *net_dir, *rpc_filename;
 	jsmn_parser parser;
 	int parserr;
 	enum format format = DEFAULT_FORMAT;
@@ -666,9 +667,8 @@ int main(int argc, char *argv[])
 
 	setup_option_allocators();
 
-	initial_config_opts(ctx, argc, argv,
-			    &config_filename, &lightning_dir, &net_dir,
-			    &rpc_filename);
+	opt_exitcode = ERROR_USAGE;
+	minimal_config_opts(ctx, argc, argv, &net_dir, &rpc_filename);
 
 	opt_register_noarg("--help|-h", opt_usage_and_exit,
 			   "<command> [<params>...]", "Show this message. Use the command help (without hyphens -- \"lightning-cli help\") to get a list of all RPC commands");
@@ -693,8 +693,6 @@ int main(int argc, char *argv[])
 	opt_register_arg("-c|--commando", opt_set_commando,
 			 NULL, &commando,
 			 "Send this as a commando command to nodeid:rune");
-
-	opt_register_version();
 
 	opt_early_parse(argc, argv, opt_log_stderr_exit_usage);
 	opt_parse(&argc, argv, opt_log_stderr_exit_usage);

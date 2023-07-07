@@ -80,10 +80,21 @@ void clear_softref_(const tal_t *outer, size_t outersize, void **ptr);
  * Remove an element from an array
  *
  * This will shift the elements past the removed element, changing
- * their position in memory, so only use this for arrays of pointers.
+ * their position in memory, so only use this for simple arrays.
  */
 #define tal_arr_remove(p, n) tal_arr_remove_((p), sizeof(**p), (n))
 void tal_arr_remove_(void *p, size_t elemsize, size_t n);
+
+/**
+ * Insert an element in an array
+ */
+#define tal_arr_insert(p, n, v) \
+	do {								\
+		size_t n_ = tal_count(*(p));				\
+		tal_resize((p), n_+1);					\
+		memmove(*(p) + n + 1, *(p) + n, (n_ - n) * sizeof(**(p))); \
+		(*(p))[n] = (v);					\
+	} while(0)
 
 /* Check for valid UTF-8 */
 bool utf8_check(const void *buf, size_t buflen);
@@ -112,10 +123,10 @@ void tal_wally_end(const tal_t *parent);
 /* ... or this if you want to reparent onto something which is
  * allocated by libwally here.  Fixes up this from_wally obj to have a
  * proper tal_name, too! */
-#define tal_wally_end_onto(parent, from_wally, type)			\
-	tal_wally_end_onto_((parent),					\
-			    (from_wally) + 0*sizeof((from_wally) == (type *)0), \
-			    stringify(type))
+#define tal_wally_end_onto(parent, from_wally, type)                           \
+	tal_wally_end_onto_(                                                   \
+	    (parent), (from_wally),                                            \
+	    &stringify(type)[0 * sizeof((from_wally) == (type *)0)])
 void tal_wally_end_onto_(const tal_t *parent,
 			 tal_t *from_wally,
 			 const char *from_wally_name);
@@ -140,13 +151,6 @@ STRUCTEQ_DEF(ripemd160, 0, u);
 #define IFDEV(dev, nondev) ((void)(nondev), (dev))
 #else
 #define IFDEV(dev, nondev) (nondev)
-#endif
-
-#if EXPERIMENTAL_FEATURES
-/* Make sure that nondev is evaluated, and valid, but is a constant */
-#define IFEXPERIMENTAL(exp, nonexp) (0 ? (nonexp) : (exp))
-#else
-#define IFEXPERIMENTAL(exp, nonexp) (nonexp)
 #endif
 
 /* Context which all wally allocations use (see common/setup.c) */

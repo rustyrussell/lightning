@@ -8,6 +8,7 @@
 #include <common/json_stream.h>
 #include <common/memleak.h>
 #include <common/type_to_string.h>
+#include <errno.h>
 #include <plugins/libplugin-pay.h>
 #include <sodium.h>
 
@@ -15,6 +16,7 @@
 #define KEYSEND_FEATUREBIT 55
 static unsigned int maxdelay_default;
 static struct node_id my_id;
+static u64 *accepted_extra_tlvs;
 
 /*****************************************************************************
  * Keysend modifier
@@ -149,7 +151,7 @@ static void check_preapprovekeysend_start(void *d UNUSED, struct payment *p)
 				    &preapprovekeysend_rpc_failure, p);
 	json_add_node_id(req->js, "destination", p->destination);
 	json_add_sha256(req->js, "payment_hash", p->payment_hash);
-	json_add_amount_msat_only(req->js, "amount_msat", p->amount);
+	json_add_amount_msat(req->js, "amount_msat", p->amount);
 	(void) send_outreq(p->plugin, req);
 }
 
@@ -160,16 +162,65 @@ REGISTER_PAYMENT_MODIFIER(check_preapprovekeysend, void *, NULL,
  * End of check_preapprovekeysend modifier
  *****************************************************************************/
 
+/* Deprecated: comma-separated string containing integers */
+static bool json_accumulate_uintarr(const char *buffer,
+				    const jsmntok_t *tok,
+				    u64 **dest)
+{
+	char *str = json_strdup(NULL, buffer, tok);
+	char *endp, **elements = tal_strsplit(str, str, ",", STR_NO_EMPTY);
+	unsigned long long l;
+	u64 u;
+	for (int i = 0; elements[i] != NULL; i++) {
+		/* This is how the manpage says to do it.  Yech. */
+		errno = 0;
+		l = strtoull(elements[i], &endp, 0);
+		if (*endp || !str[0])
+			return false;
+		u = l;
+		if (errno || u != l)
+			return false;
+		tal_arr_expand(dest, u);
+	}
+	tal_free(str);
+	return NULL;
+}
+
+/* values_int is a JSON array of u64s */
+static bool jsonarr_accumulate_u64(const char *buffer,
+				   const jsmntok_t *tok,
+				   u64 **dest)
+{
+	const jsmntok_t *t;
+	size_t i, n;
+
+	if (tok->type != JSMN_ARRAY)
+		return false;
+	n = tal_count(*dest);
+	tal_resize(dest, n + tok->size);
+	json_for_each_arr(i, t, tok) {
+		if (!json_to_u64(buffer, t, &(*dest)[n + i]))
+			return false;
+	}
+	return true;
+}
+
 static const char *init(struct plugin *p, const char *buf UNUSED,
 			const jsmntok_t *config UNUSED)
 {
-	rpc_scan(p, "getinfo", take(json_out_obj(NULL, NULL, NULL)),
-		 "{id:%}", JSON_SCAN(json_to_node_id, &my_id));
+	rpc_scan(p, "getinfo", take(json_out_obj(NULL, NULL, NULL)), "{id:%}",
+		 JSON_SCAN(json_to_node_id, &my_id));
 
-	rpc_scan(p, "listconfigs",
-		 take(json_out_obj(NULL, "config", "max-locktime-blocks")),
-		 "{max-locktime-blocks:%}",
-		 JSON_SCAN(json_to_number, &maxdelay_default));
+	accepted_extra_tlvs = notleak(tal_arr(NULL, u64, 0));
+	/* accept-htlc-tlv-types deprecated in v23.08, but still grab it! */
+	rpc_scan(p, "listconfigs", take(json_out_obj(NULL, NULL, NULL)),
+		 "{configs:{"
+		 "max-locktime-blocks:{value_int:%},"
+		 "accept-htlc-tlv-types?:{value_str:%},"
+		 "accept-htlc-tlv-type:{values_int:%}}}",
+		 JSON_SCAN(json_to_u32, &maxdelay_default),
+		 JSON_SCAN(json_accumulate_uintarr, &accepted_extra_tlvs),
+		 JSON_SCAN(jsonarr_accumulate_u64, &accepted_extra_tlvs));
 
 	return NULL;
 }
@@ -283,7 +334,7 @@ static const struct plugin_command commands[] = {
 };
 
 static struct command_result *
-htlc_accepted_continue(struct command *cmd, struct tlv_tlv_payload *payload)
+htlc_accepted_continue(struct command *cmd, struct tlv_payload *payload)
 {
 	struct json_stream *response;
 	response = jsonrpc_stream_success(cmd);
@@ -303,7 +354,7 @@ struct keysend_in {
 	struct sha256 payment_hash;
 	struct preimage payment_preimage;
 	char *label;
-	struct tlv_tlv_payload *payload;
+	struct tlv_payload *payload;
 	struct tlv_field *preimage_field, *desc_field;
 };
 
@@ -315,6 +366,15 @@ static int tlvfield_cmp(const struct tlv_field *a,
 	else if (a->numtype < b->numtype)
 		return -1;
 	return 0;
+}
+
+/* Check to see if a given TLV type is in the allowlist. */
+static bool keysend_accept_extra_tlv_type(u64 type)
+{
+	for (size_t i=0; i<tal_count(accepted_extra_tlvs); i++)
+		if (type == accepted_extra_tlvs[i])
+			return true;
+	return false;
 }
 
 static struct command_result *
@@ -334,6 +394,9 @@ htlc_accepted_invoice_created(struct command *cmd, const char *buf,
 		/* Same with known fields */
 		if (ki->payload->fields[i].meta)
 			continue;
+		/* If the type was explicitly allowed pass it through. */
+		if (keysend_accept_extra_tlv_type(ki->payload->fields[i].numtype))
+			continue;
 		/* Complain about it, at least. */
 		if (ki->preimage_field != &ki->payload->fields[i]) {
 			plugin_log(cmd->plugin, LOG_INFORM,
@@ -347,7 +410,7 @@ htlc_accepted_invoice_created(struct command *cmd, const char *buf,
 
 	/* Now we can fill in the payment secret, from invoice. */
 	ki->payload->payment_data = tal(ki->payload,
-					struct tlv_tlv_payload_payment_data);
+					struct tlv_payload_payment_data);
 	json_to_secret(buf, json_get_member(buf, result, "payment_secret"),
 		       &ki->payload->payment_data->payment_secret);
 
@@ -402,7 +465,7 @@ static struct command_result *htlc_accepted_call(struct command *cmd,
 	const u8 *rawpayload;
 	struct sha256 payment_hash;
 	size_t max;
-	struct tlv_tlv_payload *payload;
+	struct tlv_payload *payload;
 	struct tlv_field *preimage_field = NULL, *desc_field = NULL;
 	bigsize_t s;
 	struct keysend_in *ki;
@@ -430,8 +493,8 @@ static struct command_result *htlc_accepted_call(struct command *cmd,
 	/* Note: This is a magic pointer value, not an actual array */
 	allowed = cast_const(u64 *, FROMWIRE_TLV_ANY_TYPE);
 
-	payload = tlv_tlv_payload_new(cmd);
-	if (!fromwire_tlv(&rawpayload, &max, tlvs_tlv_tlv_payload, TLVS_ARRAY_SIZE_tlv_tlv_payload,
+	payload = tlv_payload_new(cmd);
+	if (!fromwire_tlv(&rawpayload, &max, tlvs_tlv_payload, TLVS_ARRAY_SIZE_tlv_payload,
 			  payload, &payload->fields, allowed, &err_off, &err_type)) {
 		plugin_log(
 		    cmd->plugin, LOG_UNUSUAL, "Malformed TLV payload type %"PRIu64" at off %zu %.*s",

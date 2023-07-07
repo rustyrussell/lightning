@@ -60,13 +60,6 @@ struct bitcoind {
 	/* Passthrough parameters for bitcoin-cli */
 	char *rpcuser, *rpcpass, *rpcconnect, *rpcport;
 
-	/* The factor to time the urgent feerate by to get the maximum
-	 * acceptable feerate. */
-	u32 max_fee_multiplier;
-
-	/* Percent of CONSERVATIVE/2 feerate we'll use for commitment txs. */
-	u64 commit_fee_percent;
-
 	/* Whether we fake fees (regtest) */
 	bool fake_fees;
 
@@ -463,18 +456,24 @@ static struct command_result *process_getblockchaininfo(struct bitcoin_cli *bcli
 	return command_finished(bcli->cmd, response);
 }
 
-enum feerate_levels {
-	FEERATE_HIGHEST,
-	FEERATE_URGENT,
-	FEERATE_NORMAL,
-	FEERATE_SLOW,
+struct estimatefee_params {
+	u32 blocks;
+	const char *style;
 };
-#define FEERATE_LEVEL_MAX (FEERATE_SLOW)
+
+static const struct estimatefee_params estimatefee_params[] = {
+	{ 2, "CONSERVATIVE" },
+	{ 6, "ECONOMICAL" },
+	{ 12, "ECONOMICAL" },
+	{ 100, "ECONOMICAL" },
+};
 
 struct estimatefees_stash {
+	/* This is max(mempoolminfee,minrelaytxfee) */
+	u64 perkb_floor;
 	u32 cursor;
 	/* FIXME: We use u64 but lightningd will store them as u32. */
-	u64 perkb[FEERATE_LEVEL_MAX+1];
+	u64 perkb[ARRAY_SIZE(estimatefee_params)];
 };
 
 static struct command_result *
@@ -482,14 +481,21 @@ estimatefees_null_response(struct bitcoin_cli *bcli)
 {
 	struct json_stream *response = jsonrpc_stream_success(bcli->cmd);
 
-	json_add_null(response, "opening");
-	json_add_null(response, "mutual_close");
-	json_add_null(response, "unilateral_close");
-	json_add_null(response, "delayed_to_us");
-	json_add_null(response, "htlc_resolution");
-	json_add_null(response, "penalty");
-	json_add_null(response, "min_acceptable");
-	json_add_null(response, "max_acceptable");
+	/* We give a floor, which is the standard minimum */
+	json_array_start(response, "feerates");
+	json_array_end(response);
+	json_add_u32(response, "feerate_floor", 1000);
+
+	if (deprecated_apis) {
+		json_add_null(response, "opening");
+		json_add_null(response, "mutual_close");
+		json_add_null(response, "unilateral_close");
+		json_add_null(response, "delayed_to_us");
+		json_add_null(response, "htlc_resolution");
+		json_add_null(response, "penalty");
+		json_add_null(response, "min_acceptable");
+		json_add_null(response, "max_acceptable");
+	}
 
 	return command_finished(bcli->cmd, response);
 }
@@ -650,7 +656,15 @@ static struct command_result *getchaininfo(struct command *cmd,
                                            const char *buf UNUSED,
                                            const jsmntok_t *toks UNUSED)
 {
-	if (!param(cmd, buf, toks, NULL))
+	/* FIXME(vincenzopalazzo): Inside the JSON request,
+         * we have the current height known from Core Lightning. Therefore,
+         * we can attempt to prevent a crash if the 'getchaininfo' function returns
+         * a lower height than the one we already know, by waiting for a short period.
+         * However, I currently don't have a better idea on how to handle this situation. */
+	u32 *height UNUSED;
+	if (!param(cmd, buf, toks,
+		   p_req("last_height", param_number, &height),
+		   NULL))
 		return command_param_failed();
 
 	start_bitcoin_cli(NULL, cmd, process_getblockchaininfo, false,
@@ -663,17 +677,33 @@ static struct command_result *getchaininfo(struct command *cmd,
 /* Mutual recursion. */
 static struct command_result *estimatefees_done(struct bitcoin_cli *bcli);
 
-struct estimatefee_params {
-	u32 blocks;
-	const char *style;
-};
+/* Add a feerate, but don't publish one that bitcoind won't accept. */
+static void json_add_feerate(struct json_stream *result, const char *fieldname,
+			     struct command *cmd,
+			     const struct estimatefees_stash *stash,
+			     uint64_t value)
+{
+	/* 0 is special, it means "unknown" */
+	if (value && value < stash->perkb_floor) {
+		plugin_log(cmd->plugin, LOG_DBG,
+			   "Feerate %s raised from %"PRIu64
+			   " perkb to floor of %"PRIu64,
+			   fieldname, value, stash->perkb_floor);
+		json_add_u64(result, fieldname, stash->perkb_floor);
+	} else {
+		json_add_u64(result, fieldname, value);
+	}
+}
 
-static const struct estimatefee_params estimatefee_params[] = {
-	[FEERATE_HIGHEST] = { 2, "CONSERVATIVE" },
-	[FEERATE_URGENT] = { 6, "ECONOMICAL" },
-	[FEERATE_NORMAL] = { 12, "ECONOMICAL" },
-	[FEERATE_SLOW] = { 100, "ECONOMICAL" },
-};
+static u32 feerate_for_block(const struct estimatefees_stash *stash, u32 blocks)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(stash->perkb); i++) {
+		if (estimatefee_params[i].blocks != blocks)
+			continue;
+		return stash->perkb[i];
+	}
+	abort();
+}
 
 static struct command_result *estimatefees_next(struct command *cmd,
 						struct estimatefees_stash *stash)
@@ -693,27 +723,76 @@ static struct command_result *estimatefees_next(struct command *cmd,
 	}
 
 	response = jsonrpc_stream_success(cmd);
-	json_add_u64(response, "opening", stash->perkb[FEERATE_NORMAL]);
-	json_add_u64(response, "mutual_close", stash->perkb[FEERATE_SLOW]);
-	json_add_u64(response, "unilateral_close",
-		     stash->perkb[FEERATE_URGENT] * bitcoind->commit_fee_percent / 100);
-	json_add_u64(response, "delayed_to_us", stash->perkb[FEERATE_NORMAL]);
-	json_add_u64(response, "htlc_resolution", stash->perkb[FEERATE_URGENT]);
-	json_add_u64(response, "penalty", stash->perkb[FEERATE_NORMAL]);
-	/* We divide the slow feerate for the minimum acceptable, lightningd
-	 * will use floor if it's hit, though. */
-	json_add_u64(response, "min_acceptable",
-		     stash->perkb[FEERATE_SLOW] / 2);
-	/* BOLT #2:
-	 *
-	 * Given the variance in fees, and the fact that the transaction may be
-	 * spent in the future, it's a good idea for the fee payer to keep a good
-	 * margin (say 5x the expected fee requirement)
-	 */
-	json_add_u64(response, "max_acceptable",
-		     stash->perkb[FEERATE_HIGHEST]
-		     * bitcoind->max_fee_multiplier);
+	if (deprecated_apis) {
+		json_add_feerate(response, "opening", cmd, stash,
+				 feerate_for_block(stash, 12));
+		json_add_feerate(response, "mutual_close", cmd, stash,
+				 feerate_for_block(stash, 100));
+		json_add_feerate(response, "unilateral_close", cmd, stash,
+				 feerate_for_block(stash, 6));
+		json_add_feerate(response, "delayed_to_us", cmd, stash,
+				 feerate_for_block(stash, 12));
+		json_add_feerate(response, "htlc_resolution", cmd, stash,
+				 feerate_for_block(stash, 6));
+		json_add_feerate(response, "penalty", cmd, stash,
+				 feerate_for_block(stash, 12));
+		/* We divide the slow feerate for the minimum acceptable, lightningd
+		 * will use floor if it's hit, though. */
+		json_add_feerate(response, "min_acceptable", cmd, stash,
+				 feerate_for_block(stash, 100) / 2);
+		/* BOLT #2:
+		 *
+		 * Given the variance in fees, and the fact that the transaction may be
+		 * spent in the future, it's a good idea for the fee payer to keep a good
+		 * margin (say 5x the expected fee requirement)
+		 */
+		json_add_feerate(response, "max_acceptable", cmd, stash,
+				 feerate_for_block(stash, 2) * 10);
+	}
+
+	/* Modern style: present an ordered array of block deadlines, and a floor. */
+	json_array_start(response, "feerates");
+	for (size_t i = 0; i < ARRAY_SIZE(stash->perkb); i++) {
+		if (!stash->perkb[i])
+			continue;
+		json_object_start(response, NULL);
+		json_add_u32(response, "blocks", estimatefee_params[i].blocks);
+		json_add_feerate(response, "feerate", cmd, stash, stash->perkb[i]);
+		json_object_end(response);
+	}
+	json_array_end(response);
+	json_add_u64(response, "feerate_floor", stash->perkb_floor);
 	return command_finished(cmd, response);
+}
+
+static struct command_result *getminfees_done(struct bitcoin_cli *bcli)
+{
+	const jsmntok_t *tokens;
+	const char *err;
+	u64 mempoolfee, relayfee;
+	struct estimatefees_stash *stash = bcli->stash;
+
+	if (*bcli->exitstatus != 0)
+		return estimatefees_null_response(bcli);
+
+	tokens = json_parse_simple(bcli->output,
+				   bcli->output, bcli->output_bytes);
+	if (!tokens)
+		return command_err_bcli_badjson(bcli,
+						"cannot parse getmempoolinfo");
+
+	/* Look at minrelaytxfee they configured, and current min fee to get
+	 * into mempool. */
+	err = json_scan(tmpctx, bcli->output, tokens,
+			"{mempoolminfee:%,minrelaytxfee:%}",
+			JSON_SCAN(json_to_bitcoin_amount, &mempoolfee),
+			JSON_SCAN(json_to_bitcoin_amount, &relayfee));
+	if (err)
+		return command_err_bcli_badjson(bcli, err);
+
+	stash->perkb_floor = max_u64(mempoolfee, relayfee);
+	stash->cursor = 0;
+	return estimatefees_next(bcli->cmd, stash);
 }
 
 /* Get the current feerates. We use an urgent feerate for unilateral_close and max,
@@ -729,8 +808,11 @@ static struct command_result *estimatefees(struct command *cmd,
 	if (!param(cmd, buf, toks, NULL))
 		return command_param_failed();
 
-	stash->cursor = 0;
-	return estimatefees_next(cmd, stash);
+	start_bitcoin_cli(NULL, cmd, getminfees_done, true,
+			  BITCOIND_LOW_PRIO, stash,
+			  "getmempoolinfo",
+			  NULL);
+	return command_still_pending(cmd);
 }
 
 static struct command_result *estimatefees_done(struct bitcoin_cli *bcli)
@@ -1005,8 +1087,6 @@ static struct bitcoind *new_bitcoind(const tal_t *ctx)
 	bitcoind->rpcpass = NULL;
 	bitcoind->rpcconnect = NULL;
 	bitcoind->rpcport = NULL;
-	bitcoind->max_fee_multiplier = 10;
-	bitcoind->commit_fee_percent = 100;
 #if DEVELOPER
 	bitcoind->no_fake_fees = false;
 #endif
@@ -1045,7 +1125,7 @@ int main(int argc, char *argv[])
 				  "bitcoind RPC host to connect to",
 				  charp_option, &bitcoind->rpcconnect),
 		    plugin_option("bitcoin-rpcport",
-				  "string",
+				  "int",
 				  "bitcoind RPC host's port",
 				  charp_option, &bitcoind->rpcport),
 		    plugin_option("bitcoin-retry-timeout",
@@ -1053,19 +1133,7 @@ int main(int argc, char *argv[])
 				  "how long to keep retrying to contact bitcoind"
 				  " before fatally exiting",
 				  u64_option, &bitcoind->retry_timeout),
-		    plugin_option("commit-fee",
-				  "string",
-				  "Percentage of fee to request for their commitment",
-				  u64_option, &bitcoind->commit_fee_percent),
 #if DEVELOPER
-		    plugin_option("dev-max-fee-multiplier",
-				  "string",
-				  "Allow the fee proposed by the remote end to"
-				  " be up to multiplier times higher than our "
-				  "own. Small values will cause channels to be"
-				  " closed more often due to fee fluctuations,"
-				  " large values may result in large fees.",
-				  u32_option, &bitcoind->max_fee_multiplier),
 		    plugin_option("dev-no-fake-fees",
 				  "bool",
 				  "Suppress fee faking for regtest",

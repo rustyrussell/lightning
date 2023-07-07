@@ -7,6 +7,18 @@ from msggen.gen.grpc2py import Grpc2PyGenerator
 from msggen.gen.rust import RustGenerator
 from msggen.gen.generator import GeneratorChain
 from msggen.utils import load_jsonrpc_service
+import logging
+from msggen.patch import VersionAnnotationPatch, OptionalPatch, OverridePatch
+from msggen.checks import VersioningCheck
+
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
 
 
 def add_handler_gen_grpc(generator_chain: GeneratorChain, meta):
@@ -52,8 +64,22 @@ def write_msggen_meta(meta):
 
 def run(rootdir: Path):
     schemadir = rootdir / "doc" / "schemas"
-    service = load_jsonrpc_service(schema_dir=schemadir)
     meta = load_msggen_meta()
+    service = load_jsonrpc_service(
+        schema_dir=schemadir,
+    )
+
+    p = VersionAnnotationPatch(meta=meta)
+    p.apply(service)
+    OptionalPatch().apply(service)
+
+    # Mark some fields we can't map as omitted, and for complex types
+    # we manually mapped, use those types instead.
+    OverridePatch().apply(service)
+
+    # Run the checks here, we should eventually split that out to a
+    # separate subcommand
+    VersioningCheck().check(service)
     generator_chain = GeneratorChain()
 
     add_handler_gen_grpc(generator_chain, meta)

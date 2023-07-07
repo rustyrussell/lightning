@@ -23,6 +23,8 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-close.7 \
 	doc/lightning-connect.7 \
 	doc/lightning-commando.7 \
+	doc/lightning-commando-blacklist.7 \
+	doc/lightning-commando-listrunes.7 \
 	doc/lightning-commando-rune.7 \
 	doc/lightning-createonion.7 \
 	doc/lightning-createinvoice.7 \
@@ -34,6 +36,7 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-delforward.7 \
 	doc/lightning-delinvoice.7 \
 	doc/lightning-delpay.7 \
+	doc/lightning-disableinvoicerequest.7 \
 	doc/lightning-disableoffer.7 \
 	doc/lightning-disconnect.7 \
 	doc/lightning-emergencyrecover.7 \
@@ -48,19 +51,21 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-getroute.7 \
 	doc/lightning-hsmtool.8 \
 	doc/lightning-invoice.7 \
+	doc/lightning-invoicerequest.7 \
 	doc/lightning-keysend.7 \
 	doc/lightning-listchannels.7 \
+	doc/lightning-listclosedchannels.7 \
 	doc/lightning-listdatastore.7 \
 	doc/lightning-listforwards.7 \
 	doc/lightning-listfunds.7 \
 	doc/lightning-listhtlcs.7 \
 	doc/lightning-listinvoices.7 \
+	doc/lightning-listinvoicerequests.7 \
 	doc/lightning-listoffers.7 \
 	doc/lightning-listpays.7 \
 	doc/lightning-listpeers.7 \
 	doc/lightning-listpeerchannels.7 \
 	doc/lightning-listsendpays.7 \
-	doc/lightning-listsqlschemas.7 \
 	doc/lightning-makesecret.7 \
 	doc/lightning-multifundchannel.7 \
 	doc/lightning-multiwithdraw.7 \
@@ -84,9 +89,10 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-sendonionmessage.7 \
 	doc/lightning-sendpay.7 \
 	doc/lightning-setchannel.7 \
+	doc/lightning-setpsbtversion.7 \
 	doc/lightning-sendcustommsg.7 \
+	doc/lightning-signinvoice.7 \
 	doc/lightning-signmessage.7 \
-	doc/lightning-sql.7 \
 	doc/lightning-staticbackup.7 \
 	doc/lightning-txprepare.7 \
 	doc/lightning-txdiscard.7 \
@@ -109,6 +115,11 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-help.7 \
 	doc/lightning-getlog.7 \
 	doc/reckless.7
+
+ifeq ($(HAVE_SQLITE3),1)
+MANPAGES += doc/lightning-listsqlschemas.7 \
+	    doc/lightning-sql.7
+endif
 
 doc-all: $(MANPAGES) doc/index.rst
 
@@ -216,18 +227,19 @@ doc/index.rst: $(MANPAGES:=.md)
 	  python3 devtools/blockreplace.py doc/index.rst manpages --language=rst --indent "   " \
 	)
 
-# For CI to (very roughly!) check that we only deprecated fields, or labelled added ones
-# When running on GitHub (CI=true), we need to fetch origin/master
+# Overridden by GH CI if necessary.
+BASE_REF=master
 schema-added-check:
-	@if ! test -z $$CI; then git fetch origin master; fi; \
-	if git diff origin/master -- doc/schemas | grep -q '^+.*{' && ! git diff origin/master -- doc/schemas | grep -q '^+.*"added"'; then \
-		git diff origin/master -- doc/schemas; \
+	if git show --format=%B -s $(BASE_REF).. | grep -q '^No-schema-diff-check'; then echo $@ suppressed; exit 0; fi; \
+	if git diff $(BASE_REF) -- doc/schemas | grep -q '^+.*{' && ! git diff $(BASE_REF) -- doc/schemas | grep -q '^+.*"added"'; then \
+		git diff $(BASE_REF) -- doc/schemas; \
 		echo 'New schema fields must have "added": "vNEXTVERSION"' >&2; exit 1; \
 	fi
+
 schema-removed-check:
-	@if ! test -z $$CI; then git fetch origin master; fi; \
-	if git diff origin/master -- doc/schemas | grep -q '^-.*{' && ! git diff origin/master -- doc/schemas | grep -q '^-.*"deprecated"'; then \
-		git diff origin/master -- doc/schemas ; \
+	if git show --format=%B -s $(BASE_REF).. | grep -q '^No-schema-diff-check'; then echo $@ suppressed; exit 0; fi; \
+	if git diff $(BASE_REF) -- doc/schemas | grep -q '^-.*{' && ! git diff $(BASE_REF) -- doc/schemas | grep -q '^-.*"deprecated"' && ! git diff $(BASE_REF) -- doc/schemas | grep -q '^-.*EXPERIMENTAL_FEATURES'; then \
+		git diff $(BASE_REF) -- doc/schemas ; \
 		echo 'Schema fields must be "deprecated", with version, not removed' >&2; exit 1; \
 	fi
 

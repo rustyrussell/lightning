@@ -1,5 +1,6 @@
 #include "config.h"
 #include <ccan/array_size/array_size.h>
+#include <ccan/cast/cast.h>
 #include <ccan/crypto/siphash24/siphash24.h>
 #include <ccan/htable/htable_type.h>
 #include <ccan/json_escape/json_escape.h>
@@ -42,11 +43,16 @@ struct commando {
 	const char *json_id;
 };
 
+struct blacklist {
+	u64 start, end;
+};
+
 static struct plugin *plugin;
 static struct commando **outgoing_commands;
 static struct commando **incoming_commands;
 static u64 *rune_counter;
 static struct rune *master_rune;
+static struct blacklist *blacklist;
 
 struct usage {
 	/* If you really issue more than 2^32 runes, they'll share ratelimit buckets */
@@ -70,6 +76,94 @@ static bool usage_eq_id(const struct usage *u, u64 id)
 }
 HTABLE_DEFINE_TYPE(struct usage, usage_id, id_hash, usage_eq_id, usage_table);
 static struct usage_table *usage_table;
+
+/* The unique id is embedded with a special restriction with an empty field name */
+static bool is_unique_id(struct rune_restr **restrs, unsigned int index)
+{
+	/* must be the first restriction */
+	if (index != 0)
+		return false;
+
+	/* Must be the only alternative */
+	if (tal_count(restrs[index]->alterns) != 1)
+		return false;
+
+	/* Must have an empty field name */
+	return streq(restrs[index]->alterns[0]->fieldname, "");
+}
+
+static char *rune_altern_to_english(const tal_t *ctx, const struct rune_altern *alt)
+{
+	const char *cond_str;
+	switch (alt->condition) {
+		case RUNE_COND_IF_MISSING:
+			return tal_strcat(ctx, alt->fieldname, " is missing");
+		case RUNE_COND_EQUAL:
+			cond_str = "equal to";
+			break;
+		case RUNE_COND_NOT_EQUAL:
+			cond_str = "unequal to";
+			break;
+		case RUNE_COND_BEGINS:
+			cond_str = "starts with";
+			break;
+		case RUNE_COND_ENDS:
+			cond_str = "ends with";
+			break;
+		case RUNE_COND_CONTAINS:
+			cond_str = "contains";
+			break;
+		case RUNE_COND_INT_LESS:
+			cond_str = "<";
+			break;
+		case RUNE_COND_INT_GREATER:
+			cond_str = ">";
+			break;
+		case RUNE_COND_LEXO_BEFORE:
+			cond_str = "sorts before";
+			break;
+		case RUNE_COND_LEXO_AFTER:
+			cond_str = "sorts after";
+			break;
+		case RUNE_COND_COMMENT:
+			return tal_fmt(ctx, "comment: %s %s", alt->fieldname, alt->value);
+	}
+	return tal_fmt(ctx, "%s %s %s", alt->fieldname, cond_str, alt->value);
+}
+
+static char *json_add_alternative(const tal_t *ctx,
+				  struct json_stream *js,
+				  const char *fieldname,
+				  struct rune_altern *alternative)
+{
+	char *altern_english;
+	altern_english = rune_altern_to_english(ctx, alternative);
+	json_object_start(js, fieldname);
+	json_add_string(js, "fieldname", alternative->fieldname);
+	json_add_string(js, "value", alternative->value);
+	json_add_stringn(js, "condition", (char *)&alternative->condition, 1);
+	json_add_string(js, "english", altern_english);
+	json_object_end(js);
+	return altern_english;
+}
+
+static bool is_rune_blacklisted(const struct rune *rune)
+{
+	u64 uid;
+
+	/* Every rune *we produce* has a unique_id which is a number, but
+	 * it's legal to have a rune without one. */
+	if (rune->unique_id == NULL) {
+		return false;
+	}
+	uid = atol(rune->unique_id);
+	for (size_t i = 0; i < tal_count(blacklist); i++) {
+		if (blacklist[i].start <= uid && blacklist[i].end >= uid) {
+			return true;
+		}
+	}
+	return false;
+}
 
 /* Every minute we forget entries. */
 static void flush_usage_table(void *unused)
@@ -333,6 +427,18 @@ static const char *check_condition(const tal_t *ctx,
 	if (!ptok)
 		return rune_alt_single_missing(ctx, alt);
 
+	/* Pass through valid integers as integers. */
+	if (ptok->type == JSMN_PRIMITIVE) {
+		s64 val;
+
+		if (json_to_s64(cinfo->buf, ptok, &val)) {
+			plugin_log(plugin, LOG_DBG, "It's an int %"PRId64, val);
+			return rune_alt_single_int(ctx, alt, val);
+		}
+
+		/* Otherwise, treat it as a string (< and > will fail with
+		 * "is not an integer field") */
+	}
 	return rune_alt_single_str(ctx, alt,
 				   cinfo->buf + ptok->start,
 				   ptok->end - ptok->start);
@@ -357,6 +463,9 @@ static const char *check_rune(const tal_t *ctx,
 				 runetok->end - runetok->start);
 	if (!rune)
 		return "Invalid rune";
+
+	if (is_rune_blacklisted(rune))
+		return "Blacklisted rune";
 
 	cinfo.peer = peer;
 	cinfo.buf = buf;
@@ -925,6 +1034,43 @@ static struct command_result *reply_with_rune(struct command *cmd,
 	return command_finished(cmd, js);
 }
 
+static struct command_result *save_rune(struct command *cmd,
+					      const char *buf UNUSED,
+					      const jsmntok_t *result UNUSED,
+					      struct rune *rune)
+{
+	const char *path = tal_fmt(cmd, "commando/runes/%s", rune->unique_id);
+	return jsonrpc_set_datastore_string(plugin, cmd, path,
+					    rune_to_base64(tmpctx, rune),
+					    "must-create", reply_with_rune,
+					    forward_error, rune);
+}
+
+static void towire_blacklist(u8 **pptr, const struct blacklist *b)
+{
+	for (size_t i = 0; i < tal_count(b); i++) {
+		towire_u64(pptr, b[i].start);
+		towire_u64(pptr, b[i].end);
+	}
+}
+
+static struct blacklist *fromwire_blacklist(const tal_t *ctx,
+					    const u8 **cursor,
+					    size_t *max)
+{
+	struct blacklist *blist = tal_arr(ctx, struct blacklist, 0);
+	while (*max > 0) {
+		struct blacklist b;
+		b.start = fromwire_u64(cursor, max);
+		b.end = fromwire_u64(cursor, max);
+		tal_arr_expand(&blist, b);
+	}
+	if (!*cursor) {
+		return tal_free(blist);
+	}
+	return blist;
+}
+
 static struct command_result *json_commando_rune(struct command *cmd,
 						 const char *buffer,
 						 const jsmntok_t *params)
@@ -953,7 +1099,7 @@ static struct command_result *json_commando_rune(struct command *cmd,
 
 	/* Now update datastore, before returning rune */
 	req = jsonrpc_request_start(plugin, cmd, "datastore",
-				    reply_with_rune, forward_error, rune);
+				    save_rune, forward_error, rune);
 	json_array_start(req->js, "key");
 	json_add_string(req->js, NULL, "commando");
 	json_add_string(req->js, NULL, "rune_counter");
@@ -968,7 +1114,226 @@ static struct command_result *json_commando_rune(struct command *cmd,
 		*rune_counter = 1;
 		json_add_string(req->js, "mode", "must-create");
 	}
-	json_add_u64(req->js, "string", *rune_counter);
+	json_add_string(req->js, "string",
+			tal_fmt(tmpctx, "%"PRIu64, *rune_counter));
+	return send_outreq(plugin, req);
+}
+
+static void join_strings(char **base, const char *connector, char *append)
+{
+	if (streq(*base, "")) {
+		*base = append;
+	} else {
+		tal_append_fmt(base, " %s %s", connector, append);
+	}
+}
+
+static struct command_result *json_add_rune(struct json_stream *js,
+						 const struct rune *rune,
+						 const char *rune_str,
+						 size_t rune_strlen,
+						 bool stored)
+{
+	char *rune_english;
+	rune_english = "";
+	json_object_start(js, NULL);
+	json_add_stringn(js, "rune", rune_str, rune_strlen);
+	if (!stored) {
+		json_add_bool(js, "stored", false);
+	}
+	if (is_rune_blacklisted(rune)) {
+		json_add_bool(js, "blacklisted", true);
+	}
+	if (rune_is_derived(master_rune, rune)) {
+		json_add_bool(js, "our_rune", false);
+	}
+	json_add_string(js, "unique_id", rune->unique_id);
+	json_array_start(js, "restrictions");
+	for (size_t i = 0; i < tal_count(rune->restrs); i++) {
+		char *restr_english;
+		restr_english = "";
+		/* Already printed out the unique id */
+		if (is_unique_id(rune->restrs, i)) {
+			continue;
+		}
+		json_object_start(js, NULL);
+		json_array_start(js, "alternatives");
+		for (size_t j = 0; j < tal_count(rune->restrs[i]->alterns); j++) {
+			join_strings(&restr_english, "OR",
+				     json_add_alternative(tmpctx, js, NULL, rune->restrs[i]->alterns[j]));
+		}
+		json_array_end(js);
+		json_add_string(js, "english", restr_english);
+		json_object_end(js);
+		join_strings(&rune_english, "AND", restr_english);
+	}
+	json_array_end(js);
+	json_add_string(js, "restrictions_as_english", rune_english);
+	json_object_end(js);
+	return NULL;
+}
+
+static struct command_result *listdatastore_done(struct command *cmd,
+					      const char *buf,
+					      const jsmntok_t *result,
+					      struct rune *rune)
+{
+	struct json_stream *js;
+	const jsmntok_t *t, *d = json_get_member(buf, result, "datastore");
+	size_t i;
+	const char *runestr;
+	bool printed = false;
+
+	if (rune != NULL) {
+		runestr = rune_to_string(tmpctx, rune);
+	} else {
+		runestr = NULL;
+	}
+
+	js = jsonrpc_stream_success(cmd);
+
+	json_array_start(js, "runes");
+	json_for_each_arr(i, t, d) {
+		const struct rune *this_rune;
+		const jsmntok_t *s = json_get_member(buf, t, "string");
+		if (runestr != NULL && !json_tok_streq(buf, s, runestr))
+			continue;
+		if (rune) {
+			this_rune = rune;
+		} else {
+			this_rune = rune_from_base64n(tmpctx, buf + s->start, s->end - s->start);
+			if (this_rune == NULL) {
+				plugin_log(plugin, LOG_BROKEN,
+					   "Invalid rune in datastore %.*s",
+					   s->end - s->start, buf + s->start);
+				continue;
+			}
+		}
+		json_add_rune(js, this_rune, buf + s->start, s->end - s->start, true);
+		printed = true;
+	}
+	if (rune && !printed) {
+		json_add_rune(js, rune, runestr, strlen(runestr), false);
+	}
+	json_array_end(js);
+	return command_finished(cmd, js);
+}
+
+static void blacklist_merge(struct blacklist *blacklist,
+			    const struct blacklist *entry)
+{
+	if (entry->start < blacklist->start) {
+		blacklist->start = entry->start;
+	}
+	if (entry->end > blacklist->end) {
+		blacklist->end = entry->end;
+	}
+}
+
+static bool blacklist_before(const struct blacklist *first,
+			     const struct blacklist *second)
+{
+	// Is it before with a gap
+	return (first->end + 1) < second->start;
+}
+
+static struct command_result *list_blacklist(struct command *cmd)
+{
+	struct json_stream *js = jsonrpc_stream_success(cmd);
+	json_array_start(js, "blacklist");
+	for (size_t i = 0; i < tal_count(blacklist); i++) {
+		json_object_start(js, NULL);
+		json_add_u64(js, "start", blacklist[i].start);
+		json_add_u64(js, "end", blacklist[i].end);
+		json_object_end(js);
+	}
+	json_array_end(js);
+	return command_finished(cmd, js);
+}
+
+static struct command_result *blacklist_save_done(struct command *cmd,
+					      const char *buf,
+					      const jsmntok_t *result,
+					      void *unused)
+{
+	return list_blacklist(cmd);
+}
+
+static struct command_result *json_commando_blacklist(struct command *cmd,
+						 const char *buffer,
+						 const jsmntok_t *params)
+{
+	u64 *start, *end;
+	u8 *bwire;
+	struct blacklist *entry, *newblacklist;
+
+	if (!param(cmd, buffer, params,
+		   p_opt("start", param_u64, &start), p_opt("end", param_u64, &end), NULL))
+		return command_param_failed();
+
+	if (end && !start) {
+		return command_fail(cmd, JSONRPC2_INVALID_PARAMS, "Can not specify end without start");
+	}
+	if (!start) {
+		return list_blacklist(cmd);
+	}
+	if (!end) {
+		end = start;
+	}
+	entry = tal(cmd, struct blacklist);
+	entry->start = *start;
+	entry->end = *end;
+
+	newblacklist = tal_arr(cmd->plugin, struct blacklist, 0);
+
+	for (size_t i = 0; i < tal_count(blacklist); i++) {
+		/* if new entry if already merged just copy the old list */
+		if (entry == NULL) {
+			tal_arr_expand(&newblacklist, blacklist[i]);
+			continue;
+		}
+		/* old list has not reached the entry yet, so we are just copying it */
+		if (blacklist_before(&blacklist[i], entry)) {
+			tal_arr_expand(&newblacklist, blacklist[i]);
+			continue;
+		}
+		/* old list has passed the entry, time to put the entry in */
+		if (blacklist_before(entry, &blacklist[i])) {
+			tal_arr_expand(&newblacklist, *entry);
+			tal_arr_expand(&newblacklist, blacklist[i]);
+			// mark entry as copied
+			entry = NULL;
+			continue;
+		}
+		/* old list overlaps combined into the entry we are adding */
+		blacklist_merge(entry, &blacklist[i]);
+	}
+	if (entry != NULL) {
+		tal_arr_expand(&newblacklist, *entry);
+	}
+	tal_free(blacklist);
+	blacklist = newblacklist;
+	bwire = tal_arr(tmpctx, u8, 0);
+	towire_blacklist(&bwire, blacklist);
+	return jsonrpc_set_datastore_binary(cmd->plugin, cmd, "commando/blacklist", bwire, "create-or-replace", blacklist_save_done, NULL, NULL);
+}
+
+static struct command_result *json_commando_listrunes(struct command *cmd,
+						 const char *buffer,
+						 const jsmntok_t *params)
+{
+	struct rune *rune;
+	struct out_req *req;
+
+	if (!param(cmd, buffer, params,
+		   p_opt("rune", param_rune, &rune), NULL))
+		return command_param_failed();
+
+	req = jsonrpc_request_start(plugin, cmd, "listdatastore", listdatastore_done, forward_error, rune);
+	json_array_start(req->js, "key");
+	json_add_string(req->js, NULL, "commando");
+	json_add_string(req->js, NULL, "runes");
+	json_array_end(req->js);
 	return send_outreq(plugin, req);
 }
 
@@ -980,6 +1345,7 @@ static void memleak_mark_globals(struct plugin *p, struct htable *memtable)
 	memleak_scan_obj(memtable, incoming_commands);
 	memleak_scan_obj(memtable, master_rune);
 	memleak_scan_htable(memtable, &usage_table->raw);
+	memleak_scan_obj(memtable, blacklist);
 	if (rune_counter)
 		memleak_scan_obj(memtable, rune_counter);
 }
@@ -989,7 +1355,20 @@ static const char *init(struct plugin *p,
 			const char *buf UNUSED, const jsmntok_t *config UNUSED)
 {
 	struct secret rune_secret;
+	const char *err;
+	u8 *bwire;
 
+	if (rpc_scan_datastore_hex(tmpctx, p, "commando/blacklist",
+				   JSON_SCAN_TAL(tmpctx, json_tok_bin_from_hex,
+						 &bwire)) == NULL) {
+		size_t max = tal_bytelen(bwire);
+		blacklist = fromwire_blacklist(p, cast_const2(const u8 **,
+							      &bwire),
+					       &max);
+		if (blacklist == NULL) {
+			plugin_err(p, "Invalid commando/blacklist");
+		}
+	}
 	outgoing_commands = tal_arr(p, struct commando *, 0);
 	incoming_commands = tal_arr(p, struct commando *, 0);
 	usage_table = tal(p, struct usage_table);
@@ -1000,13 +1379,16 @@ static const char *init(struct plugin *p,
 #endif
 
 	rune_counter = tal(p, u64);
-	if (!rpc_scan_datastore_str(plugin, "commando/rune_counter",
-				    JSON_SCAN(json_to_u64, rune_counter)))
+	/* If this fails, it probably doesn't exist */
+	err = rpc_scan_datastore_str(tmpctx, plugin, "commando/rune_counter",
+				     JSON_SCAN(json_to_u64, rune_counter));
+	if (err)
 		rune_counter = tal_free(rune_counter);
 
 	/* Old python commando used to store secret */
-	if (!rpc_scan_datastore_hex(plugin, "commando/secret",
-				    JSON_SCAN(json_to_secret, &rune_secret))) {
+	err = rpc_scan_datastore_hex(tmpctx, plugin, "commando/secret",
+				     JSON_SCAN(json_to_secret, &rune_secret));
+	if (err) {
 		rpc_scan(plugin, "makesecret",
 			 /* $ i commando
 			  * 99 0x63 0143 0b1100011 'c'
@@ -1043,6 +1425,20 @@ static const struct plugin_command commands[] = { {
 	"Create or restrict a rune",
 	"Takes an optional {rune} with optional {restrictions} and returns {rune}",
 	json_commando_rune,
+	},
+	{
+	"commando-listrunes",
+	"utility",
+	"List runes we have created earlier",
+	"Takes an optional {rune} and returns list of {rune}",
+	json_commando_listrunes,
+	},
+	{
+	"commando-blacklist",
+	"utility",
+	"Blacklist a rune or range of runes by unique id",
+	"Takes an optional {start} and an optional {end} and returns {blacklist} array containing {start}, {end}",
+	json_commando_blacklist,
 	},
 };
 

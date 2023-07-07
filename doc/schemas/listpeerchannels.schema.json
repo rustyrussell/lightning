@@ -2,6 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "additionalProperties": false,
+  "added": "v23.02",
   "required": [
     "channels"
   ],
@@ -47,6 +48,41 @@
           "scratch_txid": {
             "type": "txid",
             "description": "The txid we would use if we went onchain now"
+          },
+          "channel_type": {
+            "type": "object",
+            "description": "channel_type as negotiated with peer",
+            "added": "v23.05",
+            "additionalProperties": false,
+            "required": [
+              "bits",
+              "names"
+            ],
+            "properties": {
+              "bits": {
+                "type": "array",
+                "description": "Each bit set in this channel_type",
+                "items": {
+                  "type": "u32",
+                  "description": "Bit number"
+                }
+              },
+              "names": {
+                "type": "array",
+                "description": "Feature name for each bit set in this channel_type",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "static_remotekey/even",
+                    "anchor_outputs/even",
+                    "anchors_zero_fee_htlc_tx/even",
+                    "scid_alias/even",
+                    "zeroconf/even"
+                  ],
+                  "description": "Name of feature bit"
+                }
+              }
+            }
           },
           "feerate": {
             "type": "object",
@@ -176,6 +212,7 @@
               "enum": [
                 "option_static_remotekey",
                 "option_anchor_outputs",
+                "option_scid_alias",
                 "option_zeroconf"
               ],
               "description": "BOLT #9 features which apply to this channel"
@@ -189,16 +226,6 @@
               "remote_funds_msat"
             ],
             "properties": {
-              "local_msat": {
-                "type": "msat",
-                "deprecated": "v0.12.0",
-                "description": "Amount of channel we funded"
-              },
-              "remote_msat": {
-                "type": "msat",
-                "deprecated": "v0.12.0",
-                "description": "Amount of channel they funded"
-              },
               "pushed_msat": {
                 "type": "msat",
                 "description": "Amount pushed from opener to peer"
@@ -579,6 +606,7 @@
                 "peer_id": {},
                 "peer_connected": {},
                 "scratch_txid": {},
+                "channel_type": {},
                 "feerate": {},
                 "owner": {},
                 "short_channel_id": {},
@@ -668,6 +696,7 @@
                 "peer_connected": {},
                 "alias": {},
                 "scratch_txid": {},
+                "channel_type": {},
                 "feerate": {},
                 "owner": {},
                 "short_channel_id": {},
@@ -756,6 +785,7 @@
                 "peer_connected": {},
                 "state": {},
                 "scratch_txid": {},
+                "channel_type": {},
                 "feerate": {},
                 "owner": {},
                 "short_channel_id": {},
@@ -845,6 +875,7 @@
                 "peer_id": {},
                 "peer_connected": {},
                 "scratch_txid": {},
+                "channel_type": {},
                 "feerate": {},
                 "owner": {},
                 "alias": {},

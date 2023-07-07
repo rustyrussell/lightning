@@ -680,6 +680,11 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case WIRE_HSMD_SIGN_LOCAL_HTLC_TX:
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US:
 	case WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US:
+	case WIRE_HSMD_CHECK_PUBKEY:
+	case WIRE_HSMD_SIGN_ANY_PENALTY_TO_US:
+	case WIRE_HSMD_SIGN_ANY_DELAYED_PAYMENT_TO_US:
+	case WIRE_HSMD_SIGN_ANY_REMOTE_HTLC_TO_US:
+	case WIRE_HSMD_SIGN_ANY_LOCAL_HTLC_TX:
 		/* Hand off to libhsmd for processing */
 		return req_reply(conn, c,
 				 take(hsmd_handle_client_message(
@@ -694,8 +699,8 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:
-	case WIRE_HSMD_INIT_REPLY_V1:
 	case WIRE_HSMD_INIT_REPLY_V2:
+	case WIRE_HSMD_INIT_REPLY_V4:
 	case WIRE_HSMD_DERIVE_SECRET_REPLY:
 	case WIRE_HSMSTATUS_CLIENT_BAD_REQUEST:
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY:
@@ -712,6 +717,7 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case WIRE_HSMD_SIGN_BOLT12_REPLY:
 	case WIRE_HSMD_PREAPPROVE_INVOICE_REPLY:
 	case WIRE_HSMD_PREAPPROVE_KEYSEND_REPLY:
+	case WIRE_HSMD_CHECK_PUBKEY_REPLY:
 		return bad_req_fmt(conn, c, c->msg_in,
 				   "Received an incoming message of type %s, "
 				   "which is not a request",

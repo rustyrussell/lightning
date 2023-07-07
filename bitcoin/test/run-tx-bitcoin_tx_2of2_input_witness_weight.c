@@ -24,9 +24,15 @@ struct amount_sat amount_asset_to_sat(struct amount_asset *asset UNNEEDED)
 				       struct amount_sat a UNNEEDED,
 				       struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_add called!\n"); abort(); }
+/* Generated stub for amount_sat_div */
+struct amount_sat amount_sat_div(struct amount_sat sat UNNEEDED, u64 div UNNEEDED)
+{ fprintf(stderr, "amount_sat_div called!\n"); abort(); }
 /* Generated stub for amount_sat_greater_eq */
 bool amount_sat_greater_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_greater_eq called!\n"); abort(); }
+/* Generated stub for amount_sat_mul */
+bool amount_sat_mul(struct amount_sat *res UNNEEDED, struct amount_sat sat UNNEEDED, u64 mul UNNEEDED)
+{ fprintf(stderr, "amount_sat_mul called!\n"); abort(); }
 /* Generated stub for amount_sat_sub */
  bool amount_sat_sub(struct amount_sat *val UNNEEDED,
 				       struct amount_sat a UNNEEDED,
@@ -38,6 +44,9 @@ struct amount_asset amount_sat_to_asset(struct amount_sat *sat UNNEEDED, const u
 /* Generated stub for amount_tx_fee */
 struct amount_sat amount_tx_fee(u32 fee_per_kw UNNEEDED, size_t weight UNNEEDED)
 { fprintf(stderr, "amount_tx_fee called!\n"); abort(); }
+/* Generated stub for clone_psbt */
+struct wally_psbt *clone_psbt(const tal_t *ctx UNNEEDED, struct wally_psbt *psbt UNNEEDED)
+{ fprintf(stderr, "clone_psbt called!\n"); abort(); }
 /* Generated stub for fromwire */
 const u8 *fromwire(const u8 **cursor UNNEEDED, size_t *max UNNEEDED, void *copy UNNEEDED, size_t n UNNEEDED)
 { fprintf(stderr, "fromwire called!\n"); abort(); }
@@ -81,10 +90,6 @@ struct wally_psbt_input *psbt_append_input(struct wally_psbt *psbt UNNEEDED,
 					   const u8 *input_wscript UNNEEDED,
 					   const u8 *redeemscript UNNEEDED)
 { fprintf(stderr, "psbt_append_input called!\n"); abort(); }
-/* Generated stub for psbt_elements_input_set_asset */
-void psbt_elements_input_set_asset(struct wally_psbt *psbt UNNEEDED, size_t in UNNEEDED,
-				   struct amount_asset *asset UNNEEDED)
-{ fprintf(stderr, "psbt_elements_input_set_asset called!\n"); abort(); }
 /* Generated stub for psbt_final_tx */
 struct wally_tx *psbt_final_tx(const tal_t *ctx UNNEEDED, const struct wally_psbt *psbt UNNEEDED)
 { fprintf(stderr, "psbt_final_tx called!\n"); abort(); }

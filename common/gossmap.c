@@ -582,8 +582,8 @@ static void node_announcement(struct gossmap *map, size_t nann_off)
 
 	feature_len = map_be16(map, nann_off + feature_len_off);
 	map_nodeid(map, nann_off + feature_len_off + 2 + feature_len + 4, &id);
-	n = gossmap_find_node(map, &id);
-	n->nann_off = nann_off;
+	if ((n = gossmap_find_node(map, &id)))
+		n->nann_off = nann_off;
 }
 
 static void reopen_store(struct gossmap *map, size_t ended_off)
@@ -808,7 +808,9 @@ bool gossmap_local_addchan(struct gossmap_localmods *localmods,
 	be16 = cpu_to_be16(tal_bytelen(features));
 	memcpy(localmods->local + off, &be16, sizeof(be16));
 	off += sizeof(be16);
-	memcpy(localmods->local + off, features, tal_bytelen(features));
+	/* Damn you, C committee! */
+	if (features)
+		memcpy(localmods->local + off, features, tal_bytelen(features));
 	off += tal_bytelen(features);
 
 	/* Skip chain_hash */

@@ -272,8 +272,8 @@ static struct command_result *handle_invreq_response(struct command *cmd,
 	/* We always tell them this unless it's trivial to calc and
 	 * exactly as expected. */
 	if (!expected_amount || *inv->invoice_amount != *expected_amount) {
-		json_add_amount_msat_only(out, "amount_msat",
-					  amount_msat(*inv->invoice_amount));
+		json_add_amount_msat(out, "amount_msat",
+				     amount_msat(*inv->invoice_amount));
 	}
 	json_object_end(out);
 
@@ -508,9 +508,7 @@ static bool can_carry_onionmsg(const struct gossmap *map,
 
 	/* Check features of recipient */
 	n = gossmap_nth_node(map, c, !dir);
-	/* 102/103 was the old EXPERIMENTAL feature bit: remove soon! */
-	return gossmap_node_get_feature(map, n, OPT_ONION_MESSAGES) != -1
-		|| gossmap_node_get_feature(map, n, 102) != -1;
+	return gossmap_node_get_feature(map, n, OPT_ONION_MESSAGES) != -1;
 }
 
 static struct pubkey *path_to_node(const tal_t *ctx,
@@ -1029,6 +1027,7 @@ static struct command_result *json_fetchinvoice(struct command *cmd,
 	invreq = invoice_request_for_offer(sent, sent->offer);
 	invreq->invreq_recurrence_counter = tal_steal(invreq, recurrence_counter);
 	invreq->invreq_recurrence_start = tal_steal(invreq, recurrence_start);
+	invreq->invreq_quantity = tal_steal(invreq, quantity);
 
 	/* BOLT-offers-recurrence #12:
 	 * - if `offer_amount` is not present:
@@ -1618,7 +1617,7 @@ static const char *init(struct plugin *p, const char *buf UNUSED,
 
 	rpc_scan(p, "listconfigs",
 		 take(json_out_obj(NULL, "config", "experimental-offers")),
-		 "{experimental-offers:%}",
+		 "{configs:{experimental-offers:{set:%}}}",
 		 JSON_SCAN(json_to_bool, &exp_offers));
 
 	if (!exp_offers)

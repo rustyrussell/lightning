@@ -207,11 +207,12 @@ There are currently four supported option 'types':
   - string: a string
   - bool: a boolean
   - int: parsed as a signed integer (64-bit)
-  - flag: no-arg flag option. Is boolean under the hood. Defaults to false.
+  - flag: no-arg flag option. Presented as `true` if config specifies it.
 
 In addition, string and int types can specify `"multi": true` to indicate
 they can be specified multiple times.  These will always be represented in
-`init` as a (possibly empty) JSON array.
+`init` as a (possibly empty) JSON array.  "multi" flag types do not make 
+sense.
 
 Nota bene: if a `flag` type option is not set, it will not appear
 in the options set that is passed to the plugin.
@@ -229,7 +230,6 @@ Here's an example option set, as sent in response to `getmanifest`
     {
       "name": "run-hot",
       "type": "flag",
-      "default": None,  // defaults to false
       "description": "If set, overclocks plugin"
     },
     {
@@ -1257,7 +1257,8 @@ the v2 protocol, and it has passed basic sanity checks:
     "channel_max_msat": 16777215000,
     "requested_lease_msat": 100000000,
     "lease_blockheight_start": 683990,
-    "node_blockheight": 683990
+    "node_blockheight": 683990,
+    "require_confirmed_inputs": false
   }
 }
 ```
@@ -1389,6 +1390,7 @@ requests an RBF for a channel funding transaction.
     "channel_max_msat": 16777215000,
     "locktime": 2453,
     "requested_lease_msat": 100000000,
+    "require_confirmed_inputs": false
   }
 }
 ```
@@ -1714,7 +1716,8 @@ data. Each plugin must follow the below specification for `lightningd` to operat
 ### `getchaininfo`
 
 Called at startup, it's used to check the network `lightningd` is operating on and to
-get the sync status of the backend.
+get the sync status of the backend. Optionally, the plugins can use `last_height` to
+make sure that the Bitcoin backend is not behind core lightning.
 
 The plugin must respond to `getchaininfo` with the following fields:
     - `chain` (string), the network name as introduced in bip70
@@ -1727,17 +1730,26 @@ The plugin must respond to `getchaininfo` with the following fields:
 
 Polled by `lightningd` to get the current feerate, all values must be passed in sat/kVB.
 
-If fee estimation fails, the plugin must set all the fields to `null`.
+The plugin must return `feerate_floor` (e.g. 1000 if mempool is
+empty), and an array of 0 or more `feerates`.  Each element of
+`feerates` is an object with `blocks` and `feerate`, in
+ascending-blocks order, for example:
 
-The plugin, if fee estimation succeeds, must respond with the following fields:
-    - `opening` (number), used for funding and also misc transactions
-    - `mutual_close` (number), used for the mutual close transaction
-    - `unilateral_close` (number), used for unilateral close (/commitment) transactions
-    - `delayed_to_us` (number), used for resolving our output from our unilateral close
-    - `htlc_resolution` (number), used for resolving HTLCs after an unilateral close
-    - `penalty` (number), used for resolving revoked transactions
-    - `min_acceptable` (number), used as the minimum acceptable feerate
-    - `max_acceptable` (number), used as the maximum acceptable feerate
+```
+{
+	"feerate_floor": <sat per kVB>,
+	"feerates": {
+		{ "blocks": 2, "feerate": <sat per kVB> },
+		{ "blocks": 6, "feerate": <sat per kVB> },
+		{ "blocks": 12, "feerate": <sat per kVB> }
+		{ "blocks": 100, "feerate": <sat per kVB> }
+	}
+}
+```
+
+lightningd will currently linearly interpolate to estimate between
+given blocks (it will not extrapolate, but use the min/max blocks
+values).
 
 
 ### `getrawblockbyheight`
@@ -1792,3 +1804,6 @@ The plugin must broadcast it and respond with the following fields:
 [contrib/plugins]: https://github.com/ElementsProject/lightning/tree/master/contrib/plugins
 [tests]: https://github.com/ElementsProject/lightning/tree/master/tests
 [lightning-rpc.7.md]: lightningd-rpc.7.md
+[example-plugin]: https://github.com/ElementsProject/lightning/blob/master/contrib/plugins/helloworld.py
+[cln-tests]: https://github.com/ElementsProject/lightning/tree/master/tests
+[cln-repo]: https://github.com/lightningd/plugins

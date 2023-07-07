@@ -20,10 +20,6 @@ msgdata,onchaind_init,old_remote_per_commitment_point,pubkey,
 msgdata,onchaind_init,remote_per_commitment_point,pubkey,
 msgdata,onchaind_init,local_to_self_delay,u32,
 msgdata,onchaind_init,remote_to_self_delay,u32,
-msgdata,onchaind_init,delayed_to_us_feerate,u32,
-msgdata,onchaind_init,htlc_feerate,u32,
-msgdata,onchaind_init,penalty_feerate,u32,
-msgdata,onchaind_init,max_penalty_feerate,u32,
 msgdata,onchaind_init,local_dust_limit_satoshi,amount_sat,
 # Gives an easy way to tell if it's our unilateral close or theirs...
 msgdata,onchaind_init,our_broadcast_txid,bitcoin_txid,
@@ -66,14 +62,6 @@ msgdata,onchaind_htlcs,htlc,htlc_stub,num_htlcs
 # If it's not in the commitment tx, tell us (immediately or htlc_missing_depth)
 msgdata,onchaind_htlcs,tell_if_missing,bool,num_htlcs
 msgdata,onchaind_htlcs,tell_immediately,bool,num_htlcs
-
-# onchaind->master: Send out a tx.
-# If is_rbf is false then master should rebroadcast the tx.
-# If is_rbf is true then onchaind is responsible for rebroadcasting
-#  it with a higher fee.
-msgtype,onchaind_broadcast_tx,5003
-msgdata,onchaind_broadcast_tx,tx,bitcoin_tx,
-msgdata,onchaind_broadcast_tx,is_rbf,bool,
 
 # master->onchaind: Notifier that an output has been spent by input_num of tx.
 msgtype,onchaind_spent,5004
@@ -139,3 +127,83 @@ msgdata,onchaind_annotate_txin,type,enum wallet_tx_type,
 
 msgtype,onchaind_notify_coin_mvt,5037
 msgdata,onchaind_notify_coin_mvt,mvt,chain_coin_mvt,
+
+# We tell lightningd to create, sign and broadcast this tx: 
+msgtype,onchaind_spend_to_us,5040
+msgdata,onchaind_spend_to_us,outpoint,bitcoin_outpoint,
+msgdata,onchaind_spend_to_us,outpoint_amount,amount_sat,
+msgdata,onchaind_spend_to_us,minblock,u32,
+msgdata,onchaind_spend_to_us,commit_num,u64,
+msgdata,onchaind_spend_to_us,wscript_len,u32,
+msgdata,onchaind_spend_to_us,wscript,u8,wscript_len
+
+# We tell lightningd to create, sign and broadcast this penalty tx: 
+msgtype,onchaind_spend_penalty,5041
+msgdata,onchaind_spend_penalty,outpoint,bitcoin_outpoint,
+msgdata,onchaind_spend_penalty,outpoint_amount,amount_sat,
+msgdata,onchaind_spend_penalty,remote_per_commitment_secret,secret,
+msgdata,onchaind_spend_penalty,stack_elem_len,u16,
+msgdata,onchaind_spend_penalty,stack_elem,u8,stack_elem_len
+msgdata,onchaind_spend_penalty,wscript_len,u32,
+msgdata,onchaind_spend_penalty,wscript,u8,wscript_len
+
+# We tell lightningd to create, sign and broadcast this htlc_success tx: 
+msgtype,onchaind_spend_htlc_success,5042
+msgdata,onchaind_spend_htlc_success,outpoint,bitcoin_outpoint,
+msgdata,onchaind_spend_htlc_success,outpoint_amount,amount_sat,
+msgdata,onchaind_spend_htlc_success,fee,amount_sat,
+msgdata,onchaind_spend_htlc_success,htlc_id,u64,
+msgdata,onchaind_spend_htlc_success,commit_num,u64,
+msgdata,onchaind_spend_htlc_success,remote_htlc_sig,bitcoin_signature,
+msgdata,onchaind_spend_htlc_success,preimage,preimage,
+msgdata,onchaind_spend_htlc_success,wscript_len,u32,
+msgdata,onchaind_spend_htlc_success,wscript,u8,wscript_len
+msgdata,onchaind_spend_htlc_success,htlc_wscript_len,u32,
+msgdata,onchaind_spend_htlc_success,htlc_wscript,u8,htlc_wscript_len
+
+# We tell lightningd to create, sign and broadcast this HTLC redepmtion: 
+msgtype,onchaind_spend_fulfill,5043
+msgdata,onchaind_spend_fulfill,outpoint,bitcoin_outpoint,
+msgdata,onchaind_spend_fulfill,outpoint_amount,amount_sat,
+msgdata,onchaind_spend_fulfill,htlc_id,u64,
+msgdata,onchaind_spend_fulfill,remote_per_commitment_point,pubkey,
+msgdata,onchaind_spend_fulfill,preimage,preimage,
+msgdata,onchaind_spend_fulfill,wscript_len,u32,
+msgdata,onchaind_spend_fulfill,wscript,u8,wscript_len
+
+# We tell lightningd to create, sign and broadcast this htlc_timeout tx: 
+msgtype,onchaind_spend_htlc_timeout,5044
+msgdata,onchaind_spend_htlc_timeout,outpoint,bitcoin_outpoint,
+msgdata,onchaind_spend_htlc_timeout,outpoint_amount,amount_sat,
+msgdata,onchaind_spend_htlc_timeout,fee,amount_sat,
+msgdata,onchaind_spend_htlc_timeout,htlc_id,u64,
+msgdata,onchaind_spend_htlc_timeout,cltv_expiry,u32,
+msgdata,onchaind_spend_htlc_timeout,commit_num,u64,
+msgdata,onchaind_spend_htlc_timeout,remote_htlc_sig,bitcoin_signature,
+msgdata,onchaind_spend_htlc_timeout,wscript_len,u32,
+msgdata,onchaind_spend_htlc_timeout,wscript,u8,wscript_len
+msgdata,onchaind_spend_htlc_timeout,htlc_wscript_len,u32,
+msgdata,onchaind_spend_htlc_timeout,htlc_wscript,u8,htlc_wscript_len
+
+# We tell lightningd to create, sign and broadcast this tx to collect our
+# expired htlc in their unilateral close: 
+msgtype,onchaind_spend_htlc_expired,5045
+msgdata,onchaind_spend_htlc_expired,outpoint,bitcoin_outpoint,
+msgdata,onchaind_spend_htlc_expired,outpoint_amount,amount_sat,
+msgdata,onchaind_spend_htlc_expired,htlc_id,u64,
+msgdata,onchaind_spend_htlc_expired,cltv_expiry,u32,
+msgdata,onchaind_spend_htlc_expired,remote_per_commitment_point,pubkey,
+msgdata,onchaind_spend_htlc_expired,wscript_len,u32,
+msgdata,onchaind_spend_htlc_expired,wscript,u8,wscript_len
+
+subtype,onchain_witness_element
+subtypedata,onchain_witness_element,is_signature,bool,
+subtypedata,onchain_witness_element,len,u32,
+subtypedata,onchain_witness_element,witness,u8,len
+
+# lightningd replies; if it considers it uneconomic, it tells onchaind
+# so it doesn't wait forever!
+msgtype,onchaind_spend_created,5140
+msgdata,onchaind_spend_created,expect_to_succeed,bool,
+msgdata,onchaind_spend_created,num_witnesses,u32,
+msgdata,onchaind_spend_created,witness,onchain_witness_element,num_witnesses

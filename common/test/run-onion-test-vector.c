@@ -8,11 +8,7 @@
 #include "../type_to_string.c"
 #include "../../wire/towire.c"
 #include "../../wire/fromwire.c"
-#if EXPERIMENTAL_FEATURES
-#include "../../wire/onion_exp_wiregen.c"
-#else
 #include "../../wire/onion_wiregen.c"
-#endif
 #include <ccan/tal/grab_file/grab_file.h>
 #include <ccan/tal/path/path.h>
 #include <common/channel_id.h>
@@ -42,12 +38,18 @@ struct amount_sat amount_sat(u64 satoshis UNNEEDED)
 				       struct amount_sat a UNNEEDED,
 				       struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_add called!\n"); abort(); }
+/* Generated stub for amount_sat_div */
+struct amount_sat amount_sat_div(struct amount_sat sat UNNEEDED, u64 div UNNEEDED)
+{ fprintf(stderr, "amount_sat_div called!\n"); abort(); }
 /* Generated stub for amount_sat_eq */
 bool amount_sat_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_eq called!\n"); abort(); }
 /* Generated stub for amount_sat_greater_eq */
 bool amount_sat_greater_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_greater_eq called!\n"); abort(); }
+/* Generated stub for amount_sat_mul */
+bool amount_sat_mul(struct amount_sat *res UNNEEDED, struct amount_sat sat UNNEEDED, u64 mul UNNEEDED)
+{ fprintf(stderr, "amount_sat_mul called!\n"); abort(); }
 /* Generated stub for amount_sat_sub */
  bool amount_sat_sub(struct amount_sat *val UNNEEDED,
 				       struct amount_sat a UNNEEDED,

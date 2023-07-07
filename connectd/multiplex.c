@@ -315,9 +315,13 @@ static void set_urgent_flag(struct peer *peer, bool urgent)
 	int val;
 	int opt;
 	const char *optname;
-	static bool complained = false;
 
 	if (urgent == peer->urgent)
+		return;
+
+	/* FIXME: We can't do this on websockets, but we could signal our
+	 * websocket proxy via some magic message to do so! */
+	if (peer->is_websocket != NORMAL_SOCKET)
 		return;
 
 #ifdef TCP_CORK
@@ -332,14 +336,12 @@ static void set_urgent_flag(struct peer *peer, bool urgent)
 
 	val = urgent;
 	if (setsockopt(io_conn_fd(peer->to_peer),
-		       IPPROTO_TCP, opt, &val, sizeof(val)) != 0) {
-		/* This actually happens in testing, where we blackhole the fd */
-		if (!complained) {
-			status_unusual("setsockopt %s=1: %s",
-				       optname,
-				       strerror(errno));
-			complained = true;
-		}
+		       IPPROTO_TCP, opt, &val, sizeof(val)) != 0
+	    /* This actually happens in testing, where we blackhole the fd */
+	    && IFDEV(peer->daemon->dev_disconnect_fd == -1, true)) {
+		status_broken("setsockopt %s=1 fd=%u: %s",
+			      optname, io_conn_fd(peer->to_peer),
+			      strerror(errno));
 	}
 	peer->urgent = urgent;
 }
@@ -355,6 +357,7 @@ static bool is_urgent(enum peer_wire type)
 	case WIRE_TX_REMOVE_INPUT:
 	case WIRE_TX_REMOVE_OUTPUT:
 	case WIRE_TX_COMPLETE:
+	case WIRE_TX_ABORT:
 	case WIRE_TX_SIGNATURES:
 	case WIRE_OPEN_CHANNEL:
 	case WIRE_ACCEPT_CHANNEL:
@@ -363,8 +366,8 @@ static bool is_urgent(enum peer_wire type)
 	case WIRE_CHANNEL_READY:
 	case WIRE_OPEN_CHANNEL2:
 	case WIRE_ACCEPT_CHANNEL2:
-	case WIRE_INIT_RBF:
-	case WIRE_ACK_RBF:
+	case WIRE_TX_INIT_RBF:
+	case WIRE_TX_ACK_RBF:
 	case WIRE_SHUTDOWN:
 	case WIRE_CLOSING_SIGNED:
 	case WIRE_UPDATE_ADD_HTLC:
@@ -384,9 +387,9 @@ static bool is_urgent(enum peer_wire type)
 	case WIRE_REPLY_CHANNEL_RANGE:
 	case WIRE_GOSSIP_TIMESTAMP_FILTER:
 	case WIRE_ONION_MESSAGE:
-#if EXPERIMENTAL_FEATURES
+	case WIRE_PEER_STORAGE:
+	case WIRE_YOUR_PEER_STORAGE:
 	case WIRE_STFU:
-#endif
 		return false;
 
 	/* These are time-sensitive, and so send without delay. */
@@ -500,23 +503,6 @@ static u8 *maybe_from_gossip_store(const tal_t *ctx, struct peer *peer)
 	if (IFDEV(peer->daemon->dev_suppress_gossip, false))
 		return NULL;
 
-	/* BOLT #7:
-	 *   - if the `gossip_queries` feature is negotiated:
-	 *     - MUST NOT relay any gossip messages it did not generate itself,
-	 *       unless explicitly requested.
-	 */
-
-	/* So, even if they didn't send us a timestamp_filter message,
-	 * we *still* send our own gossip. */
-	if (!peer->gs.gossip_timer) {
-		return gossip_store_next(ctx, &peer->daemon->gossip_store_fd,
-					 0, 0xFFFFFFFF,
-					 true,
-					 false,
-					 &peer->gs.off,
-					 &peer->daemon->gossip_store_end);
-	}
-
 	/* Not streaming right now? */
 	if (!peer->gs.active)
 		return NULL;
@@ -528,7 +514,6 @@ again:
 	msg = gossip_store_next(ctx, &peer->daemon->gossip_store_fd,
 				peer->gs.timestamp_min,
 				peer->gs.timestamp_max,
-				false,
 				false,
 				&peer->gs.off,
 				&peer->daemon->gossip_store_end);
@@ -693,18 +678,27 @@ static void handle_gossip_timestamp_filter_in(struct peer *peer, const u8 *msg)
 	if (peer->gs.timestamp_max < peer->gs.timestamp_min)
 		peer->gs.timestamp_max = UINT32_MAX;
 
-	/* Optimization: they don't want anything.  LND and us (at least),
-	 * both set first_timestamp to 0xFFFFFFFF to indicate that. */
-	if (peer->gs.timestamp_min == UINT32_MAX)
+	/* BOLT-gossip-filter-simplify #7:
+	 * The receiver:
+	 *...
+	 *   - if `first_timestamp` is 0:
+	 *     - SHOULD send all known gossip messages.
+	 *   - otherwise, if `first_timestamp` is 0xFFFFFFFF:
+	 *     - SHOULD NOT send any gossip messages (except its own).
+	 *   - otherwise:
+	 *     - SHOULD send gossip messages it receives from now own.
+	 */
+	/* For us, this means we only sweep the gossip store for messages
+	 * if the first_timestamp is 0 */
+	if (first_timestamp == 0)
+		peer->gs.off = 1;
+	else if (first_timestamp == 0xFFFFFFFF)
 		peer->gs.off = peer->daemon->gossip_store_end;
 	else {
-		/* Second optimation: it's common to ask for "recent" gossip,
-		 * so we don't have to start at beginning of store. */
+		/* We are actually a bit nicer than the spec, and we include
+		 * "recent" gossip here. */
 		update_recent_timestamp(peer->daemon);
-		if (peer->gs.timestamp_min >= peer->daemon->gossip_recent_time)
-			peer->gs.off = peer->daemon->gossip_store_recent_off;
-		else
-			peer->gs.off = 1;
+		peer->gs.off = peer->daemon->gossip_store_recent_off;
 	}
 
 	/* BOLT #7:
@@ -720,7 +714,7 @@ static bool handle_custommsg(struct daemon *daemon,
 			     const u8 *msg)
 {
 	enum peer_wire type = fromwire_peektype(msg);
-	if (type % 2 == 1 && !peer_wire_is_defined(type)) {
+	if (type % 2 == 1 && !peer_wire_is_internal(type)) {
 		/* The message is not part of the messages we know how to
 		 * handle. Assuming this is a custommsg, we just forward it to the
 		 * master. */
@@ -1132,6 +1126,14 @@ static struct io_plan *read_body_from_peer_done(struct io_conn *peer_conn,
        subd = find_subd(peer, &channel_id);
        if (!subd) {
 	       enum peer_wire t = fromwire_peektype(decrypted);
+
+	       /* Simplest to close on them at this point. */
+	       if (peer->daemon->shutting_down) {
+		       status_peer_debug(&peer->id,
+					 "Shutting down: hanging up for %s",
+					 peer_wire_name(t));
+		       return io_close(peer_conn);
+	       }
 	       status_peer_debug(&peer->id, "Activating for message %s",
 				 peer_wire_name(t));
 	       subd = new_subd(peer, &channel_id);

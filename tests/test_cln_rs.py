@@ -4,7 +4,7 @@ from pathlib import Path
 from pyln.testing import node_pb2 as nodepb
 from pyln.testing import node_pb2_grpc as nodegrpc
 from pyln.testing import primitives_pb2 as primitivespb
-from pyln.testing.utils import env, TEST_NETWORK, wait_for
+from pyln.testing.utils import env, TEST_NETWORK, wait_for, sync_blockheight, TIMEOUT
 import grpc
 import pytest
 import subprocess
@@ -43,17 +43,7 @@ def test_plugin_start(node_factory):
     plugins = l1.rpc.plugin('list')['plugins']
     assert len([p for p in plugins if 'cln-plugin-startup' in p['name'] and p['active']]) == 1
 
-    cfg = l1.rpc.listconfigs()
-    p = cfg['plugins'][0]
-    p['path'] = None  # The path is host-specific, so blank it.
-    expected = {
-        'name': 'cln-plugin-startup',
-        'options': {
-            'test-option': 31337
-        },
-        'path': None
-    }
-    assert expected == p
+    assert str(bin_path) in l1.rpc.listconfigs()['configs']['plugin']['values_str']
 
     # Now check that the `testmethod was registered ok
     l1.rpc.help("testmethod") == {
@@ -181,6 +171,11 @@ def test_grpc_generate_certificate(node_factory):
     assert contents[-2] != files[-2].open().read()
     assert contents[-1] != files[-1].open().read()
 
+    keys = [f for f in files if f.name.endswith('-key.pem')]
+    modes = [f.stat().st_mode for f in keys]
+    private = [m % 8 == 0 and (m // 8) % 8 == 0 for m in modes]
+    assert all(private)
+
 
 def test_grpc_no_auto_start(node_factory):
     """Ensure that we do not start cln-grpc unless a port is configured.
@@ -242,3 +237,136 @@ def test_grpc_wrong_auth(node_factory):
     # Now load the correct ones and we should be good to go
     stub = connect(l2)
     stub.Getinfo(nodepb.GetinfoRequest())
+
+
+def test_cln_plugin_reentrant(node_factory, executor):
+    """Ensure that we continue processing events while already handling.
+
+    We should be continuing to handle incoming events even though a
+    prior event has not completed. This is important for things like
+    the `htlc_accepted` hook which needs to hold on to multiple
+    incoming HTLCs.
+
+    Scenario: l1 uses an `htlc_accepted` to hold on to incoming HTLCs,
+    and we release them using an RPC method.
+
+    """
+    bin_path = Path.cwd() / "target" / RUST_PROFILE / "examples" / "cln-plugin-reentrant"
+    l1 = node_factory.get_node(options={"plugin": str(bin_path)})
+    l2 = node_factory.get_node()
+    l2.connect(l1)
+    l2.fundchannel(l1)
+
+    # Now create two invoices, and pay them both. Neither should
+    # succeed, but we should queue them on the plugin.
+    i1 = l1.rpc.invoice(label='lbl1', msatoshi='42sat', description='desc')['bolt11']
+    i2 = l1.rpc.invoice(label='lbl2', msatoshi='31337sat', description='desc')['bolt11']
+
+    f1 = executor.submit(l2.rpc.pay, i1)
+    f2 = executor.submit(l2.rpc.pay, i2)
+
+    l1.daemon.wait_for_logs(["plugin-cln-plugin-reentrant: Holding on to incoming HTLC Object"] * 2)
+
+    print("Releasing HTLCs after holding them")
+    l1.rpc.call('release')
+
+    assert f1.result(timeout=TIMEOUT)
+    assert f2.result(timeout=TIMEOUT)
+
+
+def test_grpc_keysend_routehint(bitcoind, node_factory):
+    """The routehints are a bit special, test that conversions work.
+
+    3 node line graph, with l1 as the keysend sender and l3 the
+    recipient.
+
+    """
+    grpc_port = reserve()
+    l1, l2, l3 = node_factory.line_graph(
+        3,
+        opts=[
+            {"grpc-port": str(grpc_port)}, {}, {}
+        ],
+        announce_channels=True,  # Do not enforce scid-alias
+    )
+    bitcoind.generate_block(3)
+    sync_blockheight(bitcoind, [l1, l2, l3])
+
+    stub = l1.grpc
+    chan = l2.rpc.listpeerchannels(l3.info['id'])
+
+    routehint = primitivespb.RoutehintList(hints=[
+        primitivespb.Routehint(hops=[
+            primitivespb.RouteHop(
+                id=bytes.fromhex(l2.info['id']),
+                short_channel_id=chan['channels'][0]['short_channel_id'],
+                # Fees are defaults from CLN
+                feebase=primitivespb.Amount(msat=1),
+                feeprop=10,
+                expirydelta=18,
+            )
+        ])
+    ])
+
+    # And now we send a keysend with that routehint list
+    call = nodepb.KeysendRequest(
+        destination=bytes.fromhex(l3.info['id']),
+        amount_msat=primitivespb.Amount(msat=42),
+        routehints=routehint,
+    )
+
+    res = stub.KeySend(call)
+    print(res)
+
+
+def test_grpc_listpeerchannels(bitcoind, node_factory):
+    """ Check that conversions of this rather complex type work.
+    """
+    grpc_port = reserve()
+    l1, l2 = node_factory.line_graph(
+        2,
+        opts=[
+            {"grpc-port": str(grpc_port)}, {}
+        ],
+        announce_channels=True,  # Do not enforce scid-alias
+    )
+
+    stub = l1.grpc
+    res = stub.ListPeerChannels(nodepb.ListpeerchannelsRequest(id=None))
+
+    # Way too many fields to check, so just do a couple
+    assert len(res.channels) == 1
+    c = res.channels[0]
+    assert c.peer_id.hex() == l2.info['id']
+    assert c.state == 2  # CHANNELD_NORMAL
+
+    # And since we're at it let's close the channel as well so we can
+    # see it in listclosedchanenls
+
+    res = stub.Close(nodepb.CloseRequest(id=l2.info['id']))
+
+    bitcoind.generate_block(100, wait_for_mempool=1)
+    l1.daemon.wait_for_log(r'onchaind complete, forgetting peer')
+
+    stub.ListClosedChannels(nodepb.ListclosedchannelsRequest())
+
+
+def test_grpc_decode(node_factory):
+    grpc_port = reserve()
+    l1 = node_factory.get_node(options={'grpc-port': str(grpc_port)})
+    inv = l1.grpc.Invoice(nodepb.InvoiceRequest(
+        amount_msat=primitivespb.AmountOrAny(any=True),
+        description="desc",
+        label="label",
+    ))
+
+    res = l1.grpc.DecodePay(nodepb.DecodepayRequest(
+        bolt11=inv.bolt11
+    ))
+    # If we get here we're good, conversions work
+    print(res)
+
+    res = l1.grpc.Decode(nodepb.DecodeRequest(
+        string=inv.bolt11
+    ))
+    print(res)

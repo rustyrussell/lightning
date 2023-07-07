@@ -12,13 +12,13 @@
 #include <gossipd/gossipd_wiregen.h>
 #include <hsmd/hsmd_wiregen.h>
 #include <lightningd/chaintopology.h>
+#include <lightningd/hsm_control.h>
 #include <lightningd/jsonrpc.h>
 #include <lightningd/lightningd.h>
 #include <lightningd/memdump.h>
 #include <lightningd/opening_common.h>
 #include <lightningd/peer_control.h>
 #include <lightningd/subd.h>
-#include <wire/wire_sync.h>
 
 static void json_add_ptr(struct json_stream *response, const char *name,
 			 const void *ptr)
@@ -152,6 +152,7 @@ static void finish_report(const struct leak_detect *leaks)
 	/* First delete known false positives. */
 	memleak_scan_htable(memtable, &ld->topology->txwatches->raw);
 	memleak_scan_htable(memtable, &ld->topology->txowatches->raw);
+	memleak_scan_htable(memtable, &ld->topology->outgoing_txs->raw);
 	memleak_scan_htable(memtable, &ld->htlcs_in->raw);
 	memleak_scan_htable(memtable, &ld->htlcs_out->raw);
 	memleak_scan_htable(memtable, &ld->htlc_sets->raw);
@@ -173,10 +174,8 @@ static void finish_report(const struct leak_detect *leaks)
 
 		json_add_backtrace(response, backtrace);
 		json_array_start(response, "parents");
-		for (p = tal_parent(i); p; p = tal_parent(p)) {
+		for (p = tal_parent(i); p; p = tal_parent(p))
 			json_add_string(response, NULL, tal_name(p));
-			p = tal_parent(p);
-		}
 		json_array_end(response);
 		json_object_end(response);
 	}
@@ -261,7 +260,7 @@ static struct command_result *json_memleak(struct command *cmd,
 					   const jsmntok_t *params)
 {
 	struct lightningd *ld = cmd->ld;
-	u8 *msg;
+	const u8 *msg;
 	bool found_leak;
 	struct leak_detect *leaks;
 
@@ -279,10 +278,7 @@ static struct command_result *json_memleak(struct command *cmd,
 	leaks->leakers = tal_arr(leaks, const char *, 0);
 
 	/* hsmd is sync, so do that first. */
-	if (!wire_sync_write(ld->hsm_fd,
-			     take(towire_hsmd_dev_memleak(NULL))))
-		fatal("Could not write to HSM: %s", strerror(errno));
-	msg = wire_sync_read(tmpctx, ld->hsm_fd);
+	msg = hsm_sync_req(tmpctx, cmd->ld, take(towire_hsmd_dev_memleak(NULL)));
 	if (!fromwire_hsmd_dev_memleak_reply(msg, &found_leak))
 		fatal("Bad HSMD_DEV_MEMLEAK_REPLY: %s", tal_hex(tmpctx, msg));
 

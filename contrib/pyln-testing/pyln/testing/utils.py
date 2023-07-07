@@ -18,7 +18,6 @@ import logging
 import lzma
 import math
 import os
-import psutil  # type: ignore
 import random
 import re
 import shutil
@@ -460,7 +459,7 @@ class BitcoinD(TailableProc):
     # int > 0 := wait for at least N transactions
     # 'tx_id' := wait for one transaction id given as a string
     # ['tx_id1', 'tx_id2'] := wait until all of the specified transaction IDs
-    def generate_block(self, numblocks=1, wait_for_mempool=0, to_addr=None):
+    def generate_block(self, numblocks=1, wait_for_mempool=0, to_addr=None, needfeerate=None):
         if wait_for_mempool:
             if isinstance(wait_for_mempool, str):
                 wait_for_mempool = [wait_for_mempool]
@@ -469,7 +468,7 @@ class BitcoinD(TailableProc):
             else:
                 wait_for(lambda: len(self.rpc.getrawmempool()) >= wait_for_mempool)
 
-        mempool = self.rpc.getrawmempool()
+        mempool = self.rpc.getrawmempool(True)
         logging.debug("Generating {numblocks}, confirming {lenmempool} transactions: {mempool}".format(
             numblocks=numblocks,
             mempool=mempool,
@@ -479,6 +478,21 @@ class BitcoinD(TailableProc):
         # As of 0.16, generate() is removed; use generatetoaddress.
         if to_addr is None:
             to_addr = self.rpc.getnewaddress()
+
+        # We assume all-or-nothing.
+        if needfeerate is not None:
+            assert numblocks == 1
+            # If any tx including ancestors is above the given feerate, mine all.
+            for txid, details in mempool.items():
+                feerate = float(details['fees']['ancestor']) * 100_000_000 / (float(details['ancestorsize']) * 4 / 1000)
+                if feerate >= needfeerate:
+                    return self.rpc.generatetoaddress(numblocks, to_addr)
+                else:
+                    print(f"Feerate {feerate} for {txid} below {needfeerate}")
+
+            # Otherwise, mine none.
+            return self.rpc.generateblock(to_addr, [])
+
         return self.rpc.generatetoaddress(numblocks, to_addr)
 
     def simple_reorg(self, height, shift=0):
@@ -547,6 +561,7 @@ class ElementsD(BitcoinD):
             '-nowallet',
             '-validatepegin=0',
             '-con_blocksubsidy=5000000000',
+            '-acceptnonstdtxn=1',  # FIXME Issues such as dust limit interacting with anchors
         ]
         conf_file = os.path.join(bitcoin_dir, 'elements.conf')
         config['rpcport'] = self.rpcport
@@ -583,7 +598,7 @@ class LightningD(TailableProc):
         self.disconnect_file = None
 
         self.rpcproxy = bitcoindproxy
-        self.env['CLN_PLUGIN_LOG'] = "gl_plugin=trace,gl_rpc=trace,gl_grpc=trace,debug"
+        self.env['CLN_PLUGIN_LOG'] = "cln_plugin=trace,cln_rpc=trace,cln_grpc=trace,debug"
 
         self.opts = LIGHTNINGD_CONFIG.copy()
         opts = {
@@ -780,7 +795,7 @@ class LightningNode(object):
         if dsn is not None:
             self.daemon.opts['wallet'] = dsn
         if valgrind:
-            trace_skip_pattern = '*python*,*bitcoin-cli*,*elements-cli*,*cln-grpc'
+            trace_skip_pattern = '*python*,*bitcoin-cli*,*elements-cli*,*cln-*'
             if not valgrind_plugins:
                 trace_skip_pattern += ',*plugins*'
             self.daemon.cmd_prefix = [
@@ -836,8 +851,41 @@ class LightningNode(object):
             jsonschemas=jsonschemas
         )
 
+    @property
+    def grpc(self):
+        """Tiny helper to return a grpc stub if grpc was configured.
+        """
+        # Before doing anything let's see if we have a grpc-port at all
+        try:
+            grpc_port = int(filter(
+                lambda v: v[0] == 'grpc-port',
+                self.daemon.opts.items()
+            ).__next__()[1])
+        except Exception:
+            raise ValueError("grpc-port is not specified, can't connect over grpc")
+
+        import grpc
+        p = Path(self.daemon.lightning_dir) / TEST_NETWORK
+        cert, key, ca = [f.open('rb').read() for f in [
+            p / 'client.pem',
+            p / 'client-key.pem',
+            p / "ca.pem"]]
+        creds = grpc.ssl_channel_credentials(
+            root_certificates=ca,
+            private_key=key,
+            certificate_chain=cert,
+        )
+
+        channel = grpc.secure_channel(
+            f"localhost:{grpc_port}",
+            creds,
+            options=(('grpc.ssl_target_name_override', 'cln'),)
+        )
+        from pyln.testing import node_pb2_grpc as nodegrpc
+        return nodegrpc.NodeStub(channel)
+
     def connect(self, remote_node):
-        self.rpc.connect(remote_node.info['id'], '127.0.0.1', remote_node.daemon.port)
+        self.rpc.connect(remote_node.info['id'], '127.0.0.1', remote_node.port)
 
     def is_connected(self, remote_node):
         return remote_node.info['id'] in [p['id'] for p in self.rpc.listpeers()['peers']]
@@ -845,6 +893,7 @@ class LightningNode(object):
     def openchannel(self, remote_node, capacity=FUNDAMOUNT, addrtype="bech32", confirm=True, wait_for_announce=True, connect=True):
         addr, wallettxid = self.fundwallet(10 * capacity, addrtype)
 
+        # connect if necessary
         if connect and not self.is_connected(remote_node):
             self.connect(remote_node)
 
@@ -867,7 +916,7 @@ class LightningNode(object):
             self.daemon.wait_for_log('Owning output .* txid {} CONFIRMED'.format(txid))
         return addr, txid
 
-    def fundbalancedchannel(self, remote_node, total_capacity, announce=True):
+    def fundbalancedchannel(self, remote_node, total_capacity=FUNDAMOUNT, announce=True):
         '''
         Creates a perfectly-balanced channel, as all things should be.
         '''
@@ -891,7 +940,9 @@ class LightningNode(object):
         else:
             chan_capacity = total_capacity
 
-        self.rpc.connect(remote_node.info['id'], 'localhost', remote_node.port)
+        # connect if necessary
+        if not self.is_connected(remote_node):
+            self.connect(remote_node)
 
         res = self.rpc.fundchannel(remote_node.info['id'], chan_capacity, feerate='slow', minconf=0, announce=announce, push_msat=Millisatoshi(chan_capacity * 500))
         blockid = self.bitcoin.generate_block(1, wait_for_mempool=res['txid'])[0]
@@ -972,11 +1023,6 @@ class LightningNode(object):
 
         self.start()
 
-    def fund_channel(self, l2, amount, wait_for_active=True, announce_channel=True):
-        warnings.warn("LightningNode.fund_channel is deprecated in favor of "
-                      "LightningNode.fundchannel", category=DeprecationWarning)
-        return self.fundchannel(l2, amount, wait_for_active, announce_channel)
-
     def fundchannel(self, l2, amount=FUNDAMOUNT, wait_for_active=True,
                     announce_channel=True, **kwargs):
         # Give yourself some funds to work with
@@ -997,6 +1043,10 @@ class LightningNode(object):
 
         # Now we should.
         wait_for(lambda: has_funds_on_addr(addr))
+
+        # connect if necessary
+        if not self.is_connected(l2):
+            self.connect(l2)
 
         # Now go ahead and open a channel
         res = self.rpc.fundchannel(l2.info['id'], amount,
@@ -1099,14 +1149,13 @@ class LightningNode(object):
     # `scids` can be a list of strings. If unset wait on all channels.
     def wait_for_htlcs(self, scids=None):
         peers = self.rpc.listpeers()['peers']
-        for p, peer in enumerate(peers):
-            if 'channels' in peer:
-                channels_peer = self.rpc.listpeerchannels(peer['id'])
-                for c, channel in enumerate(channels_peer['channels']):
-                    if scids is not None and channel['short_channel_id'] not in scids:
-                        continue
-                    if 'htlcs' in channel:
-                        wait_for(lambda: len(self.rpc.listpeerchannels(peer["id"])['channels'][c]['htlcs']) == 0)
+        for peer in peers:
+            channels = self.rpc.listpeerchannels(peer['id'])['channels']
+            for idx, channel in enumerate(channels):
+                if scids is not None and channel['short_channel_id'] not in scids:
+                    continue
+                if 'htlcs' in channel:
+                    wait_for(lambda: len(self.rpc.listpeerchannels(peer["id"])['channels'][idx]['htlcs']) == 0)
 
     # This sends money to a directly connected peer
     def pay(self, dst, amt, label=None):
@@ -1190,7 +1239,7 @@ class LightningNode(object):
         self.daemon.rpcproxy.mock_rpc('estimatesmartfee', mock_estimatesmartfee)
 
         # Technically, this waits until it's called, not until it's processed.
-        # We wait until all three levels have been called.
+        # We wait until all four levels have been called.
         if wait_for_effect:
             wait_for(lambda:
                      self.daemon.rpcproxy.mock_counts['estimatesmartfee'] >= 4)
@@ -1203,6 +1252,53 @@ class LightningNode(object):
         self.restart()
         self.daemon.wait_for_log('peer_out WIRE_UPDATE_FEE')
         assert(self.rpc.feerates('perkw')['perkw']['opening'] == rate)
+
+    def wait_for_onchaind_txs(self, *args):
+        """Wait for onchaind to ask lightningd to create one or more txs.  Each arg is a pair of typename, resolvename.  Returns tuples of the rawtx, txid and number of blocks delay for each pair.
+        """
+        # Could happen in any order.
+        needle = self.daemon.logsearch_start
+        ret = ()
+        for (name, resolve) in args:
+            self.daemon.logsearch_start = needle
+            r = self.daemon.wait_for_log('Telling lightningd about {} to resolve {}'
+                                         .format(name, resolve))
+            blocks = int(re.search(r'\(([-0-9]*) more blocks\)', r).group(1))
+
+            # The next 'Broadcast for onchaind' will be the tx.
+            # Now grab the corresponding broadcast lightningd did, to get actual tx:
+            r = self.daemon.wait_for_log('Broadcast for onchaind tx')
+            rawtx = re.search(r'.* tx ([0-9a-fA-F]*)', r).group(1)
+            txid = self.bitcoin.rpc.decoderawtransaction(rawtx, True)['txid']
+            ret = ret + ((rawtx, txid, blocks),)
+        return ret
+
+    def wait_for_onchaind_tx(self, name, resolve):
+        return self.wait_for_onchaind_txs((name, resolve))[0]
+
+    def mine_txid_or_rbf(self, txid, numblocks=1):
+        """Wait for a txid to be broadcast, or an rbf.  Return the one actually mined"""
+        # Hack so we can mutate the txid: pass it in a list
+        def rbf_or_txid_broadcast(txids):
+            # RBF onchain txid d4b597505b543a4b8b42ab4d481fd7a533febb7e7df150ca70689e6d046612f7 (fee 6564sat) with txid 979878b8f855d3895d1cd29bd75a60b21492c4842e38099186a8e649bee02c7c (fee 8205sat)
+            line = self.daemon.is_in_log("RBF onchain txid {}".format(txids[-1]))
+            if line is not None:
+                newtxid = re.search(r'with txid ([0-9a-fA-F]*)', line).group(1)
+                txids.append(newtxid)
+            mempool = self.bitcoin.rpc.getrawmempool()
+            return any([t in mempool for t in txids])
+
+        txids = [txid]
+        wait_for(lambda: rbf_or_txid_broadcast(txids))
+        blocks = self.bitcoin.generate_block(numblocks)
+
+        # It might have snuck an RBF in at the last minute!
+        rbf_or_txid_broadcast(txids)
+
+        for tx in self.bitcoin.rpc.getblock(blocks[0])['tx']:
+            if tx in txids:
+                return tx
+        raise ValueError("None of the rbf txs were mined?")
 
     def wait_for_onchaind_broadcast(self, name, resolve=None):
         """Wait for onchaind to drop tx name to resolve (if any)"""
@@ -1252,10 +1348,17 @@ class LightningNode(object):
 
     def config(self, config_name):
         try:
-            opt = self.rpc.listconfigs(config_name)
-            return opt[config_name]
+            config = self.rpc.listconfigs(config_name)
         except RpcError:
             return None
+
+        config = config['configs'][config_name]
+        for valfield in ('set',
+                         'value_str', 'value_bool', 'value_int',
+                         'values_str', 'values_bool', 'values_int'):
+            if valfield in config:
+                return config[valfield]
+        raise ValueError("Unknown value in config {}".format(config))
 
     def dev_pay(self, bolt11, amount_msat=None, label=None, riskfactor=None,
                 maxfeepercent=None, retry_for=None,
@@ -1328,57 +1431,11 @@ def flock(directory: Path):
     fname.unlink()
 
 
-class Throttler(object):
-    """Throttles the creation of system-processes to avoid overload.
-
-    There is no reason to overload the system with too many processes
-    being spawned or run at the same time. It causes timeouts by
-    aggressively preempting processes and swapping if the memory limit is
-    reached. In order to reduce this loss of performance we provide a
-    `wait()` method which will serialize the creation of processes, but
-    also delay if the system load is too high.
-
-    Notice that technically we are throttling too late, i.e., we react
-    to an overload, but chances are pretty good that some other
-    already running process is about to terminate, and so the overload
-    is short-lived. We throttle when the process object is first
-    created, not when restarted, in order to avoid delaying running
-    tests, which could cause more timeouts.
-
-    """
-    def __init__(self, directory: str, target: float = 90):
-        """If specified we try to stick to a load of target (in percent).
-        """
-        self.target = target
-        self.current_load = self.target  # Start slow
-        psutil.cpu_percent()  # Prime the internal load metric
-        self.directory = directory
-
-    def wait(self):
-        start_time = time.time()
-        with flock(self.directory):
-            # We just got the lock, assume someone else just released it
-            self.current_load = 100
-            while self.load() >= self.target:
-                time.sleep(1)
-
-            self.current_load = 100  # Back off slightly to avoid triggering right away
-        print("Throttler delayed startup for {} seconds".format(time.time() - start_time))
-
-    def load(self):
-        """An exponential moving average of the load
-        """
-        decay = 0.5
-        load = psutil.cpu_percent()
-        self.current_load = decay * load + (1 - decay) * self.current_load
-        return self.current_load
-
-
 class NodeFactory(object):
     """A factory to setup and start `lightningd` daemons.
     """
     def __init__(self, request, testname, bitcoind, executor, directory,
-                 db_provider, node_cls, throttler, jsonschemas):
+                 db_provider, node_cls, jsonschemas):
         if request.node.get_closest_marker("slow_test") and SLOW_MACHINE:
             self.valgrind = False
         else:
@@ -1393,7 +1450,6 @@ class NodeFactory(object):
         self.lock = threading.Lock()
         self.db_provider = db_provider
         self.node_cls = node_cls
-        self.throttler = throttler
         self.jsonschemas = jsonschemas
 
     def split_options(self, opts):
@@ -1461,7 +1517,6 @@ class NodeFactory(object):
                  bkpr_dbfile=None, feerates=(15000, 11000, 7500, 3750),
                  start=True, wait_for_bitcoind_sync=True, may_fail=False,
                  expect_fail=False, cleandir=True, **kwargs):
-        self.throttler.wait()
         node_id = self.get_node_id() if not node_id else node_id
         port = reserve_unused_port()
 
@@ -1578,12 +1633,14 @@ class NodeFactory(object):
         err_msgs = []
         for i in range(len(self.nodes)):
             leaks = None
-            # leak detection upsets VALGRIND by reading uninitialized mem.
+            # leak detection upsets VALGRIND by reading uninitialized mem,
+            # and valgrind adds extra fds.
             # If it's dead, we'll catch it below.
             if not self.valgrind and DEVELOPER:
                 try:
                     # This also puts leaks in log.
                     leaks = self.nodes[i].rpc.dev_memleak()['leaks']
+                    self.nodes[i].rpc.dev_report_fds()
                 except Exception:
                     pass
 

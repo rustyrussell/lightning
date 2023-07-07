@@ -42,13 +42,14 @@ static bool unknown_type(enum peer_wire t)
 	case WIRE_TX_REMOVE_OUTPUT:
 	case WIRE_TX_COMPLETE:
 	case WIRE_TX_SIGNATURES:
+	case WIRE_TX_INIT_RBF:
+	case WIRE_TX_ACK_RBF:
+	case WIRE_TX_ABORT:
+	case WIRE_PEER_STORAGE:
+	case WIRE_YOUR_PEER_STORAGE:
 	case WIRE_OPEN_CHANNEL2:
 	case WIRE_ACCEPT_CHANNEL2:
-	case WIRE_INIT_RBF:
-	case WIRE_ACK_RBF:
-#if EXPERIMENTAL_FEATURES
 	case WIRE_STFU:
-#endif
 		return false;
 	}
 	return true;
@@ -94,14 +95,15 @@ bool is_msg_for_gossipd(const u8 *cursor)
 	case WIRE_TX_REMOVE_OUTPUT:
 	case WIRE_TX_COMPLETE:
 	case WIRE_TX_SIGNATURES:
+	case WIRE_TX_INIT_RBF:
+	case WIRE_TX_ACK_RBF:
+	case WIRE_TX_ABORT:
 	case WIRE_OPEN_CHANNEL2:
 	case WIRE_ACCEPT_CHANNEL2:
-	case WIRE_INIT_RBF:
-	case WIRE_ACK_RBF:
 	case WIRE_ONION_MESSAGE:
-#if EXPERIMENTAL_FEATURES
+	case WIRE_PEER_STORAGE:
+	case WIRE_YOUR_PEER_STORAGE:
 	case WIRE_STFU:
-#endif
 		break;
 	}
 	return false;
@@ -112,6 +114,20 @@ bool is_unknown_msg_discardable(const u8 *cursor)
 {
 	enum peer_wire t = fromwire_peektype(cursor);
 	return unknown_type(t) && (t & 1);
+}
+
+/* Returns true if the message type should be handled by CLN's core */
+bool peer_wire_is_internal(enum peer_wire type)
+{
+	/* Unknown messages are not handled by CLN */
+	if (!peer_wire_is_defined(type))
+		return false;
+
+	/* handled by pluigns */
+	if (type == WIRE_PEER_STORAGE || type == WIRE_YOUR_PEER_STORAGE)
+		return false;
+
+	return true;
 }
 
 /* Extract channel_id from various packets, return true if possible. */
@@ -138,6 +154,8 @@ bool extract_channel_id(const u8 *in_pkt, struct channel_id *channel_id)
 	case WIRE_REPLY_CHANNEL_RANGE:
 	case WIRE_GOSSIP_TIMESTAMP_FILTER:
 	case WIRE_ONION_MESSAGE:
+	case WIRE_PEER_STORAGE:
+	case WIRE_YOUR_PEER_STORAGE:
 		return false;
 
 	/* Special cases: */
@@ -221,6 +239,12 @@ bool extract_channel_id(const u8 *in_pkt, struct channel_id *channel_id)
 		 * 2. data:
 		 *     * [`channel_id`:`channel_id`]
 		 */
+	case WIRE_TX_ABORT:
+		/* BOLT-dualfund #2:
+		 * 1. type: 74 (`tx_abort`)
+		 * 2. data:
+		 *     * [`channel_id`:`channel_id`]
+		 */
 	case WIRE_ACCEPT_CHANNEL:
 		/* BOLT #2:
 		 * 1. type: 33 (`accept_channel`)
@@ -251,15 +275,15 @@ bool extract_channel_id(const u8 *in_pkt, struct channel_id *channel_id)
 		 * 2. data:
 		 *     * [`channel_id`:`channel_id`]
 		 */
-	case WIRE_INIT_RBF:
+	case WIRE_TX_INIT_RBF:
 		/* BOLT-dualfund #2:
-		 * 1. type: 72 (`init_rbf`)
+		 * 1. type: 72 (`tx_init_rbf`)
 		 * 2. data:
 		 *    * [`channel_id`:`channel_id`]
 		 */
-	case WIRE_ACK_RBF:
+	case WIRE_TX_ACK_RBF:
 		/* BOLT-dualfund #2:
-		 * 1. type: 73 (`ack_rbf`)
+		 * 1. type: 73 (`tx_ack_rbf`)
 		 * 2. data:
 		 *     * [`channel_id`:`channel_id`]
 		 */
@@ -335,14 +359,12 @@ bool extract_channel_id(const u8 *in_pkt, struct channel_id *channel_id)
 		 * 2. data:
 		 *     * [`channel_id`:`channel_id`]
 		 */
-#if EXPERIMENTAL_FEATURES
 	case WIRE_STFU:
 		/* BOLT-quiescent #2:
 		 * 1. type: 2 (`stfu`)
 		 * 2. data:
 		 *     * [`channel_id`:`channel_id`]
 		 */
-#endif
 		return fromwire_channel_id(&cursor, &max, channel_id);
 	}
 	return false;

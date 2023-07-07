@@ -216,7 +216,7 @@ static struct command_result *json_paystatus(struct command *cmd,
 
 		if (p->invstring)
 			json_add_invstring(ret, p->invstring);
-		json_add_amount_msat_only(ret, "amount_msat", p->amount);
+		json_add_amount_msat(ret, "amount_msat", p->amount);
 
 		json_add_node_id(ret, "destination", p->destination);
 
@@ -406,10 +406,9 @@ static void add_new_entry(struct json_stream *ret,
 	/* This is only tallied for pending and successful payments, not
 	 * failures. */
 	if (pm->amount != NULL && pm->num_nonfailed_parts > 0)
-		json_add_amount_msat_only(ret, "amount_msat", *pm->amount);
+		json_add_amount_msat(ret, "amount_msat", *pm->amount);
 
-	json_add_amount_msat_only(ret, "amount_sent_msat",
-				  pm->amount_sent);
+	json_add_amount_msat(ret, "amount_sent_msat", pm->amount_sent);
 
 	if (pm->num_nonfailed_parts > 1)
 		json_add_u64(ret, "number_of_parts",
@@ -583,7 +582,9 @@ static const char *init(struct plugin *p,
 
 	rpc_scan(p, "listconfigs",
 		 take(json_out_obj(NULL, NULL, NULL)),
-		 "{max-locktime-blocks:%,experimental-offers:%}",
+		 "{configs:"
+		 "{max-locktime-blocks:{value_int:%},"
+		 "experimental-offers:{set:%}}}",
 		 JSON_SCAN(json_to_number, &maxdelay_default),
 		 JSON_SCAN(json_to_bool, &exp_offers));
 
@@ -630,10 +631,8 @@ static void on_payment_success(struct payment *payment)
 		json_add_timeabs(ret, "created_at", p->start_time);
 		json_add_num(ret, "parts", result.attempts);
 
-		json_add_amount_msat_compat(ret, p->amount, "msatoshi",
-					    "amount_msat");
-		json_add_amount_msat_compat(ret, result.sent, "msatoshi_sent",
-					    "amount_sent_msat");
+		json_add_amount_msat(ret, "amount_msat", p->amount);
+		json_add_amount_msat(ret, "amount_sent_msat", result.sent);
 
 		if (result.leafstates != PAYMENT_STEP_SUCCESS)
 			json_add_string(
@@ -670,9 +669,7 @@ static void payment_add_attempt(struct json_stream *s, const char *fieldname, st
 		json_add_string(s, "failreason", p->failreason);
 
 	json_add_u64(s, "partid", p->partid);
-	if (deprecated_apis)
-		json_add_amount_msat_only(s, "amount", p->amount);
-	json_add_amount_msat_only(s, "amount_msat", p->amount);
+	json_add_amount_msat(s, "amount_msat", p->amount);
 	if (p->parent != NULL)
 		json_add_u64(s, "parent_partid", p->parent->partid);
 
@@ -772,12 +769,10 @@ static void on_payment_failure(struct payment *payment)
 				json_add_string(ret, "status", "failed");
 			}
 
-			json_add_amount_msat_compat(ret, p->amount, "msatoshi",
-						    "amount_msat");
+			json_add_amount_msat(ret, "amount_msat", p->amount);
 
-			json_add_amount_msat_compat(ret, result.sent,
-						    "msatoshi_sent",
-						    "amount_sent_msat");
+			json_add_amount_msat(ret, "amount_sent_msat",
+					     result.sent);
 
 			if (failure != NULL) {
 				if (failure->erring_index)
@@ -902,10 +897,8 @@ payment_listsendpays_previous(struct command *cmd, const char *buf,
 		ret = jsonrpc_stream_success(cmd);
 		json_add_preimage(ret, "payment_preimage", &preimage);
 		json_add_string(ret, "status", "complete");
-		json_add_amount_msat_compat(ret, msat, "msatoshi",
-					    "amount_msat");
-		json_add_amount_msat_compat(ret, sent, "msatoshi_sent",
-					    "amount_sent_msat");
+		json_add_amount_msat(ret, "amount_msat", msat);
+		json_add_amount_msat(ret, "amount_sent_msat", sent);
 		json_add_node_id(ret, "destination", p->destination);
 		json_add_sha256(ret, "payment_hash", p->payment_hash);
 		json_add_u32(ret, "created_at", created_at);
@@ -1067,7 +1060,7 @@ static struct command_result *json_pay(struct command *cmd,
 		 * - MUST check that the SHA2 256-bit hash in the `h` field
 		 *   exactly matches the hashed description.
 		 */
-		if (!b11->description) {
+		if (!b11->description && !deprecated_apis) {
 			if (!b11->description_hash) {
 				return command_fail(cmd,
 						    JSONRPC2_INVALID_PARAMS,

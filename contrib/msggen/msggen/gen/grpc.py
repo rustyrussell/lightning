@@ -16,7 +16,7 @@ typemap = {
     'number': 'double',
     'pubkey': 'bytes',
     'short_channel_id': 'string',
-    'signature': 'bytes',
+    'signature': 'string',
     'string': 'string',
     'txid': 'bytes',
     'u8': 'uint32',  # Yep, this is the smallest integer type in grpc...
@@ -33,20 +33,9 @@ typemap = {
 }
 
 
-# Manual overrides for some of the auto-generated types for paths
-overrides = {
-    # Truncate the tree here, it's a complex structure with identitcal
-    # types
-    'ListPeers.peers[].channels[].state_changes[]': None,
-    'ListPeers.peers[].channels[].htlcs[].state': None,
-    'ListPeers.peers[].channels[].opener': "ChannelSide",
-    'ListPeers.peers[].channels[].closer': "ChannelSide",
-    'ListPeers.peers[].channels[].features[]': "string",
-    'ListFunds.channels[].state': 'ChannelState',
-    'ListTransactions.transactions[].type[]': None,
-}
-
-
+# GRPC builds a stub with the methods declared in the protobuf file,
+# but it also comes with its own methods, e.g., `connect` which can
+# clash with the generated ones. So rename the ones we know clash.
 method_name_overrides = {
     "Connect": "ConnectPeer",
 }
@@ -178,7 +167,7 @@ class GrpcGenerator(IGenerator):
         self.write(f"""{prefix}}}\n""", False)
 
     def generate_message(self, message: CompositeField):
-        if overrides.get(message.path, "") is None:
+        if message.omit():
             return
 
         self.write(f"""
@@ -187,33 +176,26 @@ class GrpcGenerator(IGenerator):
 
         # Declare enums inline so they are scoped correctly in C++
         for _, f in enumerate(message.fields):
-            if isinstance(f, EnumField) and f.path not in overrides.keys():
+            if isinstance(f, EnumField) and not f.override():
                 self.generate_enum(f, indent=1)
 
         for i, f in self.enumerate_fields(message.typename, message.fields):
-            if overrides.get(f.path, "") is None:
+            if f.omit():
                 continue
 
-            opt = "optional " if not f.required else ""
+            opt = "optional " if f.optional else ""
+
             if isinstance(f, ArrayField):
-                typename = typemap.get(f.itemtype.typename, f.itemtype.typename)
-                if f.path in overrides:
-                    typename = overrides[f.path]
+                typename = f.override(typemap.get(f.itemtype.typename, f.itemtype.typename))
                 self.write(f"\trepeated {typename} {f.normalized()} = {i};\n", False)
             elif isinstance(f, PrimitiveField):
-                typename = typemap.get(f.typename, f.typename)
-                if f.path in overrides:
-                    typename = overrides[f.path]
+                typename = f.override(typemap.get(f.typename, f.typename))
                 self.write(f"\t{opt}{typename} {f.normalized()} = {i};\n", False)
             elif isinstance(f, EnumField):
-                typename = f.typename
-                if f.path in overrides:
-                    typename = overrides[f.path]
+                typename = f.override(f.typename)
                 self.write(f"\t{opt}{typename} {f.normalized()} = {i};\n", False)
             elif isinstance(f, CompositeField):
-                typename = f.typename
-                if f.path in overrides:
-                    typename = overrides[f.path]
+                typename = f.override(f.typename)
                 self.write(f"\t{opt}{typename} {f.normalized()} = {i};\n", False)
 
         self.write(f"""}}
@@ -253,7 +235,7 @@ class GrpcConverterGenerator(IGenerator):
     def generate_composite(self, prefix, field: CompositeField):
         """Generates the conversions from JSON-RPC to GRPC.
         """
-        if overrides.get(field.path, "") is None:
+        if field.omit():
             return
 
         # First pass: generate any sub-fields before we generate the
@@ -267,14 +249,14 @@ class GrpcConverterGenerator(IGenerator):
         pbname = self.to_camel_case(field.typename)
         # And now we can convert the current field:
         self.write(f"""\
-        #[allow(unused_variables)]
+        #[allow(unused_variables,deprecated)]
         impl From<{prefix}::{field.typename}> for pb::{pbname} {{
             fn from(c: {prefix}::{field.typename}) -> Self {{
                 Self {{
         """)
 
         for f in field.fields:
-            if overrides.get(f.path, "") is None:
+            if f.omit():
                 continue
 
             name = f.normalized()
@@ -286,20 +268,22 @@ class GrpcConverterGenerator(IGenerator):
                 mapping = {
                     'hex': f'hex::decode(i).unwrap()',
                     'secret': f'i.to_vec()',
+                    'hash': f'i.to_vec()',
                 }.get(typ, f'i.into()')
 
-                if f.required:
-                    self.write(f"{name}: c.{name}.into_iter().map(|i| {mapping}).collect(), // Rule #3 for type {typ} \n", numindent=3)
+                self.write(f"// Field: {f.path}\n", numindent=3)
+                if not f.optional:
+                    self.write(f"{name}: c.{name}.into_iter().map(|i| {mapping}).collect(), // Rule #3 for type {typ}\n", numindent=3)
                 else:
-                    self.write(f"{name}: c.{name}.map(|arr| arr.into_iter().map(|i| {mapping}).collect()).unwrap_or(vec![]), // Rule #3 \n", numindent=3)
+                    self.write(f"{name}: c.{name}.map(|arr| arr.into_iter().map(|i| {mapping}).collect()).unwrap_or(vec![]), // Rule #3\n", numindent=3)
             elif isinstance(f, EnumField):
-                if f.required:
+                if not f.optional:
                     self.write(f"{name}: c.{name} as i32,\n", numindent=3)
                 else:
                     self.write(f"{name}: c.{name}.map(|v| v as i32),\n", numindent=3)
 
             elif isinstance(f, PrimitiveField):
-                typ = f.typename + ("?" if not f.required else "")
+                typ = f.typename + ("?" if f.optional else "")
                 # We may need to reduce or increase the size of some
                 # types, or have some conversion such as
                 # hex-decoding. Also includes the `Some()` that grpc
@@ -322,16 +306,29 @@ class GrpcConverterGenerator(IGenerator):
                     'hash?': f'c.{name}.map(|v| v.to_vec())',
                     'secret': f'c.{name}.to_vec()',
                     'secret?': f'c.{name}.map(|v| v.to_vec())',
+
+                    'msat_or_any': f'Some(c.{name}.into())',
+                    'msat_or_all': f'Some(c.{name}.into())',
+                    'msat_or_all?': f'c.{name}.map(|o|o.into())',
+                    'feerate?': f'c.{name}.map(|o|o.into())',
+                    'feerate': f'Some(c.{name}.into())',
+                    'outpoint?': f'c.{name}.map(|o|o.into())',
+                    'TlvStream?': f'c.{name}.map(|s| s.into())',
+                    'RoutehintList?': f'c.{name}.map(|rl| rl.into())',
+
+
                 }.get(
                     typ,
                     f'c.{name}'  # default to just assignment
                 )
 
+                if f.deprecated:
+                    self.write(f"#[allow(deprecated)]\n", numindent=3)
                 self.write(f"{name}: {rhs}, // Rule #2 for type {typ}\n", numindent=3)
 
             elif isinstance(f, CompositeField):
                 rhs = ""
-                if f.required:
+                if not f.optional:
                     rhs = f'Some(c.{name}.into())'
                 else:
                     rhs = f'c.{name}.map(|v| v.into())'
@@ -377,6 +374,8 @@ class GrpcConverterGenerator(IGenerator):
         """)
 
         self.generate_responses(service)
+        self.generate_requests(service)
+        self.write("\n")
 
     def write(self, text: str, numindent: int = 0) -> None:
         raw = dedent(text)
@@ -392,10 +391,13 @@ class GrpcUnconverterGenerator(GrpcConverterGenerator):
     def generate(self, service: Service):
         self.generate_requests(service)
 
+        # TODO Temporarily disabled since the use of overrides is lossy
+        # self.generate_responses(service)
+
     def generate_composite(self, prefix, field: CompositeField) -> None:
         # First pass: generate any sub-fields before we generate the
         # top-level field itself.
-        if overrides.get(field.path, "") is None:
+        if field.omit():
             return
 
         for f in field.fields:
@@ -407,7 +409,7 @@ class GrpcUnconverterGenerator(GrpcConverterGenerator):
         pbname = self.to_camel_case(field.typename)
         # And now we can convert the current field:
         self.write(f"""\
-        #[allow(unused_variables)]
+        #[allow(unused_variables,deprecated)]
         impl From<pb::{pbname}> for {prefix}::{field.typename} {{
             fn from(c: pb::{pbname}) -> Self {{
                 Self {{
@@ -415,31 +417,50 @@ class GrpcUnconverterGenerator(GrpcConverterGenerator):
 
         for f in field.fields:
             name = f.normalized()
+            if f.omit():
+                continue
+
             if isinstance(f, ArrayField):
                 typ = f.itemtype.typename
                 mapping = {
                     'hex': f'hex::encode(s)',
                     'u32': f's',
-                    'secret': f's.try_into().unwrap()'
+                    'secret': f's.try_into().unwrap()',
+                    'hash': f'Sha256::from_slice(&s).unwrap()',
                 }.get(typ, f's.into()')
-                if f.required:
+
+                # TODO fix properly
+                if typ in ["ListtransactionsTransactionsType"]:
+                    continue
+                if name == 'state_changes':
+                    self.write(f" state_changes: None,")
+                    continue
+
+                if not f.optional:
                     self.write(f"{name}: c.{name}.into_iter().map(|s| {mapping}).collect(), // Rule #4\n", numindent=3)
                 else:
                     self.write(f"{name}: Some(c.{name}.into_iter().map(|s| {mapping}).collect()), // Rule #4\n", numindent=3)
 
             elif isinstance(f, EnumField):
-                if f.required:
+                if f.path == 'ListPeers.peers[].channels[].htlcs[].state':
+                    continue
+                if not f.optional:
                     self.write(f"{name}: c.{name}.try_into().unwrap(),\n", numindent=3)
                 else:
                     self.write(f"{name}: c.{name}.map(|v| v.try_into().unwrap()),\n", numindent=3)
                 pass
             elif isinstance(f, PrimitiveField):
-                typ = f.typename + ("?" if not f.required else "")
+                typ = f.typename + ("?" if f.optional else "")
                 # We may need to reduce or increase the size of some
                 # types, or have some conversion such as
                 # hex-decoding. Also includes the `Some()` that grpc
                 # requires for non-native types.
+
+                if name == "scriptPubKey":
+                    name = "script_pub_key"
+
                 rhs = {
+                    'u8': f'c.{name} as u8',
                     'u16': f'c.{name} as u16',
                     'u16?': f'c.{name}.map(|v| v as u16)',
                     'hex': f'hex::encode(&c.{name})',
@@ -472,7 +493,7 @@ class GrpcUnconverterGenerator(GrpcConverterGenerator):
                 self.write(f"{name}: {rhs}, // Rule #1 for type {typ}\n", numindent=3)
             elif isinstance(f, CompositeField):
                 rhs = ""
-                if f.required:
+                if not f.optional:
                     rhs = f'c.{name}.unwrap().into()'
                 else:
                     rhs = f'c.{name}.map(|v| v.into())'

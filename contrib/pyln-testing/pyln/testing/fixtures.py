@@ -1,6 +1,6 @@
 from concurrent import futures
 from pyln.testing.db import SqliteDbProvider, PostgresDbProvider
-from pyln.testing.utils import NodeFactory, BitcoinD, ElementsD, env, DEVELOPER, LightningNode, TEST_DEBUG, Throttler
+from pyln.testing.utils import NodeFactory, BitcoinD, ElementsD, env, DEVELOPER, LightningNode, TEST_DEBUG
 from pyln.client import Millisatoshi
 from typing import Dict
 
@@ -206,11 +206,6 @@ def teardown_checks(request):
         raise ValueError(str(errors))
 
 
-@pytest.fixture
-def throttler(test_base_dir):
-    yield Throttler(test_base_dir)
-
-
 def _extra_validator(is_request: bool):
     """JSON Schema validator with additions for our specialized types"""
     def is_hex(checker, instance):
@@ -300,7 +295,7 @@ def _extra_validator(is_request: bool):
             return True
         if not checker.is_type(instance, "string"):
             return False
-        if instance in ("urgent", "normal", "slow"):
+        if instance in ("urgent", "normal", "slow", "minimum"):
             return True
         if instance in ("opening", "mutual_close", "unilateral_close", "delayed_to_us", "htlc_resolution", "penalty", "min_acceptable", "max_acceptable"):
             return True
@@ -353,7 +348,7 @@ def _extra_validator(is_request: bool):
             return False
 
     def is_msat_response(checker, instance):
-        """String number ending in msat (deprecated) or integer"""
+        """An integer, but we convert to Millisatoshi in JSON parsing"""
         return type(instance) is Millisatoshi
 
     def is_txid(checker, instance):
@@ -451,7 +446,7 @@ def jsonschemas():
 
 
 @pytest.fixture
-def node_factory(request, directory, test_name, bitcoind, executor, db_provider, teardown_checks, node_cls, throttler, jsonschemas):
+def node_factory(request, directory, test_name, bitcoind, executor, db_provider, teardown_checks, node_cls, jsonschemas):
     nf = NodeFactory(
         request,
         test_name,
@@ -460,7 +455,6 @@ def node_factory(request, directory, test_name, bitcoind, executor, db_provider,
         directory=directory,
         db_provider=db_provider,
         node_cls=node_cls,
-        throttler=throttler,
         jsonschemas=jsonschemas,
     )
 

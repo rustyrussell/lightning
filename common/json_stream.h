@@ -97,9 +97,6 @@ const char *json_stream_detach_filter(const tal_t *ctx, struct json_stream *js);
  */
 void json_stream_close(struct json_stream *js, struct command *writer);
 
-/* For low-level JSON stream access: */
-void json_stream_log_suppress(struct json_stream *js, const char *cmd_name);
-
 /* '"fieldname" : [ ' or '[ ' if fieldname is NULL */
 void json_array_start(struct json_stream *js, const char *fieldname);
 /* '"fieldname" : { ' or '{ ' if fieldname is NULL */
@@ -324,43 +321,16 @@ void json_add_address_internal(struct json_stream *response,
 			       const char *fieldname,
 			       const struct wireaddr_internal *addr);
 
-/* Adds both a 'raw' number field and an 'amount_msat' field */
-void json_add_amount_msat_compat(struct json_stream *result,
-				 struct amount_msat msat,
-				 const char *rawfieldname,
-				 const char *msatfieldname)
-	NO_NULL_ARGS;
-
-/* Adds both a 'raw' number field and an 'amount_msat' field */
-void json_add_amount_sat_compat(struct json_stream *result,
-				struct amount_sat sat,
-				const char *rawfieldname,
-				const char *msatfieldname)
-	NO_NULL_ARGS;
-
 /* Adds an 'msat' field */
-void json_add_amount_msat_only(struct json_stream *result,
+void json_add_amount_msat(struct json_stream *result,
 			  const char *msatfieldname,
 			  struct amount_msat msat)
-	NO_NULL_ARGS;
-
-/* Adds an 'msat' field */
-void json_add_amount_sat_only(struct json_stream *result,
-			 const char *msatfieldname,
-			 struct amount_sat sat)
 	NO_NULL_ARGS;
 
 /* Adds an 'msat' field */
 void json_add_amount_sat_msat(struct json_stream *result,
 			      const char *msatfieldname,
 			      struct amount_sat sat)
-	NO_NULL_ARGS;
-
-/* Adds an 'msat' field, and an older deprecated field. */
-void json_add_amount_sats_deprecated(struct json_stream *result,
-				     const char *fieldname,
-				     const char *msatfieldname,
-				     struct amount_sat sat)
 	NO_NULL_ARGS;
 
 /* This is used to create requests, *never* for output (output is always

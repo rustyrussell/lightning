@@ -199,14 +199,27 @@ static struct command_result *json_connect(struct command *cmd,
 	if (id_addr.host) {
 		u16 port = id_addr.port ? *id_addr.port : chainparams_get_ln_port(chainparams);
 		addr = tal(cmd, struct wireaddr_internal);
-		if (!parse_wireaddr_internal(id_addr.host, addr, port, false,
-					     !cmd->ld->always_use_proxy
-					     && !cmd->ld->pure_tor_setup,
-					     true,
-					     &err_msg)) {
+		err_msg = parse_wireaddr_internal(tmpctx, id_addr.host, port,
+						  !cmd->ld->always_use_proxy
+						  && !cmd->ld->pure_tor_setup, addr);
+		if (err_msg) {
 			return command_fail(cmd, LIGHTNINGD,
 					    "Host %s:%u not valid: %s",
 					    id_addr.host, port, err_msg);
+		}
+		/* Check they didn't specify some weird type! */
+		switch (addr->itype) {
+		case ADDR_INTERNAL_SOCKNAME:
+		case ADDR_INTERNAL_WIREADDR:
+		/* Can happen if we're disable DNS */
+		case ADDR_INTERNAL_FORPROXY:
+			break;
+		case ADDR_INTERNAL_ALLPROTO:
+		case ADDR_INTERNAL_AUTOTOR:
+		case ADDR_INTERNAL_STATICTOR:
+			return command_fail(cmd, LIGHTNINGD,
+					    "Host %s:%u not a simple type",
+					    id_addr.host, port);
 		}
 	} else {
 		addr = NULL;
@@ -252,6 +265,22 @@ struct delayed_reconnect {
 	bool dns_fallback;
 };
 
+static const struct node_id *delayed_reconnect_keyof(const struct delayed_reconnect *d)
+{
+	return &d->id;
+}
+
+static bool node_id_delayed_reconnect_eq(const struct delayed_reconnect *d,
+					 const struct node_id *node_id)
+{
+	return node_id_eq(node_id, &d->id);
+}
+
+HTABLE_DEFINE_TYPE(struct delayed_reconnect,
+		   delayed_reconnect_keyof,
+		   node_id_hash, node_id_delayed_reconnect_eq,
+		   delayed_reconnect_map);
+
 static void gossipd_got_addrs(struct subd *subd,
 			      const u8 *msg,
 			      const int *fds,
@@ -281,6 +310,11 @@ static void do_connect(struct delayed_reconnect *d)
 	subd_req(d, d->ld->gossip, take(msg), -1, 0, gossipd_got_addrs, d);
 }
 
+static void destroy_delayed_reconnect(struct delayed_reconnect *d)
+{
+	delayed_reconnect_map_del(d->ld->delayed_reconnect_map, d);
+}
+
 static void try_connect(const tal_t *ctx,
 			struct lightningd *ld,
 			const struct node_id *id,
@@ -291,11 +325,23 @@ static void try_connect(const tal_t *ctx,
 	struct delayed_reconnect *d;
 	struct peer *peer;
 
+	/* Don't stack, unless this is an instant reconnect */
+	d = delayed_reconnect_map_get(ld->delayed_reconnect_map, id);
+	if (d) {
+		if (seconds_delay) {
+			log_peer_debug(ld->log, id, "Already reconnecting");
+			return;
+		}
+		tal_free(d);
+	}
+
 	d = tal(ctx, struct delayed_reconnect);
 	d->ld = ld;
 	d->id = *id;
 	d->addrhint = tal_dup_or_null(d, struct wireaddr_internal, addrhint);
 	d->dns_fallback = dns_fallback;
+	delayed_reconnect_map_add(ld->delayed_reconnect_map, d);
+	tal_add_destructor(d, destroy_delayed_reconnect);
 
 	if (!seconds_delay) {
 		do_connect(d);
@@ -489,6 +535,32 @@ static void handle_custommsg_in(struct lightningd *ld, const u8 *msg)
 	plugin_hook_call_custommsg(ld, NULL, p);
 }
 
+static void connectd_start_shutdown_reply(struct subd *connectd,
+					  const u8 *reply,
+					  const int *fds UNUSED,
+					  void *unused UNUSED)
+{
+	if (!fromwire_connectd_start_shutdown_reply(reply))
+		fatal("Bad connectd_start_shutdown_reply: %s",
+		      tal_hex(reply, reply));
+
+	/* Break out of loop now, so we can continue shutdown. */
+	log_debug(connectd->ld->log, "io_break: %s", __func__);
+	io_break(connectd);
+}
+
+void connectd_start_shutdown(struct subd *connectd)
+{
+	const u8 *msg = towire_connectd_start_shutdown(NULL);
+
+	subd_req(connectd, connectd, take(msg), -1, 0,
+		 connectd_start_shutdown_reply, NULL);
+
+	/* Wait for shutdown_reply.  Note that since we're shutting down,
+	 * start_json_stream can io_break too! */
+	while (io_loop(NULL, NULL) != connectd);
+}
+
 static unsigned connectd_msg(struct subd *connectd, const u8 *msg, const int *fds)
 {
 	enum connectd_wire t = fromwire_peektype(msg);
@@ -501,16 +573,19 @@ static unsigned connectd_msg(struct subd *connectd, const u8 *msg, const int *fd
 	case WIRE_CONNECTD_DISCARD_PEER:
 	case WIRE_CONNECTD_DEV_MEMLEAK:
 	case WIRE_CONNECTD_DEV_SUPPRESS_GOSSIP:
+	case WIRE_CONNECTD_DEV_REPORT_FDS:
 	case WIRE_CONNECTD_PEER_FINAL_MSG:
 	case WIRE_CONNECTD_PEER_CONNECT_SUBD:
 	case WIRE_CONNECTD_PING:
 	case WIRE_CONNECTD_SEND_ONIONMSG:
 	case WIRE_CONNECTD_CUSTOMMSG_OUT:
+	case WIRE_CONNECTD_START_SHUTDOWN:
 	/* This is a reply, so never gets through to here. */
 	case WIRE_CONNECTD_INIT_REPLY:
 	case WIRE_CONNECTD_ACTIVATE_REPLY:
 	case WIRE_CONNECTD_DEV_MEMLEAK_REPLY:
 	case WIRE_CONNECTD_PING_REPLY:
+	case WIRE_CONNECTD_START_SHUTDOWN_REPLY:
 		break;
 
 	case WIRE_CONNECTD_PEER_CONNECTED:
@@ -577,6 +652,9 @@ int connectd_init(struct lightningd *ld)
 	const char *websocket_helper_path;
 	void *ret;
 
+	ld->delayed_reconnect_map = tal(ld, struct delayed_reconnect_map);
+	delayed_reconnect_map_init(ld->delayed_reconnect_map);
+
 	websocket_helper_path = subdaemon_path(tmpctx, ld,
 					       "lightning_websocketd");
 
@@ -602,9 +680,12 @@ int connectd_init(struct lightningd *ld)
 		wireaddrs = tal_arrz(tmpctx, struct wireaddr_internal, 1);
 		listen_announce = tal_arr(tmpctx, enum addr_listen_announce, 1);
 		wireaddrs->itype = ADDR_INTERNAL_ALLPROTO;
-		wireaddrs->u.port = ld->portnum;
+		wireaddrs->u.allproto.is_websocket = false;
+		wireaddrs->u.allproto.port = ld->portnum;
 		*listen_announce = ADDR_LISTEN_AND_ANNOUNCE;
-	}
+	} else
+		/* Make it clear that autolisten is not active! */
+		ld->autolisten = false;
 
 	msg = towire_connectd_init(
 	    tmpctx, chainparams,
@@ -688,7 +769,9 @@ static struct command_result *json_sendcustommsg(struct command *cmd,
 		return command_param_failed();
 
 	type = fromwire_peektype(msg);
-	if (peer_wire_is_defined(type)) {
+
+	/* Allow peer_storage and your_peer_storage msgtypes */
+	if (peer_wire_is_internal(type)) {
 		return command_fail(
 		    cmd, JSONRPC2_INVALID_REQUEST,
 		    "Cannot send messages of type %d (%s). It is not possible "
@@ -715,11 +798,11 @@ static struct command_result *json_sendcustommsg(struct command *cmd,
 				    type_to_string(cmd, struct node_id, dest));
 	}
 
-	if (peer->connected != PEER_CONNECTED)
+	/* We allow messages from plugins responding to peer_connected hook,
+	 * so can be PEER_CONNECTING. */
+	if (peer->connected == PEER_DISCONNECTED)
 		return command_fail(cmd, JSONRPC2_INVALID_REQUEST,
-				    "Peer is %s",
-				    peer->connected == PEER_DISCONNECTED
-				    ? "not connected" : "still connecting");
+				    "Peer is not connected");
 
 	subd_send_msg(cmd->ld->connectd,
 		      take(towire_connectd_custommsg_out(cmd, dest, msg)));
@@ -777,4 +860,26 @@ static const struct json_command dev_suppress_gossip = {
 	"Stop this node from sending any more gossip."
 };
 AUTODATA(json_command, &dev_suppress_gossip);
+
+static struct command_result *json_dev_report_fds(struct command *cmd,
+						  const char *buffer,
+						  const jsmntok_t *obj UNNEEDED,
+						  const jsmntok_t *params)
+{
+	if (!param(cmd, buffer, params, NULL))
+		return command_param_failed();
+
+	subd_send_msg(cmd->ld->connectd,
+		      take(towire_connectd_dev_report_fds(NULL)));
+
+	return command_success(cmd, json_stream_success(cmd));
+}
+
+static const struct json_command dev_report_fds = {
+	"dev-report-fds",
+	"developer",
+	json_dev_report_fds,
+	"Ask connectd to report status of all its open files."
+};
+AUTODATA(json_command, &dev_report_fds);
 #endif /* DEVELOPER */

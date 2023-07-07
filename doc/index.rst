@@ -44,6 +44,8 @@ Core Lightning Documentation
    lightning-checkmessage <lightning-checkmessage.7.md>
    lightning-cli <lightning-cli.1.md>
    lightning-close <lightning-close.7.md>
+   lightning-commando-blacklist <lightning-commando-blacklist.7.md>
+   lightning-commando-listrunes <lightning-commando-listrunes.7.md>
    lightning-commando-rune <lightning-commando-rune.7.md>
    lightning-commando <lightning-commando.7.md>
    lightning-connect <lightning-connect.7.md>
@@ -57,6 +59,7 @@ Core Lightning Documentation
    lightning-delforward <lightning-delforward.7.md>
    lightning-delinvoice <lightning-delinvoice.7.md>
    lightning-delpay <lightning-delpay.7.md>
+   lightning-disableinvoicerequest <lightning-disableinvoicerequest.7.md>
    lightning-disableoffer <lightning-disableoffer.7.md>
    lightning-disconnect <lightning-disconnect.7.md>
    lightning-emergencyrecover <lightning-emergencyrecover.7.md>
@@ -74,13 +77,16 @@ Core Lightning Documentation
    lightning-help <lightning-help.7.md>
    lightning-hsmtool <lightning-hsmtool.8.md>
    lightning-invoice <lightning-invoice.7.md>
+   lightning-invoicerequest <lightning-invoicerequest.7.md>
    lightning-keysend <lightning-keysend.7.md>
    lightning-listchannels <lightning-listchannels.7.md>
+   lightning-listclosedchannels <lightning-listclosedchannels.7.md>
    lightning-listconfigs <lightning-listconfigs.7.md>
    lightning-listdatastore <lightning-listdatastore.7.md>
    lightning-listforwards <lightning-listforwards.7.md>
    lightning-listfunds <lightning-listfunds.7.md>
    lightning-listhtlcs <lightning-listhtlcs.7.md>
+   lightning-listinvoicerequests <lightning-listinvoicerequests.7.md>
    lightning-listinvoices <lightning-listinvoices.7.md>
    lightning-listnodes <lightning-listnodes.7.md>
    lightning-listoffers <lightning-listoffers.7.md>
@@ -116,6 +122,8 @@ Core Lightning Documentation
    lightning-sendpay <lightning-sendpay.7.md>
    lightning-sendpsbt <lightning-sendpsbt.7.md>
    lightning-setchannel <lightning-setchannel.7.md>
+   lightning-setpsbtversion <lightning-setpsbtversion.7.md>
+   lightning-signinvoice <lightning-signinvoice.7.md>
    lightning-signmessage <lightning-signmessage.7.md>
    lightning-signpsbt <lightning-signpsbt.7.md>
    lightning-sql <lightning-sql.7.md>
@@ -125,6 +133,7 @@ Core Lightning Documentation
    lightning-txprepare <lightning-txprepare.7.md>
    lightning-txsend <lightning-txsend.7.md>
    lightning-unreserveinputs <lightning-unreserveinputs.7.md>
+   lightning-upgradewallet <lightning-upgradewallet.7.md>
    lightning-utxopsbt <lightning-utxopsbt.7.md>
    lightning-waitanyinvoice <lightning-waitanyinvoice.7.md>
    lightning-waitblockheight <lightning-waitblockheight.7.md>

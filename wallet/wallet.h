@@ -27,7 +27,6 @@ struct wallet {
 	struct lightningd *ld;
 	struct db *db;
 	struct log *log;
-	struct ext_key *bip32_base;
 	struct invoices *invoices;
 	struct list_head unstored_payments;
 	u64 max_channel_dbid;
@@ -407,12 +406,6 @@ struct wallet_transaction {
 
 	/* Fully parsed transaction */
 	const struct bitcoin_tx *tx;
-
-	/* tal_arr containing the annotation types, if any, for the respective
-	 * inputs and outputs. 0 if there are no annotations for the
-	 * element. */
-	struct tx_annotation *input_annotations;
-	struct tx_annotation *output_annotations;
 };
 
 /**
@@ -421,8 +414,7 @@ struct wallet_transaction {
  * This is guaranteed to either return a valid wallet, or abort with
  * `fatal` if it cannot be initialized.
  */
-struct wallet *wallet_new(struct lightningd *ld, struct timers *timers,
-			  struct ext_key *bip32_base);
+struct wallet *wallet_new(struct lightningd *ld, struct timers *timers);
 
 /**
  * wallet_confirm_tx - Confirm a tx which contains a UTXO.
@@ -473,6 +465,7 @@ struct utxo **wallet_get_unconfirmed_closeinfo_utxos(const tal_t *ctx,
  * @amount_we_are_short: optional amount.
  * @feerate_per_kw: feerate we are using.
  * @maxheight: zero (if caller doesn't care) or maximum blockheight to accept.
+ * @nonwrapped: filter out p2sh-wrapped inputs
  * @excludes: UTXOs not to consider.
  *
  * If @amount_we_are_short is not NULL, we try to get something very close
@@ -486,6 +479,7 @@ struct utxo *wallet_find_utxo(const tal_t *ctx, struct wallet *w,
 			      struct amount_sat *amount_we_are_short,
 			      unsigned feerate_per_kw,
 			      u32 maxheight,
+			      bool nonwrapped,
 			      const struct utxo **excludes);
 
 /**
@@ -630,9 +624,9 @@ struct state_change_entry *wallet_state_change_get(struct wallet *w,
 						   u64 channel_id);
 
 /**
- * wallet_peer_delete -- After no more channels in peer, forget about it
+ * wallet_delete_peer_if_unused -- After no more channels in peer, forget about it
  */
-void wallet_peer_delete(struct wallet *w, u64 peer_dbid);
+void wallet_delete_peer_if_unused(struct wallet *w, u64 peer_dbid);
 
 /**
  * wallet_init_channels -- Loads active channels into peers
@@ -644,6 +638,16 @@ void wallet_peer_delete(struct wallet *w, u64 peer_dbid);
  * loaded from the database to the list without checking.
  */
 bool wallet_init_channels(struct wallet *w);
+
+/**
+ * wallet_load_closed_channels -- Loads dead channels.
+ * @ctx: context to allocate returned array from
+ * @w: wallet to load from
+ *
+ * These will be all state CLOSED.
+ */
+struct closed_channel **wallet_load_closed_channels(const tal_t *ctx,
+						    struct wallet *w);
 
 /**
  * wallet_channel_stats_incr_* - Increase channel statistics.
@@ -1096,8 +1100,8 @@ void wallet_payment_store(struct wallet *wallet,
  */
 void wallet_payment_delete(struct wallet *wallet,
 			   const struct sha256 *payment_hash,
-			   const u64 *groupid,
-			   const u64 *partid);
+			   const u64 *groupid, const u64 *partid,
+			   const enum wallet_payment_status *status);
 
 /**
  * wallet_local_htlc_out_delete - Remove a local outgoing failed HTLC
@@ -1738,4 +1742,12 @@ struct wallet_htlc_iter *wallet_htlcs_next(struct wallet *w,
 					   struct amount_msat *msat,
 					   struct sha256 *payment_hash,
 					   enum htlc_state *hstate);
+
+/* Make a PSBT from these utxos, or enhance @base if non-NULL. */
+struct wally_psbt *psbt_using_utxos(const tal_t *ctx,
+				    struct wallet *wallet,
+				    struct utxo **utxos,
+				    u32 nlocktime,
+				    u32 nsequence,
+				    struct wally_psbt *base);
 #endif /* LIGHTNING_WALLET_WALLET_H */

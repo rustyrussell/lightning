@@ -572,6 +572,14 @@ after_signpsbt(struct command *cmd,
 			   json_tok_full_len(field),
 			   json_tok_full(buf, field));
 
+	if (!psbt_set_version(psbt, 2)) {
+		/* It should be well-formed? */
+		plugin_err(mfc->cmd->plugin,
+			   "mfc: could not set PSBT version: %s",
+		   		type_to_string(tmpctx, struct wally_psbt,
+					mfc->psbt));
+	}
+
 	if (!psbt_finalize(psbt))
 		plugin_err(mfc->cmd->plugin,
 			   "mfc %"PRIu64": Signed PSBT won't finalize"
@@ -831,10 +839,20 @@ perform_funding_tx_finalize(struct multifundchannel_command *mfc)
 	size_t v1_dest_count = dest_count(mfc, FUND_CHANNEL);
 	size_t v2_dest_count = dest_count(mfc, OPEN_CHANNEL);
 	size_t i, deck_i;
+	u32 psbt_version = mfc->psbt->version;
 
 	plugin_log(mfc->cmd->plugin, LOG_DBG,
 		   "mfc %"PRIu64": Creating funding tx.",
 		   mfc->id);
+
+	/* We operate over PSBTv2 only */
+	if (!psbt_set_version(mfc->psbt, 2)) {
+		/* It should be well-formed? */
+		plugin_err(mfc->cmd->plugin,
+			   "mfc: could not set PSBT version: %s",
+		   		type_to_string(tmpctx, struct wally_psbt,
+					mfc->psbt));
+	}
 
 	/* Construct a deck of destinations.  */
 	deck = tal_arr(tmpctx, struct multifundchannel_destination *,
@@ -928,6 +946,14 @@ perform_funding_tx_finalize(struct multifundchannel_command *mfc)
 		   type_to_string(tmpctx, struct bitcoin_txid,
 				  mfc->txid),
 		   content);
+
+	if (!psbt_set_version(mfc->psbt, psbt_version)) {
+		/* It should be well-formed? */
+		plugin_err(mfc->cmd->plugin,
+			   "mfc: could not set PSBT version: %s",
+		   		type_to_string(tmpctx, struct wally_psbt,
+					mfc->psbt));
+	}
 
 	/* Now we can feed the TXID and outnums to the peer.  */
 	return perform_fundchannel_complete(mfc);
@@ -1117,7 +1143,7 @@ fundchannel_start_dest(struct multifundchannel_destination *dest)
 		json_add_string(req->js, "feerate", mfc->feerate_str);
 
 	json_add_bool(req->js, "announce", dest->announce);
-	json_add_amount_msat_only(req->js, "push_msat", dest->push_msat);
+	json_add_amount_msat(req->js, "push_msat", dest->push_msat);
 
 	if (dest->close_to_str)
 		json_add_string(req->js, "close_to", dest->close_to_str);
@@ -1343,6 +1369,9 @@ after_fundpsbt(struct command *cmd,
 	if (!mfc->psbt)
 		goto fail;
 
+	if (!psbt_set_version(mfc->psbt, 2))
+		goto fail;
+
 	field = json_get_member(buf, result, "feerate_per_kw");
 	if (!field || !json_to_u32(buf, field, &mfc->feerate_per_kw))
 		goto fail;
@@ -1404,6 +1433,9 @@ perform_fundpsbt(struct multifundchannel_command *mfc, u32 feerate)
 					    &mfc_forward_error,
 					    mfc);
 		json_add_u32(req->js, "minconf", mfc->minconf);
+		/* If there's any v2 opens, we can't use p2sh inputs */
+		json_add_bool(req->js, "nonwrapped",
+			      dest_count(mfc, OPEN_CHANNEL) > 0);
 	}
 
 	/* The entire point is to reserve the inputs. */

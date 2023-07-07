@@ -21,12 +21,18 @@ struct amount_sat amount_sat(u64 satoshis UNNEEDED)
 				       struct amount_sat a UNNEEDED,
 				       struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_add called!\n"); abort(); }
+/* Generated stub for amount_sat_div */
+struct amount_sat amount_sat_div(struct amount_sat sat UNNEEDED, u64 div UNNEEDED)
+{ fprintf(stderr, "amount_sat_div called!\n"); abort(); }
 /* Generated stub for amount_sat_eq */
 bool amount_sat_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_eq called!\n"); abort(); }
 /* Generated stub for amount_sat_greater_eq */
 bool amount_sat_greater_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_greater_eq called!\n"); abort(); }
+/* Generated stub for amount_sat_mul */
+bool amount_sat_mul(struct amount_sat *res UNNEEDED, struct amount_sat sat UNNEEDED, u64 mul UNNEEDED)
+{ fprintf(stderr, "amount_sat_mul called!\n"); abort(); }
 /* Generated stub for amount_sat_sub */
  bool amount_sat_sub(struct amount_sat *val UNNEEDED,
 				       struct amount_sat a UNNEEDED,
@@ -190,37 +196,36 @@ int main(int argc, char *argv[])
 	assert(!separate_address_and_port(tmpctx, "[::1]:http", &ip, &port));
 
 	// localhost hostnames for backward compat
-	assert(parse_wireaddr("localhost", &addr, 200, false, NULL));
+	assert(parse_wireaddr(tmpctx, "localhost", 200, false, &addr) == NULL);
 	assert(addr.port == 200);
 
 	// string should win the port battle
-	assert(parse_wireaddr("[::1]:9735", &addr, 500, false, NULL));
+	assert(parse_wireaddr(tmpctx, "[::1]:9735", 500, false, &addr) == NULL);
 	assert(addr.port == 9735);
 	ip = fmt_wireaddr(tmpctx, &addr);
 	assert(streq(ip, "[::1]:9735"));
 
 	// should use argument if we have no port in string
-	assert(parse_wireaddr("2001:db8:85a3::8a2e:370:7334", &addr, 9777, false, NULL));
+	assert(parse_wireaddr(tmpctx, "2001:db8:85a3::8a2e:370:7334", 9777, false, &addr) == NULL);
 	assert(addr.port == 9777);
 
 	ip = fmt_wireaddr(tmpctx, &addr);
 	assert(streq(ip, "[2001:db8:85a3::8a2e:370:7334]:9777"));
 
-	assert(parse_wireaddr("[::ffff:127.0.0.1]:49150", &addr, 1, false, NULL));
+	assert(parse_wireaddr(tmpctx, "[::ffff:127.0.0.1]:49150", 1, false, &addr) == NULL);
 	assert(addr.port == 49150);
 
-	assert(parse_wireaddr("4ruvswpqec5i2gogopxl4vm5bruzknbvbylov2awbo4rxiq4cimdldad.onion:49150", &addr, 1, false, NULL));
+	assert(parse_wireaddr(tmpctx, "4ruvswpqec5i2gogopxl4vm5bruzknbvbylov2awbo4rxiq4cimdldad.onion:49150", 1, false, &addr) == NULL);
 	assert(addr.port == 49150);
 
-	assert(parse_wireaddr("4ruvswpqec5i2gogopxl4vm5bruzknbvbylov2awbo4rxiq4cimdldad.onion", &addr, 1, false, NULL));
+	assert(parse_wireaddr(tmpctx, "4ruvswpqec5i2gogopxl4vm5bruzknbvbylov2awbo4rxiq4cimdldad.onion", 1, false, &addr) == NULL);
 	assert(addr.port == 1);
 
 	/* We don't accept torv2 any more */
-	assert(!parse_wireaddr("odpzvneidqdf5hdq.onion:49150", &addr, 1, false, NULL));
-	assert(!parse_wireaddr("odpzvneidqdf5hdq.onion", &addr, 1, false, NULL));
+	assert(parse_wireaddr(tmpctx, "odpzvneidqdf5hdq.onion:49150", 1, false, &addr) != NULL);
+	assert(parse_wireaddr(tmpctx, "odpzvneidqdf5hdq.onion", 1, false, &addr) != NULL);
 
-	assert(!parse_wireaddr_internal("odpzvneidqdf5hdq.onion", &addr_int, 1,
-				        false, false, false, NULL));
+	assert(parse_wireaddr_internal(tmpctx, "odpzvneidqdf5hdq.onion", 1, false, &addr_int) != NULL);
 
 	assert(wireaddr_from_hostname(tmpctx, "odpzvneidqdf5hdq.onion", 1, NULL, NULL, NULL) == NULL);
 	assert(wireaddr_from_hostname(tmpctx, "aaa.onion", 1, NULL, NULL, NULL) == NULL);

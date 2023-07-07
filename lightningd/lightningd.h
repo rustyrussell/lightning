@@ -82,11 +82,22 @@ struct config {
 	 * slight spec incompatibility, but implementations do this
 	 * already. */
 	bool allowdustreserve;
+
+	/* Require peer to send confirmed inputs */
+	bool require_confirmed_inputs;
+
+	/* The factor to time the urgent feerate by to get the maximum
+	 * acceptable feerate.  (10, but can be overridden by dev-max-fee-multiplier) */
+	u32 max_fee_multiplier;
+
+	/* Percent of CONSERVATIVE/2 feerate we'll use for commitment txs. */
+	u64 commit_fee_percent;
 };
 
 typedef STRMAP(const char *) alt_subdaemon_map;
 
 enum lightningd_state {
+	LD_STATE_INITIALIZING,
 	LD_STATE_RUNNING,
 	LD_STATE_SHUTDOWN,
 };
@@ -117,6 +128,8 @@ struct lightningd {
 	char *config_filename;
 	/* Configuration settings. */
 	struct config config;
+	/* Where each configuration setting came from */
+	struct configvar **configvars;
 
 	/* This log_book is owned by all the struct logs */
 	struct log_book *log_book;
@@ -183,6 +196,8 @@ struct lightningd {
 
 	/* Daemon looking after peers during init / before channel. */
 	struct subd *connectd;
+	/* Reconnection attempts */
+	struct delayed_reconnect_map *delayed_reconnect_map;
 
 	/* All peers we're tracking (by node_id) */
 	struct peer_node_id_map *peers;
@@ -196,7 +211,7 @@ struct lightningd {
 	struct chain_topology *topology;
 
 	/* Blockheight (as acknowledged by gossipd) */
-	u32 blockheight;
+	u32 gossip_blockheight;
 
 	/* HTLCs in flight. */
 	struct htlc_in_map *htlcs_in;
@@ -205,6 +220,8 @@ struct lightningd {
 	/* Sets of HTLCs we are holding onto for MPP. */
 	struct htlc_set_map *htlc_sets;
 
+	/* Derive all our keys from here (see bip32_pubkey) */
+	struct ext_key *bip32_base;
 	struct wallet *wallet;
 
 	/* Outstanding waitsendpay commands. */
@@ -247,7 +264,7 @@ struct lightningd {
 
 #if DEVELOPER
 	/* If we want to debug a subdaemon/plugin. */
-	const char *dev_debug_subprocess;
+	char *dev_debug_subprocess;
 
 	/* If we have --dev-no-plugin-checksum */
 	bool dev_no_plugin_checksum;
@@ -314,6 +331,8 @@ struct lightningd {
 	char *wallet_dsn;
 
 	bool encrypted_hsm;
+	/* What (additional) messages the HSM accepts */
+	u32 *hsm_capabilities;
 
 	mode_t initial_umask;
 
@@ -343,6 +362,9 @@ struct lightningd {
 
 	/* EXPERIMENTAL: websocket port if non-zero */
 	u16 websocket_port;
+
+	/* --experimental-upgrade-protocol */
+	bool experimental_upgrade_protocol;
 };
 
 /* Turning this on allows a tal allocation to return NULL, rather than aborting.

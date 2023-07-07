@@ -4,7 +4,8 @@ from pyln.client import Millisatoshi
 from db import Sqlite3Db
 from fixtures import TEST_NETWORK
 from utils import (
-    sync_blockheight, wait_for, only_one, first_channel_id, TIMEOUT
+    sync_blockheight, wait_for, only_one, first_channel_id, TIMEOUT,
+    anchor_expected
 )
 
 from pathlib import Path
@@ -43,10 +44,11 @@ def test_bookkeeping_closing_trimmed_htlcs(node_factory, bitcoind, executor):
     l1.daemon.wait_for_log(' to ONCHAIN')
     l2.daemon.wait_for_log(' to ONCHAIN')
 
-    bitcoind.generate_block(5)
-    sync_blockheight(bitcoind, [l1])
-    l1.daemon.wait_for_log('Broadcasting OUR_DELAYED_RETURN_TO_WALLET')
-    bitcoind.generate_block(20, wait_for_mempool=1)
+    _, txid, blocks = l1.wait_for_onchaind_tx('OUR_DELAYED_RETURN_TO_WALLET',
+                                              'OUR_UNILATERAL/DELAYED_OUTPUT_TO_US')
+    assert blocks == 4
+    bitcoind.generate_block(4)
+    bitcoind.generate_block(20, wait_for_mempool=txid)
     sync_blockheight(bitcoind, [l1])
     l1.daemon.wait_for_log(r'All outputs resolved.*')
 
@@ -86,12 +88,15 @@ def test_bookkeeping_closing_subsat_htlcs(node_factory, bitcoind, chainparams):
 
     l2.stop()
     l1.rpc.close(l2.info['id'], 1)
-    bitcoind.generate_block(5, wait_for_mempool=1)
+    bitcoind.generate_block(1, wait_for_mempool=1)
+
+    _, txid, blocks = l1.wait_for_onchaind_tx('OUR_DELAYED_RETURN_TO_WALLET',
+                                              'OUR_UNILATERAL/DELAYED_OUTPUT_TO_US')
+    assert blocks == 4
+    bitcoind.generate_block(4)
 
     l2.start()
-    sync_blockheight(bitcoind, [l1])
-    l1.daemon.wait_for_log('Broadcasting OUR_DELAYED_RETURN_TO_WALLET')
-    bitcoind.generate_block(80)
+    bitcoind.generate_block(80, wait_for_mempool=txid)
 
     sync_blockheight(bitcoind, [l1, l2])
     evs = l1.rpc.bkpr_listaccountevents()['events']
@@ -332,6 +337,7 @@ def test_bookkeeping_rbf_withdraw(node_factory, bitcoind):
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "turns off bookkeeper at start")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "network fees hardcoded")
+@pytest.mark.developer("dev-force-features")
 def test_bookkeeping_missed_chans_leases(node_factory, bitcoind):
     """
     Test that a lease is correctly recorded if bookkeeper was off
@@ -342,6 +348,10 @@ def test_bookkeeping_missed_chans_leases(node_factory, bitcoind):
             'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
             'plugin': str(coin_mvt_plugin),
             'disable-plugin': 'bookkeeper'}
+
+    if not anchor_expected():
+        opts['dev-force-features'] = '+21'
+
     l1, l2 = node_factory.get_nodes(2, opts=opts)
 
     open_amt = 500000

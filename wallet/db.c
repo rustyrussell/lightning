@@ -13,59 +13,54 @@
 #include <errno.h>
 #include <hsmd/hsmd_wiregen.h>
 #include <lightningd/channel.h>
+#include <lightningd/hsm_control.h>
 #include <lightningd/plugin_hook.h>
 #include <wallet/db.h>
+#include <wallet/psbt_fixup.h>
+#include <wire/peer_wire.h>
 #include <wire/wire_sync.h>
-
-/* Small container for things that are needed by migrations. The
- * fields are guaranteed to be initialized and can be relied upon when
- * migrating.
- */
-struct migration_context {
-	const struct ext_key *bip32_base;
-	int hsm_fd;
-};
 
 struct migration {
 	const char *sql;
-	void (*func)(struct lightningd *ld, struct db *db,
-		     const struct migration_context *mc);
+	void (*func)(struct lightningd *ld, struct db *db);
 };
 
-static void migrate_pr2342_feerate_per_channel(struct lightningd *ld, struct db *db,
-					       const struct migration_context *mc);
+static void migrate_pr2342_feerate_per_channel(struct lightningd *ld, struct db *db);
 
-static void migrate_our_funding(struct lightningd *ld, struct db *db,
-				const struct migration_context *mc);
+static void migrate_our_funding(struct lightningd *ld, struct db *db);
 
-static void migrate_last_tx_to_psbt(struct lightningd *ld, struct db *db,
-				    const struct migration_context *mc);
+static void migrate_last_tx_to_psbt(struct lightningd *ld, struct db *db);
 
 static void
-migrate_inflight_last_tx_to_psbt(struct lightningd *ld, struct db *db,
-				 const struct migration_context *mc);
+migrate_inflight_last_tx_to_psbt(struct lightningd *ld, struct db *db);
 
-static void fillin_missing_scriptpubkeys(struct lightningd *ld, struct db *db,
-					 const struct migration_context *mc);
+static void fillin_missing_scriptpubkeys(struct lightningd *ld, struct db *db);
 
-static void fillin_missing_channel_id(struct lightningd *ld, struct db *db,
-				      const struct migration_context *mc);
+static void fillin_missing_channel_id(struct lightningd *ld, struct db *db);
 
 static void fillin_missing_local_basepoints(struct lightningd *ld,
-					    struct db *db,
-					    const struct migration_context *mc);
+					    struct db *db);
 
 static void fillin_missing_channel_blockheights(struct lightningd *ld,
-						struct db *db,
-						const struct migration_context *mc);
+						struct db *db);
 
 static void migrate_channels_scids_as_integers(struct lightningd *ld,
-					       struct db *db,
-					       const struct migration_context *mc);
+					       struct db *db);
 
 static void migrate_payments_scids_as_integers(struct lightningd *ld,
-					       struct db *db,
-					       const struct migration_context *mc);
+					       struct db *db);
+
+static void fillin_missing_lease_satoshi(struct lightningd *ld,
+					 struct db *db);
+
+static void fillin_missing_lease_satoshi(struct lightningd *ld,
+					 struct db *db);
+
+static void migrate_invalid_last_tx_psbts(struct lightningd *ld,
+					  struct db *db);
+
+static void migrate_fill_in_channel_type(struct lightningd *ld,
+					 struct db *db);
 
 /* Do not reorder or remove elements from this array, it is used to
  * migrate existing databases from a previous state, based on the
@@ -112,6 +107,8 @@ static struct migration dbmigrations[] = {
      NULL},
     {SQL("CREATE TABLE channels ("
 	 "  id BIGSERIAL," /* chan->id */
+	 /* FIXME: We deliberately never delete a peer with channels, so this constraint is
+	  * unnecessary! */
 	 "  peer_id BIGINT REFERENCES peers(id) ON DELETE CASCADE,"
 	 "  short_channel_id TEXT,"
 	 "  channel_config_local BIGINT,"
@@ -945,6 +942,13 @@ static struct migration dbmigrations[] = {
     /* A reference into our own invoicerequests table, if it was made from one */
     {SQL("ALTER TABLE payments ADD COLUMN local_invreq_id BLOB DEFAULT NULL REFERENCES invoicerequests(invreq_id);"), NULL},
     /* FIXME: Remove payments local_offer_id column! */
+    {SQL("ALTER TABLE channel_funding_inflights ADD COLUMN lease_satoshi BIGINT;"), NULL},
+    {SQL("ALTER TABLE channels ADD require_confirm_inputs_remote INTEGER DEFAULT 0;"), NULL},
+    {SQL("ALTER TABLE channels ADD require_confirm_inputs_local INTEGER DEFAULT 0;"), NULL},
+    {NULL, fillin_missing_lease_satoshi},
+    {NULL, migrate_invalid_last_tx_psbts},
+    {SQL("ALTER TABLE channels ADD channel_type BLOB DEFAULT NULL;"), NULL},
+    {NULL, migrate_fill_in_channel_type},
 };
 
 /**
@@ -955,27 +959,30 @@ static bool db_migrate(struct lightningd *ld, struct db *db,
 {
 	/* Attempt to read the version from the database */
 	int current, orig, available;
+	char *err_msg;
 	struct db_stmt *stmt;
-	const struct migration_context mc = {
-	    .bip32_base = bip32_base,
-	    .hsm_fd = ld->hsm_fd,
-	};
 
 	orig = current = db_get_version(db);
 	available = ARRAY_SIZE(dbmigrations) - 1;
 
 	if (current == -1)
 		log_info(ld->log, "Creating database");
-	else if (available < current)
-		db_fatal("Refusing to migrate down from version %u to %u",
+	else if (available < current) {
+		err_msg = tal_fmt(tmpctx, "Refusing to migrate down from version %u to %u",
 			 current, available);
-	else if (current != available) {
+		log_info(ld->log, "%s", err_msg);
+		db_fatal("%s", err_msg);
+	} else if (current != available) {
 		if (ld->db_upgrade_ok && *ld->db_upgrade_ok == false) {
-			db_fatal("Refusing to upgrade db from version %u to %u (database-upgrade=false)",
+			err_msg = tal_fmt(tmpctx, "Refusing to upgrade db from version %u to %u (database-upgrade=false)",
 				 current, available);
+			log_info(ld->log, "%s", err_msg);
+			db_fatal("%s", err_msg);
 		} else if (!ld->db_upgrade_ok && !is_released_version()) {
-			db_fatal("Refusing to irreversibly upgrade db from version %u to %u in non-final version %s (use --database-upgrade=true to override)",
-				 current, available, version());
+			err_msg = tal_fmt(tmpctx, "Refusing to irreversibly upgrade db from version %u to %u in non-final version %s (use --database-upgrade=true to override)",
+					    current, available, version());
+			log_info(ld->log, "%s", err_msg);
+			db_fatal("%s", err_msg);
 		}
 		log_info(ld->log, "Updating database from version %u to %u",
 			 current, available);
@@ -989,7 +996,7 @@ static bool db_migrate(struct lightningd *ld, struct db *db,
 			tal_free(stmt);
 		}
 		if (dbmigrations[current].func)
-			dbmigrations[current].func(ld, db, &mc);
+			dbmigrations[current].func(ld, db);
 	}
 
 	/* Finally update the version number in the version table */
@@ -1036,8 +1043,7 @@ struct db *db_setup(const tal_t *ctx, struct lightningd *ld,
 }
 
 /* Will apply the current config fee settings to all channels */
-static void migrate_pr2342_feerate_per_channel(struct lightningd *ld, struct db *db,
-					       const struct migration_context *mc)
+static void migrate_pr2342_feerate_per_channel(struct lightningd *ld, struct db *db)
 {
 	struct db_stmt *stmt = db_prepare_v2(
 	    db, SQL("UPDATE channels SET feerate_base = ?, feerate_ppm = ?;"));
@@ -1055,8 +1061,7 @@ static void migrate_pr2342_feerate_per_channel(struct lightningd *ld, struct db 
  * is the same as the funding_satoshi for every channel where we are
  * the `funder`
  */
-static void migrate_our_funding(struct lightningd *ld, struct db *db,
-				const struct migration_context *mc)
+static void migrate_our_funding(struct lightningd *ld, struct db *db)
 {
 	struct db_stmt *stmt;
 
@@ -1072,8 +1077,7 @@ static void migrate_our_funding(struct lightningd *ld, struct db *db,
 	tal_free(stmt);
 }
 
-void fillin_missing_scriptpubkeys(struct lightningd *ld, struct db *db,
-				  const struct migration_context *mc)
+void fillin_missing_scriptpubkeys(struct lightningd *ld, struct db *db)
 {
 	struct db_stmt *stmt;
 
@@ -1111,11 +1115,7 @@ void fillin_missing_scriptpubkeys(struct lightningd *ld, struct db *db,
 
 			channel_id = db_col_u64(stmt, "channel_id");
 			db_col_node_id(stmt, "peer_id", &peer_id);
-			if (!db_col_is_null(stmt, "commitment_point")) {
-				commitment_point = tal(stmt, struct pubkey);
-				db_col_pubkey(stmt, "commitment_point", commitment_point);
-			} else
-				commitment_point = NULL;
+			commitment_point = db_col_optional(stmt, stmt, "commitment_point", pubkey);
 
 			/* Have to go ask the HSM to derive the pubkey for us */
 			msg = towire_hsmd_get_output_scriptpubkey(NULL,
@@ -1132,8 +1132,7 @@ void fillin_missing_scriptpubkeys(struct lightningd *ld, struct db *db,
 		} else {
 			db_col_ignore(stmt, "peer_id");
 			db_col_ignore(stmt, "commitment_point");
-			/* Build from bip32_base */
-			bip32_pubkey(mc->bip32_base, &key, keyindex);
+			bip32_pubkey(ld, &key, keyindex);
 			if (type == p2sh_wpkh) {
 				u8 *redeemscript = bitcoin_redeem_p2sh_p2wpkh(stmt, &key);
 				scriptPubkey = scriptpubkey_p2sh(tmpctx, redeemscript);
@@ -1160,8 +1159,7 @@ void fillin_missing_scriptpubkeys(struct lightningd *ld, struct db *db,
  * could simply derive the channel_id whenever it was required, but since there
  * are now two ways to do it, we save the derived channel id.
  */
-static void fillin_missing_channel_id(struct lightningd *ld, struct db *db,
-				      const struct migration_context *mc)
+static void fillin_missing_channel_id(struct lightningd *ld, struct db *db)
 {
 
 	struct db_stmt *stmt;
@@ -1198,8 +1196,7 @@ static void fillin_missing_channel_id(struct lightningd *ld, struct db *db,
 }
 
 static void fillin_missing_local_basepoints(struct lightningd *ld,
-					    struct db *db,
-					    const struct migration_context *mc)
+					    struct db *db)
 {
 
 	struct db_stmt *stmt;
@@ -1225,12 +1222,12 @@ static void fillin_missing_local_basepoints(struct lightningd *ld,
 		dbid = db_col_u64(stmt, "channels.id");
 		db_col_node_id(stmt, "peers.node_id", &peer_id);
 
-		if (!wire_sync_write(mc->hsm_fd,
+		if (!wire_sync_write(ld->hsm_fd,
 				     towire_hsmd_get_channel_basepoints(
 					 tmpctx, &peer_id, dbid)))
 			fatal("could not retrieve basepoint from hsmd");
 
-		msg = wire_sync_read(tmpctx, mc->hsm_fd);
+		msg = wire_sync_read(tmpctx, ld->hsm_fd);
 		if (!fromwire_hsmd_get_channel_basepoints_reply(
 			msg, &base, &funding_pubkey))
 			fatal("malformed hsmd_get_channel_basepoints_reply "
@@ -1262,8 +1259,7 @@ static void fillin_missing_local_basepoints(struct lightningd *ld,
 /* New 'channel_blockheights' table, every existing channel gets a
  * 'initial blockheight' of 0 */
 static void fillin_missing_channel_blockheights(struct lightningd *ld,
-						struct db *db,
-						const struct migration_context *mc)
+						struct db *db)
 {
 	struct db_stmt *stmt;
 
@@ -1287,8 +1283,7 @@ static void fillin_missing_channel_blockheights(struct lightningd *ld,
 }
 
 void
-migrate_inflight_last_tx_to_psbt(struct lightningd *ld, struct db *db,
-				 const struct migration_context *mc)
+migrate_inflight_last_tx_to_psbt(struct lightningd *ld, struct db *db)
 {
 	struct db_stmt *stmt, *update_stmt;
 	stmt = db_prepare_v2(db, SQL("SELECT "
@@ -1384,8 +1379,7 @@ migrate_inflight_last_tx_to_psbt(struct lightningd *ld, struct db *db,
  * This migration loads all of the last_tx's and 're-formats' them into psbts,
  * adds the required input witness utxo information, and then saves it back to disk
  * */
-void migrate_last_tx_to_psbt(struct lightningd *ld, struct db *db,
-			     const struct migration_context *mc)
+void migrate_last_tx_to_psbt(struct lightningd *ld, struct db *db)
 {
 	struct db_stmt *stmt, *update_stmt;
 
@@ -1475,8 +1469,7 @@ void migrate_last_tx_to_psbt(struct lightningd *ld, struct db *db,
 
 /* We used to store scids as strings... */
 static void migrate_channels_scids_as_integers(struct lightningd *ld,
-					       struct db *db,
-					       const struct migration_context *mc)
+					       struct db *db)
 {
 	struct db_stmt *stmt;
 	char **scids = tal_arr(tmpctx, char *, 0);
@@ -1502,7 +1495,7 @@ static void migrate_channels_scids_as_integers(struct lightningd *ld,
 		stmt = db_prepare_v2(db, SQL("UPDATE channels"
 					     " SET scid = ?"
 					     " WHERE short_channel_id = ?"));
-		db_bind_scid(stmt, 0, &scid);
+		db_bind_short_channel_id(stmt, 0, &scid);
 		db_bind_text(stmt, 1, scids[i]);
 		db_exec_prepared_v2(stmt);
 
@@ -1517,8 +1510,8 @@ static void migrate_channels_scids_as_integers(struct lightningd *ld,
 	}
 
 	if (changes != tal_count(scids))
-		fatal("migrate_channels_scids_as_integers: only converted %zu of %zu scids!",
-		      changes, tal_count(scids));
+		log_broken(ld->log, "migrate_channels_scids_as_integers: only converted %zu of %zu scids!",
+			   changes, tal_count(scids));
 
 	/* FIXME: We cannot use ->delete_columns to remove
 	 * short_channel_id, as other tables reference the channels
@@ -1533,8 +1526,7 @@ static void migrate_channels_scids_as_integers(struct lightningd *ld,
 }
 
 static void migrate_payments_scids_as_integers(struct lightningd *ld,
-					       struct db *db,
-					       const struct migration_context *mc)
+					       struct db *db)
 {
 	struct db_stmt *stmt;
 	const char *colnames[] = {"failchannel"};
@@ -1558,7 +1550,7 @@ static void migrate_payments_scids_as_integers(struct lightningd *ld,
 		update_stmt = db_prepare_v2(db, SQL("UPDATE payments SET"
 						    " failscid = ?"
 						    " WHERE id = ?"));
-		db_bind_scid(update_stmt, 0, &scid);
+		db_bind_short_channel_id(update_stmt, 0, &scid);
 		db_bind_u64(update_stmt, 1, db_col_u64(stmt, "id"));
 		db_exec_prepared_v2(update_stmt);
 		tal_free(update_stmt);
@@ -1567,4 +1559,132 @@ static void migrate_payments_scids_as_integers(struct lightningd *ld,
 
 	if (!db->config->delete_columns(db, "payments", colnames, ARRAY_SIZE(colnames)))
 		db_fatal("Could not delete payments.failchannel");
+}
+
+static void fillin_missing_lease_satoshi(struct lightningd *ld,
+					 struct db *db)
+{
+	struct db_stmt *stmt;
+
+	stmt = db_prepare_v2(db, SQL("UPDATE channel_funding_inflights"
+				     " SET lease_satoshi = 0"
+				     " WHERE lease_satoshi IS NULL;"));
+	db_exec_prepared_v2(stmt);
+	tal_free(stmt);
+}
+
+static void migrate_fill_in_channel_type(struct lightningd *ld,
+					 struct db *db)
+{
+	struct db_stmt *stmt;
+
+	stmt = db_prepare_v2(db, SQL("SELECT id, local_static_remotekey_start, option_anchor_outputs, channel_flags, alias_remote, minimum_depth FROM channels"));
+	db_query_prepared(stmt);
+	while (db_step(stmt)) {
+		struct db_stmt *update_stmt;
+		struct channel_type *type;
+		u64 id = db_col_u64(stmt, "id");
+		int channel_flags = db_col_int(stmt, "channel_flags");
+
+		if (db_col_int(stmt, "option_anchor_outputs")) {
+			db_col_ignore(stmt, "local_static_remotekey_start");
+			type = channel_type_anchor_outputs(tmpctx);
+		} else if (db_col_u64(stmt, "local_static_remotekey_start") != 0x7FFFFFFFFFFFFFFFULL)
+			type = channel_type_static_remotekey(tmpctx);
+		else
+			type = channel_type_none(tmpctx);
+
+		/* We didn't keep type in db, so assume all private
+		 * channels which support aliases don't want us to fwd
+		 * unless using alias, which is how we behaved
+		 * before. */
+		if (!db_col_is_null(stmt, "alias_remote")
+		    && !(channel_flags & CHANNEL_FLAGS_ANNOUNCE_CHANNEL))
+			channel_type_set_scid_alias(type);
+
+		if (db_col_int(stmt, "minimum_depth") == 0)
+			channel_type_set_zeroconf(type);
+
+		update_stmt = db_prepare_v2(db, SQL("UPDATE channels SET"
+						    " channel_type = ?"
+						    " WHERE id = ?"));
+		db_bind_channel_type(update_stmt, 0, type);
+		db_bind_u64(update_stmt, 1, id);
+		db_exec_prepared_v2(update_stmt);
+		tal_free(update_stmt);
+	}
+	tal_free(stmt);
+}
+
+static void complain_unfixed(struct lightningd *ld,
+			     enum channel_state state,
+			     u64 id,
+			     const u8 *bytes,
+			     const char *why)
+{
+	/* This is OK on closed channels */
+	if (state != CLOSED) {
+		log_broken(ld->log,
+			   "%s channel id %"PRIu64" PSBT hex '%s'",
+			   why, id, tal_hex(tmpctx, bytes));
+	} else {
+		log_debug(ld->log,
+			  "%s on closed channel id %"PRIu64" PSBT hex '%s'",
+			  why, id, tal_hex(tmpctx, bytes));
+	}
+}
+
+static void migrate_invalid_last_tx_psbts(struct lightningd *ld,
+					  struct db *db)
+{
+	struct db_stmt *stmt;
+
+	/* We try all of them, but note that last_tx used to be a tx,
+	 * and migrate_last_tx_to_psbt didn't convert channels which had
+	 * already been closed, so we expect some failures. */
+	stmt = db_prepare_v2(db, SQL("SELECT "
+				     "  id"
+				     ", state"
+				     ", last_tx"
+				     " FROM channels"));
+
+	db_query_prepared(stmt);
+	while (db_step(stmt)) {
+		struct db_stmt *update_stmt;
+		const u8 *bytes, *fixed;
+		enum channel_state state;
+		u64 id;
+		struct wally_psbt *psbt;
+
+		state = db_col_int(stmt, "state");
+		id = db_col_u64(stmt, "id");
+
+		/* Parses fine? */
+		if (db_col_psbt(tmpctx, stmt, "last_tx"))
+			continue;
+
+		/* Can we fix it? */
+		bytes = db_col_arr(tmpctx, stmt, "last_tx", u8);
+		fixed = psbt_fixup(tmpctx, bytes);
+		if (!fixed) {
+			complain_unfixed(ld, state, id, bytes, "Could not fix");
+			continue;
+		}
+		psbt = psbt_from_bytes(tmpctx, fixed, tal_bytelen(fixed));
+		if (!psbt) {
+			complain_unfixed(ld, state, id, fixed, "Fix made invalid psbt");
+			continue;
+		}
+
+		log_broken(ld->log, "Forced database repair of psbt %s -> %s",
+			   tal_hex(tmpctx, bytes), tal_hex(tmpctx, fixed));
+		update_stmt = db_prepare_v2(db, SQL("UPDATE channels"
+						    " SET last_tx = ?"
+						    " WHERE id = ?;"));
+		db_bind_psbt(update_stmt, 0, psbt);
+		db_bind_u64(update_stmt, 1, id);
+		db_exec_prepared_v2(update_stmt);
+		tal_free(update_stmt);
+	}
+	tal_free(stmt);
 }

@@ -2,14 +2,10 @@
 #include <ccan/err/err.h>
 #include <ccan/opt/opt.h>
 #include <ccan/tal/grab_file/grab_file.h>
+#include <common/setup.h>
 #include <unistd.h>
-#if EXPERIMENTAL_FEATURES
-  #include <wire/onion_exp_printgen.h>
-  #include <wire/peer_exp_printgen.h>
-#else
-  #include <wire/onion_printgen.h>
-  #include <wire/peer_printgen.h>
-#endif
+#include <wire/onion_printgen.h>
+#include <wire/peer_printgen.h>
 
 static char *opt_set_tlvname(const char *arg,
 			     bool (**printwire)(const char *fieldname,
@@ -55,6 +51,7 @@ int main(int argc, char *argv[])
 	bool (*printwire)(const u8 *msg) = printpeer_wire_message;
 	bool ok = true;
 
+	common_setup(argv[0]);
 	setup_locale();
 
 	opt_register_noarg("--onion", opt_set_onionprint, &printwire,

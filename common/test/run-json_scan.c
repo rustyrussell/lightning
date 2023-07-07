@@ -20,12 +20,18 @@ struct amount_sat amount_sat(u64 satoshis UNNEEDED)
 				       struct amount_sat a UNNEEDED,
 				       struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_add called!\n"); abort(); }
+/* Generated stub for amount_sat_div */
+struct amount_sat amount_sat_div(struct amount_sat sat UNNEEDED, u64 div UNNEEDED)
+{ fprintf(stderr, "amount_sat_div called!\n"); abort(); }
 /* Generated stub for amount_sat_eq */
 bool amount_sat_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_eq called!\n"); abort(); }
 /* Generated stub for amount_sat_greater_eq */
 bool amount_sat_greater_eq(struct amount_sat a UNNEEDED, struct amount_sat b UNNEEDED)
 { fprintf(stderr, "amount_sat_greater_eq called!\n"); abort(); }
+/* Generated stub for amount_sat_mul */
+bool amount_sat_mul(struct amount_sat *res UNNEEDED, struct amount_sat sat UNNEEDED, u64 mul UNNEEDED)
+{ fprintf(stderr, "amount_sat_mul called!\n"); abort(); }
 /* Generated stub for amount_sat_sub */
  bool amount_sat_sub(struct amount_sat *val UNNEEDED,
 				       struct amount_sat a UNNEEDED,
@@ -139,6 +145,24 @@ int main(int argc, char *argv[])
 	assert(!json_scan(tmpctx, buf, toks, "{2:two,1:one,3:{three:{deeper:17}},arr:[0:{1:arrone}]}"));
 	assert(!json_scan(tmpctx, buf, toks, "{2:two,1:one,3:{three:{deeper:17}},arr:[1:2]}"));
 	assert(!json_scan(tmpctx, buf, toks, "{2:two,1:one,3:{three:{deeper:17}},arr:[1:2,2:[0:3,1:4]]}"));
+
+	/* Optional fields which are present are fine. */
+	assert(!json_scan(tmpctx, buf, toks, "{1?:one}"));
+	assert(!json_scan(tmpctx, buf, toks, "{1?:one,2?:two}"));
+	assert(!json_scan(tmpctx, buf, toks, "{2?:two,1?:one}"));
+	assert(!json_scan(tmpctx, buf, toks, "{2?:two,1?:one,3?:{three?:{deeper?:17}}}"));
+	assert(!json_scan(tmpctx, buf, toks, "{2?:two,1?:one,3?:{three?:{deeper?:17}},arr?:[0:{1?:arrone}]}"));
+	assert(!json_scan(tmpctx, buf, toks, "{2?:two,1?:one,3?:{three?:{deeper?:17}},arr?:[1:2]}"));
+	assert(!json_scan(tmpctx, buf, toks, "{2?:two,1?:one,3?:{three?:{deeper?:17}},arr?:[1:2,2:[0:3,1:4]]}"));
+
+	/* Optional field which are missing are fine too */
+	assert(!json_scan(tmpctx, buf, toks, "{5?:one}"));
+	assert(!json_scan(tmpctx, buf, toks, "{1:one,5?:two}"));
+	assert(!json_scan(tmpctx, buf, toks, "{2:two,5?:one}"));
+	assert(!json_scan(tmpctx, buf, toks, "{2:two,1:one,5?:{three:{deeper:17}}}"));
+	assert(!json_scan(tmpctx, buf, toks, "{2:two,1:one,3:{five?:{deeper:17}},arr:[0:{1:arrone}]}"));
+	assert(!json_scan(tmpctx, buf, toks, "{2:two,1:one,3:{three:{notdeeper?:17}},arr:[1:2]}"));
+	assert(!json_scan(tmpctx, buf, toks, "{2:two,1:one,3:{three:{deeper:17}},notarr?:[1:2,2:[0:3,1:4]]}"));
 
 	/* These do not match */
 	err = json_scan(tmpctx, buf, toks, "{2:one}");

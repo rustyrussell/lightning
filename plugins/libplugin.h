@@ -310,17 +310,19 @@ void rpc_scan(struct plugin *plugin,
 	      const char *guide,
 	      ...);
 
-/* Helper to scan datastore: can only be used in init callback.  *
- Returns false if field does not exist.  * path is /-separated.  Final
- arg is JSON_SCAN or JSON_SCAN_TAL.
+/* Helper to scan datastore: can only be used in init callback.  Returns error
+ * msg (usually meaning field does not exist), or NULL on success. path is
+ * /-separated.  Final arg is JSON_SCAN or JSON_SCAN_TAL.
  */
-bool rpc_scan_datastore_str(struct plugin *plugin,
-			    const char *path,
-			    ...);
+const char *rpc_scan_datastore_str(const tal_t *ctx,
+				   struct plugin *plugin,
+				   const char *path,
+				   ...);
 /* This variant scans the hex encoding, not the string */
-bool rpc_scan_datastore_hex(struct plugin *plugin,
-			    const char *path,
-			    ...);
+const char *rpc_scan_datastore_hex(const tal_t *ctx,
+				   struct plugin *plugin,
+				   const char *path,
+				   ...);
 
 /* This sets batching of database commitments */
 void rpc_enable_batching(struct plugin *plugin);
@@ -475,5 +477,12 @@ void plugin_set_memleak_handler(struct plugin *plugin,
 				void (*mark_mem)(struct plugin *plugin,
 						 struct htable *memtable));
 #endif /* DEVELOPER */
+
+/* Synchronously call a JSON-RPC method and return its contents and
+ * the parser token. */
+const jsmntok_t *jsonrpc_request_sync(const tal_t *ctx, struct plugin *plugin,
+				      const char *method,
+				      const struct json_out *params TAKES,
+				      const char **resp);
 
 #endif /* LIGHTNING_PLUGINS_LIBPLUGIN_H */

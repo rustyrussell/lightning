@@ -227,9 +227,7 @@ static struct command_result *listinvoices_done(struct command *cmd,
 			cinfo->num_uncleaned++;
 	}
 
-	if (cinfo->cleanup_reqs_remaining)
-		return command_still_pending(cmd);
-	return clean_finished(cinfo);
+	return clean_finished_one(cinfo);
 }
 
 static struct command_result *listsendpays_done(struct command *cmd,
@@ -289,9 +287,7 @@ static struct command_result *listsendpays_done(struct command *cmd,
 		}
 	}
 
- 	if (cinfo->cleanup_reqs_remaining)
-		return command_still_pending(cmd);
-	return clean_finished(cinfo);
+	return clean_finished_one(cinfo);
 }
 
 static struct command_result *listforwards_done(struct command *cmd,
@@ -305,6 +301,7 @@ static struct command_result *listforwards_done(struct command *cmd,
 
 	json_for_each_arr(i, t, fwds) {
 		const jsmntok_t *status = json_get_member(buf, t, "status");
+		const char *timefield = "resolved_time";
 		jsmntok_t time;
 		enum subsystem subsys;
 		u64 restime;
@@ -314,6 +311,8 @@ static struct command_result *listforwards_done(struct command *cmd,
 		} else if (json_tok_streq(buf, status, "failed")
 			   || json_tok_streq(buf, status, "local_failed")) {
 			subsys = FAILEDFORWARDS;
+			/* There's no resolved_time for these, so use received */
+			timefield = "received_time";
 		} else {
 			cinfo->num_uncleaned++;
 			continue;
@@ -328,12 +327,13 @@ static struct command_result *listforwards_done(struct command *cmd,
 		/* Check if we have a resolved_time, before making a
 		 * decision on it. This is possible in older nodes
 		 * that predate our annotations for forwards.*/
-		if (json_get_member(buf, t, "resolved_time") == NULL) {
+		if (json_get_member(buf, t, timefield) == NULL) {
 			cinfo->num_uncleaned++;
 			continue;
 		}
 
-		time = *json_get_member(buf, t, "resolved_time");
+
+		time = *json_get_member(buf, t, timefield);
 		/* This is a float, so truncate at '.' */
 		for (int off = time.start; off < time.end; off++) {
 			if (buf[off] == '.')
@@ -368,9 +368,7 @@ static struct command_result *listforwards_done(struct command *cmd,
 		}
 	}
 
- 	if (cinfo->cleanup_reqs_remaining)
-		return command_still_pending(cmd);
-	return clean_finished(cinfo);
+	return clean_finished_one(cinfo);
 }
 
 static struct command_result *listsendpays_failed(struct command *cmd,
@@ -399,7 +397,7 @@ static struct command_result *listforwards_failed(struct command *cmd,
 
 static struct command_result *do_clean(struct clean_info *cinfo)
 {
-	struct out_req *req = NULL;
+	struct out_req *req;
 
 	cinfo->cleanup_reqs_remaining = 0;
 	cinfo->num_uncleaned = 0;
@@ -411,6 +409,7 @@ static struct command_result *do_clean(struct clean_info *cinfo)
 					    listsendpays_done, listsendpays_failed,
 					    cinfo);
 		send_outreq(plugin, req);
+		cinfo->cleanup_reqs_remaining++;
 	}
 
 	if (cinfo->subsystem_age[EXPIREDINVOICES] != 0
@@ -419,6 +418,7 @@ static struct command_result *do_clean(struct clean_info *cinfo)
 					    listinvoices_done, listinvoices_failed,
 					    cinfo);
 		send_outreq(plugin, req);
+		cinfo->cleanup_reqs_remaining++;
 	}
 
 	if (cinfo->subsystem_age[SUCCEEDEDFORWARDS] != 0
@@ -427,12 +427,12 @@ static struct command_result *do_clean(struct clean_info *cinfo)
 					    listforwards_done, listforwards_failed,
 					    cinfo);
 		send_outreq(plugin, req);
+		cinfo->cleanup_reqs_remaining++;
 	}
 
-	if (req)
+	if (cinfo->cleanup_reqs_remaining)
 		return command_still_pending(NULL);
-	else
-		return clean_finished(cinfo);
+	return clean_finished(cinfo);
 }
 
 /* Needs a different signature than do_clean */
@@ -574,8 +574,11 @@ static const char *init(struct plugin *p,
 
 	cleantimer = plugin_timer(p, time_from_sec(cycle_seconds), do_clean_timer, NULL);
 
+	/* We don't care if this fails (it usually does, since entries
+	 * don't exist! */
 	for (enum subsystem i = 0; i < NUM_SUBSYSTEM; i++) {
-		rpc_scan_datastore_str(plugin, datastore_path(tmpctx, i, "num"),
+		rpc_scan_datastore_str(tmpctx, plugin,
+				       datastore_path(tmpctx, i, "num"),
 				       JSON_SCAN(json_to_u64, &total_cleaned[i]));
 	}
 

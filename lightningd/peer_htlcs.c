@@ -271,20 +271,10 @@ static void fail_out_htlc(struct htlc_out *hout, const char *localfail)
 
 /* BOLT #4:
  *
- * * `amt_to_forward`: The amount, in millisatoshis, to forward to the next
- *   receiving peer specified within the routing information.
- *
- *   For non-final nodes, this value amount MUST include the origin node's computed _fee_ for the
- *   receiving peer. When processing an incoming Sphinx packet and the HTLC
- *   message that it is encapsulated within, if the following inequality
- *   doesn't hold, then the HTLC should be rejected as it would indicate that
- *   a prior hop has deviated from the specified parameters:
- *
- *     incoming_htlc_amt - fee >= amt_to_forward
- *
- *   Where `fee` is calculated according to the receiving peer's
- *   advertised fee schema (as described in [BOLT
- *   #7](07-routing-gossip.md#htlc-fees)).
+ *   - if it is not the final node:
+ *     - MUST return an error if:
+ * ...
+ *        - incoming `amount_msat` - `fee` < `amt_to_forward` (where `fee` is the advertised fee as described in [BOLT #7](07-routing-gossip.md#htlc-fees))
  */
 static bool check_fwd_amount(struct htlc_in *hin,
 			     struct amount_msat amt_to_forward,
@@ -317,22 +307,15 @@ static bool check_fwd_amount(struct htlc_in *hin,
 
 /* BOLT #4:
  *
- *  * `outgoing_cltv_value`: The CLTV value that the _outgoing_ HTLC carrying
- *     the packet should have.
- *
- *        cltv_expiry - cltv_expiry_delta >= outgoing_cltv_value
- *
- *     Inclusion of this field allows a hop to both authenticate the
- *     information specified by the origin node, and the parameters of the
- *     HTLC forwarded, and ensure the origin node is using the current
- *     `cltv_expiry_delta` value.  If there is no next hop,
- *     `cltv_expiry_delta` is 0.  If the values don't correspond, then the
- *     HTLC should be failed and rejected, as this indicates that either a
- *     forwarding node has tampered with the intended HTLC values or that the
- *     origin node has an obsolete `cltv_expiry_delta` value.  The hop MUST be
- *     consistent in responding to an unexpected `outgoing_cltv_value`,
- *     whether it is the final node or not, to avoid leaking its position in
- *     the route.
+ *   - if it is not the final node:
+ *     - MUST return an error if:
+ * ...
+ *        - `cltv_expiry` - `cltv_expiry_delta` < `outgoing_cltv_value`
+ *   - If it is the final node:
+ *...
+ *     - MUST return an error if:
+ *...
+ *       - incoming `cltv_expiry` < `outgoing_cltv_value`.
  */
 static bool check_cltv(struct htlc_in *hin,
 		       u32 cltv_expiry, u32 outgoing_cltv_value, u32 delta)
@@ -377,7 +360,7 @@ void fulfill_htlc(struct htlc_in *hin, const struct preimage *preimage)
 		return;
 	}
 
-	if (channel_on_chain(channel)) {
+	if (streq(channel->owner->name, "onchaind")) {
 		msg = towire_onchaind_known_preimage(hin, preimage);
 	} else {
 		struct fulfilled_htlc fulfilled_htlc;
@@ -399,11 +382,13 @@ static void handle_localpay(struct htlc_in *hin,
 	struct lightningd *ld = hin->key.channel->peer->ld;
 
 	/* BOLT #4:
-	 *
-	 * For the final node, this value MUST be exactly equal to the
-	 * incoming htlc amount, otherwise the HTLC should be rejected.
+	 *   - If it is the final node:
+	 *     - MUST treat `total_msat` as if it were equal to `amt_to_forward` if it
+	 *       is not present.
+	 *     - MUST return an error if:
+	 *        - incoming `amount_msat` < `amt_to_forward`.
 	 */
-	if (!amount_msat_eq(amt_to_forward, hin->msat)) {
+	if (amount_msat_less(hin->msat, amt_to_forward)) {
 		log_debug(hin->key.channel->log,
 			  "HTLC %"PRIu64" final incorrect amount:"
 			  " %s in, %s expected",
@@ -412,7 +397,6 @@ static void handle_localpay(struct htlc_in *hin,
 			  type_to_string(tmpctx, struct amount_msat,
 					 &amt_to_forward));
 		/* BOLT #4:
-		 *
 		 * 1. type: 19 (`final_incorrect_htlc_amount`)
 		 * 2. data:
 		 *    * [`u64`:`incoming_htlc_amt`]
@@ -424,14 +408,22 @@ static void handle_localpay(struct htlc_in *hin,
 	}
 
 	/* BOLT #4:
-	 *
-	 * 1. type: 18 (`final_incorrect_cltv_expiry`)
-	 * 2. data:
-	 *    * [`u32`:`cltv_expiry`]
-	 *
-	 * The CLTV expiry in the HTLC doesn't match the value in the onion.
+	 *   - If it is the final node:
+	 *     - MUST treat `total_msat` as if it were equal to `amt_to_forward` if it
+	 *       is not present.
+	 *     - MUST return an error if:
+	 *...
+	 *        - incoming `cltv_expiry` < `outgoing_cltv_value`.
 	 */
 	if (!check_cltv(hin, hin->cltv_expiry, outgoing_cltv_value, 0)) {
+		/* BOLT #4:
+		 *
+		 * 1. type: 18 (`final_incorrect_cltv_expiry`)
+		 * 2. data:
+		 *    * [`u32`:`cltv_expiry`]
+		 *
+		 * The CLTV expiry in the HTLC doesn't match the value in the onion.
+		 */
 		failmsg = towire_final_incorrect_cltv_expiry(NULL,
 							     hin->cltv_expiry);
 		goto fail;
@@ -439,10 +431,7 @@ static void handle_localpay(struct htlc_in *hin,
 
 	/* BOLT #4:
 	 *
-	 *   - if the `cltv_expiry` value is unreasonably near the present:
-	 *     - MUST fail the HTLC.
-	 *     - MUST return an `incorrect_or_unknown_payment_details` error.
-	 */
+	 *   incoming `cltv_expiry` < `current_block_height` + `min_final_cltv_expiry_delta`.	 */
 	if (get_block_height(ld->topology) + ld->config.cltv_final
 	    > hin->cltv_expiry) {
 		log_debug(hin->key.channel->log,
@@ -470,7 +459,7 @@ static void handle_localpay(struct htlc_in *hin,
 		 * the payload, the erring node may include that `type` and its byte `offset` in
 		 * the decrypted byte stream.
 		 */
-		failmsg = towire_invalid_onion_payload(NULL, TLV_TLV_PAYLOAD_PAYMENT_METADATA,
+		failmsg = towire_invalid_onion_payload(NULL, TLV_PAYLOAD_PAYMENT_METADATA,
 						       /* FIXME: offset? */ 0);
 		goto fail;
 	}
@@ -1088,18 +1077,14 @@ static void htlc_accepted_hook_serialize(struct htlc_accepted_hook_payload *p,
 		if (p->payload->forward_node_id)
 			json_add_pubkey(s, "next_node_id",
 					p->payload->forward_node_id);
-		if (deprecated_apis)
-			json_add_string(s, "forward_amount",
-					fmt_amount_msat(tmpctx,
-							p->payload->amt_to_forward));
-		json_add_amount_msat_only(s, "forward_msat",
-					  p->payload->amt_to_forward);
+		json_add_amount_msat(s, "forward_msat",
+				     p->payload->amt_to_forward);
 		json_add_u32(s, "outgoing_cltv_value", p->payload->outgoing_cltv);
 		/* These are specified together in TLV, so only print total_msat
 		 * if payment_secret set (ie. modern, and final hop) */
 		if (p->payload->payment_secret) {
-			json_add_amount_msat_only(s, "total_msat",
-						  *p->payload->total_msat);
+			json_add_amount_msat(s, "total_msat",
+					     *p->payload->total_msat);
 			json_add_secret(s, "payment_secret",
 					p->payload->payment_secret);
 		}
@@ -1120,9 +1105,7 @@ static void htlc_accepted_hook_serialize(struct htlc_accepted_hook_payload *p,
 	    s, "short_channel_id",
 	    channel_scid_or_local_alias(hin->key.channel));
 	json_add_u64(s, "id", hin->key.id);
-	if (deprecated_apis)
-		json_add_amount_msat_only(s, "amount", hin->msat);
-	json_add_amount_msat_only(s, "amount_msat", hin->msat);
+	json_add_amount_msat(s, "amount_msat", hin->msat);
 	json_add_u32(s, "cltv_expiry", expiry);
 	json_add_s32(s, "cltv_expiry_relative", expiry - blockheight);
 	json_add_sha256(s, "payment_hash", &hin->payment_hash);
@@ -1222,18 +1205,42 @@ static struct channel_id *calc_forwarding_channel(struct lightningd *ld,
 		return NULL;
 
 	if (p->forward_channel) {
+		log_debug(hp->channel->log,
+			  "Looking up channel by scid=%s to forward htlc_id=%" PRIu64,
+			  type_to_string(tmpctx, struct short_channel_id,
+					 p->forward_channel),
+			  hp->hin->key.id);
+
 		c = any_channel_by_scid(ld, p->forward_channel, false);
-		if (!c)
+
+		if (!c) {
+			log_unusual(hp->channel->log, "No peer channel with scid=%s",
+				    type_to_string(tmpctx, struct short_channel_id,
+						   p->forward_channel));
 			return NULL;
+		}
+
 		peer = c->peer;
 	} else {
 		struct node_id id;
-		if (!p->forward_node_id)
+		if (!p->forward_node_id) {
+			log_unusual(hp->channel->log,
+				    "Neither forward_channel nor "
+				    "forward_node_id was set in payload");
 			return NULL;
+		}
 		node_id_from_pubkey(&id, p->forward_node_id);
 		peer = peer_by_id(ld, &id);
-		if (!peer)
+
+		log_debug(hp->channel->log, "Looking up peer by node_id=%s",
+			  type_to_string(tmpctx, struct node_id, &id));
+
+		if (!peer) {
+			log_unusual(
+			    hp->channel->log, "No peer with node_id=%s",
+			    type_to_string(tmpctx, struct node_id, &id));
 			return NULL;
+		}
 		c = NULL;
 	}
 
@@ -1255,6 +1262,14 @@ static struct channel_id *calc_forwarding_channel(struct lightningd *ld,
 			  type_to_string(tmpctx, struct short_channel_id,
 					 channel_scid_or_local_alias(best)));
 	}
+
+	log_debug(hp->channel->log,
+		  "Decided to forward htlc_id=%" PRIu64
+		  " over channel with scid=%s with peer %s",
+		  hp->hin->key.id,
+		  type_to_string(tmpctx, struct short_channel_id,
+				 channel_scid_or_local_alias(best)),
+		  type_to_string(tmpctx, struct node_id, &best->peer->id));
 
 	return tal_dup(hp, struct channel_id, &best->cid);
 }
@@ -2897,18 +2912,12 @@ void json_add_forwarding_object(struct json_stream *response,
 		if (cur->htlc_id_out)
 			json_add_u64(response, "out_htlc_id", *cur->htlc_id_out);
 	}
-	json_add_amount_msat_compat(response,
-				    cur->msat_in,
-				    "in_msatoshi", "in_msat");
+	json_add_amount_msat(response, "in_msat", cur->msat_in);
 
 	/* These can be unset (aka zero) if we failed before channel lookup */
 	if (!amount_msat_eq(cur->msat_out, AMOUNT_MSAT(0))) {
-		json_add_amount_msat_compat(response,
-					    cur->msat_out,
-					    "out_msatoshi",  "out_msat");
-		json_add_amount_msat_compat(response,
-					    cur->fee,
-					    "fee", "fee_msat");
+		json_add_amount_msat(response, "out_msat", cur->msat_out);
+		json_add_amount_msat(response, "fee_msat", cur->fee);
 	}
 	json_add_string(response, "status", forward_status_name(cur->status));
 
@@ -3134,7 +3143,7 @@ static struct command_result *json_listhtlcs(struct command *cmd,
 		json_add_u32(response, "expiry", cltv_expiry);
 		json_add_string(response, "direction",
 				owner == LOCAL ? "out": "in");
-		json_add_amount_msat_only(response, "amount_msat", msat);
+		json_add_amount_msat(response, "amount_msat", msat);
 		json_add_sha256(response, "payment_hash", &payment_hash);
 		json_add_string(response, "state", htlc_state_name(hstate));
 		json_object_end(response);

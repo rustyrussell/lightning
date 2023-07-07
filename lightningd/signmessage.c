@@ -5,8 +5,8 @@
 #include <common/json_param.h>
 #include <errno.h>
 #include <hsmd/hsmd_wiregen.h>
+#include <lightningd/hsm_control.h>
 #include <lightningd/plugin.h>
-#include <wire/wire_sync.h>
 
 /* These tables copied from zbase32 src:
  * copyright 2002-2007 Zooko "Zooko" Wilcox-O'Hearn
@@ -65,7 +65,8 @@ static struct command_result *json_signmessage(struct command *cmd,
 	const char *message;
 	secp256k1_ecdsa_recoverable_signature rsig;
 	struct json_stream *response;
-	u8 sig[65], *msg;
+	u8 sig[65];
+	const u8 *msg;
 	int recid;
 
 	if (!param(cmd, buffer, params,
@@ -80,10 +81,7 @@ static struct command_result *json_signmessage(struct command *cmd,
 	msg = towire_hsmd_sign_message(NULL,
 				      tal_dup_arr(tmpctx, u8, (u8 *)message,
 						  strlen(message), 0));
-	if (!wire_sync_write(cmd->ld->hsm_fd, take(msg)))
-		fatal("Could not write to HSM: %s", strerror(errno));
-
-	msg = wire_sync_read(tmpctx, cmd->ld->hsm_fd);
+	msg = hsm_sync_req(tmpctx, cmd->ld, take(msg));
 	if (!fromwire_hsmd_sign_message_reply(msg, &rsig))
 		fatal("HSM gave bad hsm_sign_message_reply %s",
 		      tal_hex(msg, msg));
@@ -134,9 +132,10 @@ static void listnodes_done(const char *buffer,
 	if (t)
 		t = json_get_member(buffer, t, "nodes");
 
-	if (!deprecated_apis && (!t || t->size == 0)) {
-		response = json_stream_fail(can->cmd, SIGNMESSAGE_PUBKEY_NOT_FOUND,
-							"pubkey not found in the graph");
+	if (!t || t->size == 0) {
+		response = json_stream_fail(can->cmd,
+					    SIGNMESSAGE_PUBKEY_NOT_FOUND,
+					    "pubkey not found in the graph");
 		json_add_node_id(response, "claimed_key", &can->id);
 		json_object_end(response);
 		was_pending(command_failed(can->cmd, response));

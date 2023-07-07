@@ -19,17 +19,24 @@ msgdata,hsmd_init,hsm_wire_min_version,u32,
 msgdata,hsmd_init,hsm_wire_max_version,u32,
 
 #include <common/bip32.h>
-# DEPRECATED after v0.12, remove in two versions!
-msgtype,hsmd_init_reply_v1,111
-msgdata,hsmd_init_reply_v1,node_id,node_id,
-msgdata,hsmd_init_reply_v1,bip32,ext_key,
-msgdata,hsmd_init_reply_v1,bolt12,u8,32
-msgdata,hsmd_init_reply_v1,onion_reply_secret,secret,
-
+# DEPRECATED after 23.05, remove in two versions!
 msgtype,hsmd_init_reply_v2,113
 msgdata,hsmd_init_reply_v2,node_id,node_id,
 msgdata,hsmd_init_reply_v2,bip32,ext_key,
 msgdata,hsmd_init_reply_v2,bolt12,pubkey,
+
+# Sorry: I should have put version in v2 :(
+msgtype,hsmd_init_reply_v4,114
+# This gets upgraded when the wire protocol changes in incompatible
+# ways:
+msgdata,hsmd_init_reply_v4,hsm_version,u32,
+# Capabilities, by convention are message numbers, indicating
+# that the HSM supports you sending this message.
+msgdata,hsmd_init_reply_v4,num_hsm_capabilities,u16,
+msgdata,hsmd_init_reply_v4,hsm_capabilities,u32,num_hsm_capabilities
+msgdata,hsmd_init_reply_v4,node_id,node_id,
+msgdata,hsmd_init_reply_v4,bip32,ext_key,
+msgdata,hsmd_init_reply_v4,bolt12,pubkey,
 
 # Declare a new channel.
 msgtype,hsmd_new_channel,30
@@ -189,7 +196,6 @@ msgtype,hsmd_validate_revocation_reply,136
 
 # Onchaind asks HSM to sign a spend to-us.  Four variants, since each set
 # of keys is derived differently...
-# FIXME: Have master tell hsmd the keyindex, so it can validate output!
 msgtype,hsmd_sign_delayed_payment_to_us,12
 msgdata,hsmd_sign_delayed_payment_to_us,commit_num,u64,
 msgdata,hsmd_sign_delayed_payment_to_us,tx,bitcoin_tx,
@@ -316,3 +322,51 @@ msgdata,hsmd_derive_secret,info,u8,len
 # Reply with the derived secret
 msgtype,hsmd_derive_secret_reply,127
 msgdata,hsmd_derive_secret_reply,secret,secret,
+
+# Sanity check this pubkey derivation is correct (unhardened only)
+msgtype,hsmd_check_pubkey,28
+msgdata,hsmd_check_pubkey,index,u32,
+msgdata,hsmd_check_pubkey,pubkey,pubkey,
+
+# Reply
+msgtype,hsmd_check_pubkey_reply,128
+msgdata,hsmd_check_pubkey_reply,ok,bool,
+
+# These are where lightningd asks for signatures on onchaind's behalf.
+msgtype,hsmd_sign_any_delayed_payment_to_us,142
+msgdata,hsmd_sign_any_delayed_payment_to_us,commit_num,u64,
+msgdata,hsmd_sign_any_delayed_payment_to_us,tx,bitcoin_tx,
+msgdata,hsmd_sign_any_delayed_payment_to_us,wscript_len,u16,
+msgdata,hsmd_sign_any_delayed_payment_to_us,wscript,u8,wscript_len
+msgdata,hsmd_sign_any_delayed_payment_to_us,input,u32,
+msgdata,hsmd_sign_any_delayed_payment_to_us,peerid,node_id,
+msgdata,hsmd_sign_any_delayed_payment_to_us,channel_dbid,u64,
+
+msgtype,hsmd_sign_any_remote_htlc_to_us,143
+msgdata,hsmd_sign_any_remote_htlc_to_us,remote_per_commitment_point,pubkey,
+msgdata,hsmd_sign_any_remote_htlc_to_us,tx,bitcoin_tx,
+msgdata,hsmd_sign_any_remote_htlc_to_us,wscript_len,u16,
+msgdata,hsmd_sign_any_remote_htlc_to_us,wscript,u8,wscript_len
+msgdata,hsmd_sign_any_remote_htlc_to_us,option_anchor_outputs,bool,
+msgdata,hsmd_sign_any_remote_htlc_to_us,input,u32,
+msgdata,hsmd_sign_any_remote_htlc_to_us,peerid,node_id,
+msgdata,hsmd_sign_any_remote_htlc_to_us,channel_dbid,u64,
+
+msgtype,hsmd_sign_any_penalty_to_us,144
+msgdata,hsmd_sign_any_penalty_to_us,revocation_secret,secret,
+msgdata,hsmd_sign_any_penalty_to_us,tx,bitcoin_tx,
+msgdata,hsmd_sign_any_penalty_to_us,wscript_len,u16,
+msgdata,hsmd_sign_any_penalty_to_us,wscript,u8,wscript_len
+msgdata,hsmd_sign_any_penalty_to_us,input,u32,
+msgdata,hsmd_sign_any_penalty_to_us,peerid,node_id,
+msgdata,hsmd_sign_any_penalty_to_us,channel_dbid,u64,
+
+msgtype,hsmd_sign_any_local_htlc_tx,146
+msgdata,hsmd_sign_any_local_htlc_tx,commit_num,u64,
+msgdata,hsmd_sign_any_local_htlc_tx,tx,bitcoin_tx,
+msgdata,hsmd_sign_any_local_htlc_tx,wscript_len,u16,
+msgdata,hsmd_sign_any_local_htlc_tx,wscript,u8,wscript_len
+msgdata,hsmd_sign_any_local_htlc_tx,option_anchor_outputs,bool,
+msgdata,hsmd_sign_any_local_htlc_tx,input,u32,
+msgdata,hsmd_sign_any_local_htlc_tx,peerid,node_id,
+msgdata,hsmd_sign_any_local_htlc_tx,channel_dbid,u64,

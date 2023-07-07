@@ -71,8 +71,9 @@ static bool public_msg_type(enum peer_wire type)
 	case WIRE_CHANNEL_READY:
 	case WIRE_OPEN_CHANNEL2:
 	case WIRE_ACCEPT_CHANNEL2:
-	case WIRE_INIT_RBF:
-	case WIRE_ACK_RBF:
+	case WIRE_TX_INIT_RBF:
+	case WIRE_TX_ACK_RBF:
+	case WIRE_TX_ABORT:
 	case WIRE_SHUTDOWN:
 	case WIRE_CLOSING_SIGNED:
 	case WIRE_UPDATE_ADD_HTLC:
@@ -91,9 +92,9 @@ static bool public_msg_type(enum peer_wire type)
 	case WIRE_REPLY_CHANNEL_RANGE:
 	case WIRE_GOSSIP_TIMESTAMP_FILTER:
 	case WIRE_ONION_MESSAGE:
-#if EXPERIMENTAL_FEATURES
+	case WIRE_PEER_STORAGE:
+	case WIRE_YOUR_PEER_STORAGE:
 	case WIRE_STFU:
-#endif
 		return false;
 	case WIRE_CHANNEL_ANNOUNCEMENT:
 	case WIRE_NODE_ANNOUNCEMENT:
@@ -108,7 +109,6 @@ static bool public_msg_type(enum peer_wire type)
 u8 *gossip_store_next(const tal_t *ctx,
 		      int *gossip_store_fd,
 		      u32 timestamp_min, u32 timestamp_max,
-		      bool push_only,
 		      bool with_spam,
 		      size_t *off, size_t *end)
 {
@@ -119,7 +119,7 @@ u8 *gossip_store_next(const tal_t *ctx,
 		struct gossip_hdr hdr;
 		u16 msglen, flags;
 		u32 checksum, timestamp;
-		bool push, ratelimited;
+		bool ratelimited;
 		int type, r;
 
 		r = pread(*gossip_store_fd, &hdr, sizeof(hdr), *off);
@@ -128,7 +128,6 @@ u8 *gossip_store_next(const tal_t *ctx,
 
 		msglen = be16_to_cpu(hdr.len);
 		flags = be16_to_cpu(hdr.flags);
-		push = (flags & GOSSIP_STORE_PUSH_BIT);
 		ratelimited = (flags & GOSSIP_STORE_RATELIMIT_BIT);
 
 		/* Skip any deleted entries. */
@@ -139,8 +138,7 @@ u8 *gossip_store_next(const tal_t *ctx,
 
 		/* Skip any timestamp filtered */
 		timestamp = be32_to_cpu(hdr.timestamp);
-		if (!push &&
-		    !timestamp_filter(timestamp_min, timestamp_max,
+		if (!timestamp_filter(timestamp_min, timestamp_max,
 				      timestamp)) {
 			*off += r + msglen;
 			continue;
@@ -170,8 +168,6 @@ u8 *gossip_store_next(const tal_t *ctx,
 			msg = tal_free(msg);
 		/* Ignore gossipd internal messages. */
 		} else if (!public_msg_type(type)) {
-			msg = tal_free(msg);
-		} else if (!push && push_only) {
 			msg = tal_free(msg);
 		} else if (!with_spam && ratelimited) {
 			msg = tal_free(msg);

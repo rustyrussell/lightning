@@ -123,11 +123,9 @@ void json_add_payment_fields(struct json_stream *response,
 	/* If we have a 0 amount delivered at the remote end we simply don't
 	 * know since the onion was generated externally. */
 	if (amount_msat_greater(t->msatoshi, AMOUNT_MSAT(0)))
-		json_add_amount_msat_compat(response, t->msatoshi, "msatoshi",
-					    "amount_msat");
+		json_add_amount_msat(response, "amount_msat", t->msatoshi);
 
-	json_add_amount_msat_compat(response, t->msatoshi_sent,
-				    "msatoshi_sent", "amount_sent_msat");
+	json_add_amount_msat(response, "amount_sent_msat", t->msatoshi_sent);
 	json_add_u32(response, "created_at", t->timestamp);
 	if (t->completed_at)
 		json_add_u32(response, "completed_at", *t->completed_at);
@@ -1031,7 +1029,7 @@ send_payment_core(struct lightningd *ld,
 
 	/* BOLT #4:
 	 *
-	 * - MUST NOT send another HTLC if the total `amount_msat` of the HTLC
+	 * - MUST NOT send another HTLC if the total `amt_to_forward` of the HTLC
 	 *   set is already greater or equal to `total_msat`.
 	 */
 	/* We don't do this for single 0-value payments (sendonion does this) */
@@ -1185,14 +1183,6 @@ send_payment(struct lightningd *ld,
 	 * BOLT04 */
 	ret = pubkey_from_node_id(&pubkey, &ids[i]);
 	assert(ret);
-
-	/* BOLT #4:
-	 * - Unless `node_announcement`, `init` message or the
-	 *   [BOLT #11](11-payment-encoding.md#tagged-fields) offers feature
-	 *   `var_onion_optin`:
-	 *    - MUST use the legacy payload format instead.
-	 */
-	/* FIXME: This requirement is now obsolete, and we should remove it! */
 
 	onion = onion_final_hop(cmd,
 				route[i].amount,
@@ -1656,6 +1646,7 @@ static struct command_result *json_delpay(struct command *cmd,
 						const jsmntok_t *obj UNNEEDED,
 						const jsmntok_t *params)
 {
+	const enum wallet_payment_status *found_status = NULL;
 	struct json_stream *response;
 	const struct wallet_payment **payments;
 	enum wallet_payment_status *status;
@@ -1688,21 +1679,26 @@ static struct command_result *json_delpay(struct command *cmd,
 		if (partid && payments[i]->partid != *partid)
 			continue;
 
-		found = true;
-		if (payments[i]->status != *status) {
-			return command_fail(cmd, PAY_STATUS_UNEXPECTED, "Payment with hash %s has %s status but it should be %s",
-					type_to_string(tmpctx, struct sha256, payment_hash),
-					payment_status_to_string(payments[i]->status),
-					payment_status_to_string(*status));
+		if (payments[i]->status == *status) {
+			found = true;
+			break;
 		}
+
+		found_status = &payments[i]->status;
 	}
 
 	if (!found) {
+		if (found_status)
+			return command_fail(cmd, PAY_NO_SUCH_PAYMENT, "Payment with hash %s has %s status but it different from the one provided %s",
+				type_to_string(tmpctx, struct sha256, payment_hash),
+				payment_status_to_string(*found_status),
+				payment_status_to_string(*status));
+
 		return command_fail(cmd, PAY_NO_SUCH_PAYMENT,
 				    "No payment for that payment_hash with that partid and groupid");
 	}
 
-	wallet_payment_delete(cmd->ld->wallet, payment_hash, partid, groupid);
+	wallet_payment_delete(cmd->ld->wallet, payment_hash, groupid, partid, status);
 
 	response = json_stream_success(cmd);
 	json_array_start(response, "payments");
@@ -1710,6 +1706,8 @@ static struct command_result *json_delpay(struct command *cmd,
 		if (groupid && payments[i]->groupid != *groupid)
 			continue;
 		if (partid && payments[i]->partid != *partid)
+			continue;
+		if (payments[i]->status != *status)
 			continue;
 		json_object_start(response, NULL);
 		json_add_payment_fields(response, payments[i]);

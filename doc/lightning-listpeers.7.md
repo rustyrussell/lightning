@@ -43,6 +43,7 @@ On success, an object containing **peers** is returned.  It is an array of objec
 
 - **id** (pubkey): the public key of the peer
 - **connected** (boolean): True if the peer is currently connected
+- **num\_channels** (u32): The number of channels the peer has with this node *(added v23.02)*
 - **log** (array of objects, optional): if *level* is specified, logs for this peer:
   - **type** (string) (one of "SKIPPED", "BROKEN", "UNUSUAL", "INFO", "DEBUG", "IO\_IN", "IO\_OUT")
 
@@ -68,7 +69,7 @@ On success, an object containing **peers** is returned.  It is an array of objec
   - **state** (string): the channel state, in particular "CHANNELD\_NORMAL" means the channel can be used normally (one of "OPENINGD", "CHANNELD\_AWAITING\_LOCKIN", "CHANNELD\_NORMAL", "CHANNELD\_SHUTTING\_DOWN", "CLOSINGD\_SIGEXCHANGE", "CLOSINGD\_COMPLETE", "AWAITING\_UNILATERAL", "FUNDING\_SPEND\_SEEN", "ONCHAIN", "DUALOPEND\_OPEN\_INIT", "DUALOPEND\_AWAITING\_LOCKIN")
   - **opener** (string): Who initiated the channel (one of "local", "remote")
   - **features** (array of strings):
-    - BOLT #9 features which apply to this channel (one of "option\_static\_remotekey", "option\_anchor\_outputs", "option\_zeroconf")
+    - BOLT #9 features which apply to this channel (one of "option\_static\_remotekey", "option\_anchor\_outputs", "option\_scid\_alias", "option\_zeroconf")
   - **scratch\_txid** (txid, optional): The txid we would use if we went onchain now
   - **feerate** (object, optional): Feerates for the current tx:
     - **perkw** (u32): Feerate per 1000 weight (i.e kSipa)
@@ -95,8 +96,6 @@ On success, an object containing **peers** is returned.  It is an array of objec
   - **funding** (object, optional):
     - **local\_funds\_msat** (msat): Amount of channel we funded
     - **remote\_funds\_msat** (msat): Amount of channel they funded
-    - **local\_msat** (msat, optional): Amount of channel we funded **deprecated, removal in v23.05**
-    - **remote\_msat** (msat, optional): Amount of channel they funded **deprecated, removal in v23.05**
     - **pushed\_msat** (msat, optional): Amount pushed from opener to peer
     - **fee\_paid\_msat** (msat, optional): Amount we paid peer at open
     - **fee\_rcvd\_msat** (msat, optional): Amount we were paid by peer at open
@@ -399,4 +398,4 @@ Main web site: <https://github.com/ElementsProject/lightning> Lightning
 RFC site (BOLT \#9):
 <https://github.com/lightning/bolts/blob/master/09-features.md>
 
-[comment]: # ( SHA256STAMP:b89450ac6f27e051003bcf0a382b51e117e2832729e9d80b0015d9cebfacfa2c)
+[comment]: # ( SHA256STAMP:c0d0cc8f083168fd76caa2430a7c7d27d72a5273c55fb14b0efcbcb7a87274f4)

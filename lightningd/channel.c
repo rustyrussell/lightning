@@ -12,13 +12,13 @@
 #include <lightningd/channel.h>
 #include <lightningd/channel_state_names_gen.h>
 #include <lightningd/connect_control.h>
+#include <lightningd/hsm_control.h>
 #include <lightningd/notification.h>
 #include <lightningd/opening_common.h>
 #include <lightningd/peer_control.h>
 #include <lightningd/subd.h>
 #include <wallet/txfilter.h>
 #include <wire/peer_wire.h>
-#include <wire/wire_sync.h>
 
 void channel_set_owner(struct channel *channel, struct subd *owner)
 {
@@ -103,14 +103,11 @@ void get_channel_basepoints(struct lightningd *ld,
 			    struct basepoints *local_basepoints,
 			    struct pubkey *local_funding_pubkey)
 {
-	u8 *msg;
+	const u8 *msg;
 
 	assert(dbid != 0);
 	msg = towire_hsmd_get_channel_basepoints(NULL, peer_id, dbid);
-	if (!wire_sync_write(ld->hsm_fd, take(msg)))
-		fatal("Could not write to HSM: %s", strerror(errno));
-
-	msg = wire_sync_read(tmpctx, ld->hsm_fd);
+	msg = hsm_sync_req(tmpctx, ld, take(msg));
 	if (!fromwire_hsmd_get_channel_basepoints_reply(msg, local_basepoints,
 						       local_funding_pubkey))
 		fatal("HSM gave bad hsm_get_channel_basepoints_reply %s",
@@ -135,7 +132,8 @@ new_inflight(struct channel *channel,
 	     const secp256k1_ecdsa_signature *lease_commit_sig,
 	     const u32 lease_chan_max_msat, const u16 lease_chan_max_ppt,
 	     const u32 lease_blockheight_start,
-	     const struct amount_msat lease_fee)
+	     const struct amount_msat lease_fee,
+	     const struct amount_sat lease_amt)
 {
 	struct wally_psbt *last_tx_psbt_clone;
 	struct channel_inflight *inflight
@@ -169,6 +167,7 @@ new_inflight(struct channel *channel,
 	inflight->lease_chan_max_msat = lease_chan_max_msat;
 	inflight->lease_chan_max_ppt = lease_chan_max_ppt;
 	inflight->lease_fee = lease_fee;
+	inflight->lease_amt = lease_amt;
 
 	list_add_tail(&channel->inflights, &inflight->list);
 	tal_add_destructor(inflight, destroy_inflight);
@@ -197,7 +196,7 @@ struct channel *new_unsaved_channel(struct peer *peer,
 {
 	struct lightningd *ld = peer->ld;
 	struct channel *channel = tal(ld, struct channel);
-	u8 *msg;
+	const u8 *msg;
 
 	channel->peer = peer;
 	/* Not saved to the database yet! */
@@ -246,15 +245,15 @@ struct channel *new_unsaved_channel(struct peer *peer,
 	channel->old_feerate_timeout.ts.tv_nsec = 0;
 	/* closer not yet known */
 	channel->closer = NUM_SIDES;
+	channel->close_blockheight = NULL;
 
 	/* BOLT-7b04b1461739c5036add61782d58ac490842d98b #9
 	 * | 222/223 | `option_dual_fund`
 	 * | Use v2 of channel open, enables dual funding
-	 * | IN9
-	 * | `option_anchor_outputs`    */
+	 * | IN9 */
 	channel->static_remotekey_start[LOCAL]
 		= channel->static_remotekey_start[REMOTE] = 0;
-	channel->type = channel_type_anchor_outputs(channel);
+
 	channel->future_per_commitment_point = NULL;
 
 	channel->lease_commit_sig = NULL;
@@ -264,9 +263,7 @@ struct channel *new_unsaved_channel(struct peer *peer,
 	shachain_init(&channel->their_shachain.chain);
 
 	msg = towire_hsmd_new_channel(NULL, &peer->id, channel->unsaved_dbid);
-	if (!wire_sync_write(ld->hsm_fd, take(msg)))
-		fatal("Could not write to HSM: %s", strerror(errno));
-	msg = wire_sync_read(tmpctx, ld->hsm_fd);
+	msg = hsm_sync_req(tmpctx, ld, take(msg));
 	if (!fromwire_hsmd_new_channel_reply(msg))
 		fatal("HSM gave bad hsm_new_channel_reply %s",
 		      tal_hex(msg, msg));
@@ -335,6 +332,8 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 			    struct log *log,
 			    const char *transient_billboard TAKES,
 			    u8 channel_flags,
+			    bool req_confirmed_ins_local,
+			    bool req_confirmed_ins_remote,
 			    const struct channel_config *our_config,
 			    u32 minimum_depth,
 			    u64 next_index_local,
@@ -412,14 +411,20 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 	channel->owner = NULL;
 	memset(&channel->billboard, 0, sizeof(channel->billboard));
 	channel->billboard.transient = tal_strdup(channel, transient_billboard);
-	channel->scb = tal(channel, struct scb_chan);
-	channel->scb->id = dbid;
-	channel->scb->addr = peer->addr;
-	channel->scb->node_id = peer->id;
-	channel->scb->funding = *funding;
-	channel->scb->cid = *cid;
-	channel->scb->funding_sats = funding_sats;
-	channel->scb->type = channel_type_dup(channel->scb, type);
+
+	/* If it's a unix domain socket connection, we don't save it */
+	if (peer->addr.itype == ADDR_INTERNAL_WIREADDR) {
+		channel->scb = tal(channel, struct scb_chan);
+		channel->scb->id = dbid;
+		channel->scb->unused = 0;
+		channel->scb->addr = peer->addr.u.wireaddr.wireaddr;
+		channel->scb->node_id = peer->id;
+		channel->scb->funding = *funding;
+		channel->scb->cid = *cid;
+		channel->scb->funding_sats = funding_sats;
+		channel->scb->type = channel_type_dup(channel->scb, type);
+	} else
+		channel->scb = NULL;
 
 	if (!log) {
 		channel->log = new_log(channel,
@@ -429,6 +434,8 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 				       dbid);
 	} else
 		channel->log = tal_steal(channel, log);
+	channel->req_confirmed_ins[LOCAL] = req_confirmed_ins_local;
+	channel->req_confirmed_ins[REMOTE] = req_confirmed_ins_remote;
 	channel->channel_flags = channel_flags;
 	channel->our_config = *our_config;
 	channel->minimum_depth = minimum_depth;
@@ -518,6 +525,7 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 	list_head_init(&channel->inflights);
 
 	channel->closer = closer;
+	channel->close_blockheight = NULL;
 	channel->state_change_cause = reason;
 
 	/* Make sure we see any spends using this key */
@@ -612,7 +620,7 @@ struct channel *any_channel_by_scid(struct lightningd *ld,
 	     p;
 	     p = peer_node_id_map_next(ld->peers, &it)) {
 		list_for_each(&p->channels, chan, list) {
-			/* BOLT-channel-type #2:
+			/* BOLT #2:
 			 * - MUST always recognize the `alias` as a
 			 *   `short_channel_id` for incoming HTLCs to this
 			 *   channel.
@@ -620,16 +628,13 @@ struct channel *any_channel_by_scid(struct lightningd *ld,
 			if (chan->alias[LOCAL] &&
 			    short_channel_id_eq(scid, chan->alias[LOCAL]))
 				return chan;
-			/* BOLT-channel-type #2:
+			/* BOLT #2:
 			 * - if `channel_type` has `option_scid_alias` set:
 			 *   - MUST NOT allow incoming HTLCs to this channel
 			 *     using the real `short_channel_id`
 			 */
-			/* FIXME: We don't keep type is db, so assume all
-			 * private channels which support aliases want this! */
 			if (!privacy_leak_ok
-			    && chan->alias[REMOTE]
-			    && !(chan->channel_flags & CHANNEL_FLAGS_ANNOUNCE_CHANNEL))
+			    && channel_type_has(chan->type, OPT_SCID_ALIAS))
 				continue;
 			if (chan->scid
 			    && short_channel_id_eq(scid, chan->scid))
@@ -958,6 +963,10 @@ void channel_set_billboard(struct channel *channel, bool perm, const char *str)
 
 static void channel_err(struct channel *channel, const char *why)
 {
+	/* Nothing to do if channel isn't actually owned! */
+	if (!channel->owner)
+		return;
+
 	log_info(channel->log, "Peer transient failure in %s: %s",
 		 channel_state_name(channel), why);
 
@@ -970,15 +979,6 @@ static void channel_err(struct channel *channel, const char *why)
 	}
 #endif
 	channel_set_owner(channel, NULL);
-}
-
-void channel_fail_transient_delayreconnect(struct channel *channel, const char *fmt, ...)
-{
-	va_list ap;
-
-	va_start(ap, fmt);
-	channel_err(channel, tal_vfmt(tmpctx, fmt, ap));
-	va_end(ap);
 }
 
 void channel_fail_transient(struct channel *channel, const char *fmt, ...)
