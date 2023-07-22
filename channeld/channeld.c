@@ -1972,9 +1972,10 @@ static void handle_peer_fail_malformed_htlc(struct peer *peer, const u8 *msg)
 	 *       `error` and fail the channel.
 	 */
 	if (!(failure_code & BADONION)) {
-		peer_failed_warn(peer->pps, &peer->channel_id,
-				 "Bad update_fail_malformed_htlc failure code %u",
-				 failure_code);
+		status_unusual("Bad update_fail_malformed_htlc failure code %u",
+			       failure_code);
+		/* We require this internally. */
+		failure_code |= BADONION;
 	}
 
 	e = channel_fail_htlc(peer->channel, LOCAL, id, &htlc);
