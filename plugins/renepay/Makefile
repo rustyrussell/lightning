@@ -7,7 +7,6 @@ PLUGIN_RENEPAY_OBJS := $(PLUGIN_RENEPAY_SRC:.c=.o)
 # Make sure these depend on everything.
 ALL_C_SOURCES += $(PLUGIN_RENEPAY_SRC)
 ALL_C_HEADERS += $(PLUGIN_RENEPAY_HDRS)
-ALL_PROGRAMS += plugins/cln-renepay
 
 # Make all plugins depend on all plugin headers, for simplicity.
 $(PLUGIN_RENEPAY_OBJS): $(PLUGIN_RENEPAY_HDRS)
