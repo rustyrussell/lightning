@@ -832,6 +832,7 @@ static int find_feasible_flow(
 /* Similar to `find_admissible_path` but use Dijkstra to optimize the distance
  * label. Stops when the target is hit. */
 static int  find_optimal_path(
+		struct dijkstra *dijkstra,
 		const struct linear_network *linear_network,
 		const struct residual_network* residual_network,
 		const u32 source,
@@ -847,15 +848,15 @@ static int  find_optimal_path(
 	for(size_t i=0;i<tal_count(prev);++i)
 		prev[i].idx=INVALID_INDEX;
 
-	s64 const * const distance=dijkstra_distance_data();
+	s64 const * const distance=dijkstra_distance_data(dijkstra);
 
-	dijkstra_init();
-	dijkstra_update(source,0);
+	dijkstra_init(dijkstra);
+	dijkstra_update(dijkstra,source,0);
 
-	while(!dijkstra_empty())
+	while(!dijkstra_empty(dijkstra))
 	{
-		u32 cur = dijkstra_top();
-		dijkstra_pop();
+		u32 cur = dijkstra_top(dijkstra);
+		dijkstra_pop(dijkstra);
 
 		if(bitmap_test_bit(visited,cur))
 			continue;
@@ -888,7 +889,7 @@ static int  find_optimal_path(
 			if(distance[next]<=distance[cur]+cij)
 				continue;
 
-			dijkstra_update(next,distance[cur]+cij);
+			dijkstra_update(dijkstra,next,distance[cur]+cij);
 			prev[next]=arc;
 		}
 	}
@@ -928,6 +929,7 @@ static void zero_flow(
  * current iteration but I might be not too far from the truth.
  * It comes to mind to use cycle cancelling. */
 static int optimize_mcf(
+		struct dijkstra *dijkstra,
 		const struct linear_network *linear_network,
 		struct residual_network *residual_network,
 		const u32 source,
@@ -942,13 +944,13 @@ static int optimize_mcf(
 	zero_flow(linear_network,residual_network);
 	arc_t *prev = tal_arr(this_ctx,arc_t,linear_network->max_num_nodes);
 
-	s64 const*const distance = dijkstra_distance_data();
+	s64 const*const distance = dijkstra_distance_data(dijkstra);
 
 	s64 remaining_amount = amount;
 
 	while(remaining_amount>0)
 	{
-		int err = find_optimal_path(linear_network,residual_network,source,target,prev);
+		int err = find_optimal_path(dijkstra,linear_network,residual_network,source,target,prev);
 		if(err!=RENEPAY_ERR_OK)
 		{
 			// unexpected error
@@ -1351,6 +1353,7 @@ struct flow** minflow(
 	tal_t *this_ctx = tal(tmpctx,tal_t);
 
 	struct pay_parameters *params = tal(this_ctx,struct pay_parameters);
+	struct dijkstra *dijkstra;
 
 	params->gossmap = gossmap;
 	params->source = source;
@@ -1390,7 +1393,7 @@ struct flow** minflow(
 	struct residual_network *residual_network = tal(this_ctx,struct residual_network);
 	alloc_residual_netork(linear_network,residual_network);
 
-	dijkstra_malloc(this_ctx,gossmap_max_node_idx(params->gossmap));
+	dijkstra = dijkstra_new(this_ctx, gossmap_max_node_idx(params->gossmap));
 
 	const u32 target_idx = gossmap_node_idx(params->gossmap,target);
 	const u32 source_idx = gossmap_node_idx(params->gossmap,source);
@@ -1451,7 +1454,7 @@ struct flow** minflow(
 
 		combine_cost_function(linear_network,residual_network,mu);
 
-		optimize_mcf(linear_network,residual_network,
+		optimize_mcf(dijkstra,linear_network,residual_network,
 				source_idx,target_idx,pay_amount_sats);
 
 		struct flow **flow_paths;
