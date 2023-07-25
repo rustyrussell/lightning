@@ -100,6 +100,7 @@ C_PLUGINS :=					\
 	plugins/offers				\
 	plugins/pay				\
 	plugins/txprepare			\
+	plugins/cln-renepay			\
 	plugins/spenderp
 
 ifeq ($(HAVE_SQLITE3),1)
@@ -173,6 +174,7 @@ PLUGIN_COMMON_OBJS :=				\
 	wire/towire.o
 
 include plugins/bkpr/Makefile
+include plugins/renepay/Makefile
 
 # Make sure these depend on everything.
 ALL_C_SOURCES += $(PLUGIN_ALL_SRC)
