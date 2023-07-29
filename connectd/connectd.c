@@ -1971,6 +1971,24 @@ static const char *try_tal_name(const tal_t *ctx, const void *p)
 	return tal_fmt(ctx, "%p", p);
 }
 
+static char *get_fd_dest(const tal_t *ctx, int fd)
+{
+	char link[PATH_MAX+1];
+	ssize_t len;
+
+	/* Linux */
+	len = readlink(tal_fmt(tmpctx, "/proc/self/fd/%i", fd), link, sizeof(link) - 1);
+	if (len == -1) {
+		/* MacOS / FreeBSD */
+		len = readlink(tal_fmt(tmpctx, "/dev/fd/%i", fd), link, sizeof(link) - 1);
+		if (len == -1)
+			return NULL;
+	}
+
+	return tal_strndup(ctx, link, len);
+}
+
+
 static void dev_report_fds(struct daemon *daemon, const u8 *msg)
 {
 	for (int fd = 3; fd < 4096; fd++) {
@@ -1999,7 +2017,16 @@ static void dev_report_fds(struct daemon *daemon, const u8 *msg)
 		}
 		c = io_have_fd(fd, &listener);
 		if (!c) {
-			status_broken("dev_report_fds: %i open but unowned?", fd);
+			const char *dst = get_fd_dest(tmpctx, fd);
+			/* libsodium can open /dev/urandom on MacOS (reported
+			 * by Aditya Sharma); the source indicates it can also
+			 * open /dev/random, so cover both. */
+			if (dst && (streq(dst, "/dev/random") || streq(dst, "/dev/urandom"))) {
+				status_info("dev_report_fds: %i -> %s (libsodium)", fd, dst);
+				continue;
+			}
+			status_broken("dev_report_fds: %i open (to %s) but unowned?",
+				      fd, dst ? dst : "UNKNOWN");
 			continue;
 		} else if (listener) {
 			l = (void *)c;
