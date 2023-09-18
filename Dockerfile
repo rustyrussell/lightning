@@ -107,7 +107,6 @@ COPY . /tmp/lightning
 RUN git clone --recursive /tmp/lightning . && \
     git checkout $(git --work-tree=/tmp/lightning --git-dir=/tmp/lightning/.git rev-parse HEAD)
 
-ARG DEVELOPER=1
 ENV PYTHON_VERSION=3
 RUN curl -sSL https://install.python-poetry.org | python3 -
 
@@ -120,7 +119,7 @@ RUN pip3 install grpcio-tools
 RUN /root/.local/bin/poetry install
 
 RUN ./configure --prefix=/tmp/lightning_install --enable-static && \
-    make DEVELOPER=${DEVELOPER} && \
+    make && \
     /root/.local/bin/poetry run make install
 
 RUN pip3 install -r plugins/clnrest/requirements.txt

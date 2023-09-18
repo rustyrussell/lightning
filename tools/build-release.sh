@@ -184,7 +184,7 @@ if [ -z "${TARGETS##* tarball *}" ]; then
 	# Materialize the version in the Makefile, allows us to skip
 	# the git dependency
 	sed -i "/^VERSION=/c\VERSION=v${BARE_VERSION}" "Makefile"
-	./configure --disable-valgrind --enable-developer
+	./configure --disable-valgrind --enable-debugbuild
 	make doc-all check-gen-updated clean
 	find . -name .git -type d -print0 | xargs -0 /bin/rm -rf
     )
