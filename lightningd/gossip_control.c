@@ -453,6 +453,9 @@ void tell_gossipd_local_channel_announce(struct lightningd *ld,
 		return;
 	}
 
+	/* Remove any peer private updates from db: they're in gossipd's hands now */
+	Save in db, remove...
+		
 	/* As we're shutting down, ignore */
 	if (!ld->gossip)
 		return;
