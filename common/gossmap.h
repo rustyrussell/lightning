@@ -18,7 +18,8 @@ struct gossmap_node {
 
 struct gossmap_chan {
 	u32 cann_off;
-	u32 private: 1;
+	/* This is only set on locally added channels */
+	u32 local_added: 1;
 	/* Technically redundant, but we have a hole anyway: from cann_off */
 	u32 plus_scid_off: 31;
 	/* Offsets of cupdates (0 if missing).  Logically inside half_chan,

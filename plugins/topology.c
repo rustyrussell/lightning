@@ -477,15 +477,12 @@ static void json_add_halfchan(struct json_stream *response,
 		if (!gossmap_chan_set(c, dir))
 			continue;
 
-		if (c->private)
-			continue;
-
 		json_object_start(response, NULL);
 		json_add_node_id(response, "source", &node_id[dir]);
 		json_add_node_id(response, "destination", &node_id[!dir]);
 		json_add_short_channel_id(response, "short_channel_id", &scid);
 		json_add_num(response, "direction", dir);
-		json_add_bool(response, "public", !c->private);
+		json_add_bool(response, "public", true);
 
 		gossmap_chan_get_update_details(gossmap, c, dir,
 						&timestamp,
@@ -1241,9 +1238,6 @@ static struct command_result *listprivateinbound_done(struct command *cmd,
 		struct amount_msat htlc_max;
 
 		ourchan = gossmap_nth_chan(gossmap, me, i, &dir);
-		/* FIXME: Rip out once private gossip removed. */
-		if (ourchan->private)
-			continue;
 		/* Entirely missing?  Ignore. */
 		if (ourchan->cupdate_off[!dir] == 0)
 			continue;

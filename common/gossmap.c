@@ -321,11 +321,11 @@ static u32 init_chan_arr(struct gossmap_chan *chan_arr, size_t start)
 		/* We don't need to initialize this, *but* on some platforms
 		 * (ppc, arm64) valgrind complains: this is a bitfield shared
 		 * with plus_scid_off */
-		chan_arr[i].private = false;
+		chan_arr[i].local_added = false;
 	}
 	chan_arr[i].cann_off = UINT_MAX;
 	chan_arr[i].plus_scid_off = 0;
-	chan_arr[i].private = false;
+	chan_arr[i].local_added = false;
 	return start;
 }
 
@@ -350,13 +350,13 @@ static struct gossmap_chan *next_free_chan(struct gossmap *map)
 static struct gossmap_chan *new_channel(struct gossmap *map,
 					u32 cannounce_off,
 					u32 plus_scid_off,
-					bool private,
+					bool local_added,
 					u32 n1idx, u32 n2idx)
 {
 	struct gossmap_chan *chan = next_free_chan(map);
 
 	chan->cann_off = cannounce_off;
-	chan->private = private;
+	chan->local_added = local_added;
 	chan->plus_scid_off = plus_scid_off;
 	chan->cupdate_off[0] = chan->cupdate_off[1] = 0;
 	memset(chan->half, 0, sizeof(chan->half));
@@ -422,7 +422,7 @@ void gossmap_remove_node(struct gossmap *map, struct gossmap_node *node)
  */
 static struct gossmap_chan *add_channel(struct gossmap *map,
 					size_t cannounce_off,
-					bool private)
+					bool local_added)
 {
 	/* Note that first two bytes are message type */
 	const size_t feature_len_off = 2 + (64 + 64 + 64 + 64);
@@ -440,8 +440,8 @@ static struct gossmap_chan *add_channel(struct gossmap *map,
 	map_nodeid(map, cannounce_off + plus_scid_off + 8, &node_id[0]);
 	map_nodeid(map, cannounce_off + plus_scid_off + 8 + PUBKEY_CMPR_LEN, &node_id[1]);
 
-	/* We can have a channel upgrade from private->public, but
-	 * that's the only time we get duplicates */
+	/* We can have a channel dups only if it's removed and re-added, which
+	 * is weird, but allow it. */
 	scid.u64 = map_be64(map, cannounce_off + plus_scid_off);
 	chan = gossmap_find_chan(map, &scid);
 	if (chan)
@@ -460,7 +460,7 @@ static struct gossmap_chan *add_channel(struct gossmap *map,
 	else
 		nidx[1] = new_node(map);
 
-	chan = new_channel(map, cannounce_off, plus_scid_off, private,
+	chan = new_channel(map, cannounce_off, plus_scid_off, local_added,
 			   nidx[0], nidx[1]);
 
 	/* Now we have a channel, we can add nodes to htable */
@@ -636,12 +636,8 @@ static bool map_catchup(struct gossmap *map, size_t *num_rejected)
 		type = map_be16(map, off);
 		if (type == WIRE_CHANNEL_ANNOUNCEMENT)
 			add_channel(map, off, false);
-		else if (type == WIRE_GOSSIP_STORE_PRIVATE_CHANNEL_OBS)
-			add_channel(map, off + 2 + 8 + 2, true);
 		else if (type == WIRE_CHANNEL_UPDATE)
 			num_bad += !update_channel(map, off);
-		else if (type == WIRE_GOSSIP_STORE_PRIVATE_UPDATE_OBS)
-			num_bad += !update_channel(map, off + 2 + 2);
 		else if (type == WIRE_GOSSIP_STORE_DELETE_CHAN)
 			remove_channel_by_deletemsg(map, off);
 		else if (type == WIRE_NODE_ANNOUNCEMENT)
@@ -1011,13 +1007,6 @@ bool gossmap_chan_get_capacity(const struct gossmap *map,
 	if (c->cann_off >= map->map_size)
 		return false;
 
-	/* For private, we need to go back WIRE_GOSSIP_STORE_PRIVATE_CHANNEL,
-	 * which is 8 (satoshis) + 2 (len) */
-	if (c->private) {
-		*amount = amount_sat(map_be64(map, c->cann_off - 8 - 2));
-		return true;
-	}
-
 	/* Skip over this record to next; expect a gossip_store_channel_amount */
 	off = c->cann_off - sizeof(ghdr);
 	map_copy(map, off, &ghdr, sizeof(ghdr));
@@ -1137,14 +1126,7 @@ u8 *gossmap_chan_get_announce(const tal_t *ctx,
 {
 	u16 len;
 	u8 *msg;
-	u32 pre_off;
-
-	/* We need to go back to struct gossip_hdr to get len */
-	if (c->private)
-		pre_off = 2 + 8 + 2 + sizeof(struct gossip_hdr);
-	else
-		pre_off = sizeof(struct gossip_hdr);
-	len = map_be16(map, c->cann_off - pre_off
+	len = map_be16(map, c->cann_off - sizeof(struct gossip_hdr)
 		       + offsetof(struct gossip_hdr, len));
 
 	msg = tal_arr(ctx, u8, len);
