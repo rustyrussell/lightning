@@ -34,7 +34,6 @@
 #include <common/peer_failed.h>
 #include <common/peer_io.h>
 #include <common/per_peer_state.h>
-#include <common/private_channel_announcement.h>
 #include <common/psbt_internal.h>
 #include <common/psbt_open.h>
 #include <common/read_peer_msg.h>
