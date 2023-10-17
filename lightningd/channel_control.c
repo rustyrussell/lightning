@@ -1145,6 +1145,7 @@ static void handle_local_private_channel(struct channel *channel, const u8 *msg)
 	struct amount_sat capacity;
 	u8 *features;
 
+	/* FIXME: We don't need this any more. */
 	if (!fromwire_channeld_local_private_channel(msg, msg, &capacity,
 						     &features)) {
 		channel_internal_error(channel,
@@ -1152,9 +1153,6 @@ static void handle_local_private_channel(struct channel *channel, const u8 *msg)
 				       tal_hex(channel, msg));
 		return;
 	}
-
-	tell_gossipd_local_private_channel(channel->peer->ld, channel,
-					   capacity, features);
 }
 
 static void forget_channel(struct channel *channel, const char *why)

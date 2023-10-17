@@ -1589,6 +1589,7 @@ static void handle_local_private_channel(struct subd *dualopend,
 	struct amount_sat capacity;
 	u8 *features;
 
+	/* FIXME: We don't need this any more. */
 	if (!fromwire_dualopend_local_private_channel(msg, msg, &capacity,
 						      &features)) {
 		channel_internal_error(dualopend->channel,
@@ -1596,9 +1597,6 @@ static void handle_local_private_channel(struct subd *dualopend,
 				       tal_hex(msg, msg));
 		return;
 	}
-
-	tell_gossipd_local_private_channel(dualopend->ld, dualopend->channel,
-					   capacity, features);
 }
 
 struct channel_send {

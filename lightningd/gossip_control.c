@@ -271,7 +271,6 @@ static unsigned gossip_msg(struct subd *gossip, const u8 *msg, const int *fds)
 	case WIRE_GOSSIPD_USED_LOCAL_CHANNEL_UPDATE:
 	case WIRE_GOSSIPD_LOCAL_CHANNEL_UPDATE:
 	case WIRE_GOSSIPD_LOCAL_CHANNEL_ANNOUNCEMENT:
-	case WIRE_GOSSIPD_LOCAL_PRIVATE_CHANNEL:
 	/* This is a reply, so never gets through to here. */
 	case WIRE_GOSSIPD_INIT_REPLY:
 	case WIRE_GOSSIPD_DEV_MEMLEAK_REPLY:
@@ -463,46 +462,6 @@ void tell_gossipd_local_channel_announce(struct lightningd *ld,
 	subd_send_msg(ld->gossip,
 		      take(towire_gossipd_local_channel_announcement
 			   (NULL, &channel->peer->id, ann)));
-}
-
-void tell_gossipd_local_private_channel(struct lightningd *ld,
-					struct channel *channel,
-					struct amount_sat capacity,
-					const u8 *features)
-{
-	/* Which short_channel_id should we use to refer to this channel when
-	 * creating invoices? */
-	const struct short_channel_id *scid;
-
-	/* As we're shutting down, ignore */
-	if (!ld->gossip)
-		return;
-
-	if (channel->scid != NULL) {
-		scid = channel->scid;
-	} else {
-		scid = channel->alias[REMOTE];
-	}
-
-	assert(scid != NULL);
-	subd_send_msg(ld->gossip,
-		      take(towire_gossipd_local_private_channel
-			   (NULL, &channel->peer->id,
-			    capacity,
-			    scid,
-			    features)));
-
-	/* If we have no real scid, and there are two different
-	 * aliases, then we need to add both as single direction
-	 * channels to the local gossip_store. */
-	if ((!channel->scid && channel->alias[LOCAL]) &&
-	    !short_channel_id_eq(channel->alias[REMOTE],
-				 channel->alias[LOCAL])) {
-		subd_send_msg(ld->gossip,
-			      take(towire_gossipd_local_private_channel(
-				  NULL, &channel->peer->id, capacity,
-				  channel->alias[LOCAL], features)));
-	}
 }
 
 static struct command_result *json_setleaserates(struct command *cmd,
