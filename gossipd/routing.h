@@ -435,4 +435,16 @@ bool node_has_broadcastable_channels(const struct node *node);
 const char *unfinalized_entries(const tal_t *ctx, struct routing_state *rstate);
 
 void remove_all_gossip(struct routing_state *rstate);
+
+/* We don't want this update, do you? */
+void tell_lightningd_private_update(struct routing_state *rstate,
+				    const struct node_id *source_peer,
+				    struct short_channel_id scid,
+				    u32 fee_base_msat,
+				    u32 fee_ppm,
+				    u16 cltv_delta,
+				    struct amount_msat htlc_minimum,
+				    struct amount_msat htlc_maximum,
+				    u8 channel_flags,
+				    u32 timestamp);
 #endif /* LIGHTNING_GOSSIPD_ROUTING_H */
