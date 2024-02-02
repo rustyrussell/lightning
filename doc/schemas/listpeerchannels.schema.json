@@ -360,11 +360,11 @@
           },
           "min_to_us_msat": {
             "type": "msat",
-            "description": "Least amount owed to us ever.  If the peer were to succesfully steal from us, this is the amount we would still retain."
+            "description": "Least amount owed to us ever. If the peer were to succesfully steal from us, this is the amount we would still retain."
           },
           "max_to_us_msat": {
             "type": "msat",
-            "description": "Most amount owed to us ever.  If we were to successfully steal from the peer, this is the amount we could potentially get."
+            "description": "Most amount owed to us ever. If we were to successfully steal from the peer, this is the amount we could potentially get."
           },
           "total_msat": {
             "type": "msat",
@@ -388,7 +388,7 @@
           },
           "their_reserve_msat": {
             "type": "msat",
-            "description": "Minimum we insist they keep in channel (default is 1% of the total channel capacity).  If they have less than this in the channel, they cannot send to us on that channel"
+            "description": "Minimum we insist they keep in channel (default is 1% of the total channel capacity). If they have less than this in the channel, they cannot send to us on that channel"
           },
           "our_reserve_msat": {
             "type": "msat",
@@ -594,7 +594,7 @@
                 },
                 "expiry": {
                   "type": "u32",
-                  "description": "Block this HTLC expires at (after which an `in` direction HTLC will be returned to the peer, an `out` returned to us).  If this expiry is too close, lightningd(8) will automatically unilaterally close the channel in order to enforce the timeout onchain."
+                  "description": "Block this HTLC expires at (after which an `in` direction HTLC will be returned to the peer, an `out` returned to us). If this expiry is too close, lightningd(8) will automatically unilaterally close the channel in order to enforce the timeout onchain."
                 },
                 "payment_hash": {
                   "type": "hash",
@@ -605,7 +605,7 @@
                   "enum": [
                     true
                   ],
-                  "description": "If this is too small to enforce onchain; it doesn't appear in the commitment transaction and will not be enforced in a unilateral close.  Generally true if the HTLC (after subtracting onchain fees) is below the `dust_limit_msat` for the channel."
+                  "description": "If this is too small to enforce onchain; it doesn't appear in the commitment transaction and will not be enforced in a unilateral close. Generally true if the HTLC (after subtracting onchain fees) is below the `dust_limit_msat` for the channel."
                 },
                 "status": {
                   "type": "string",

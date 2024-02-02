@@ -21,11 +21,11 @@
         "properties": {
           "txid": {
             "type": "txid",
-            "description": "the transaction id"
+            "description": "the input transaction id"
           },
           "vout": {
             "type": "u32",
-            "description": "the output number which was reserved"
+            "description": "the input index output number which was reserved"
           },
           "was_reserved": {
             "type": "boolean",
