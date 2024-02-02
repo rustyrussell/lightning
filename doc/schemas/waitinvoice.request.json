@@ -14,7 +14,8 @@
         {
           "type": "integer"
         }
-      ]
+      ],
+	"description": "unique label of the invoice waiting to be paid"
     }
   }
 }
