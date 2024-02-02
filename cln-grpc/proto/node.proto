@@ -1906,6 +1906,11 @@ message StopRequest {
 }
 
 message StopResponse {
+	// Stop.result
+	enum StopResult {
+		SHUTDOWN_COMPLETE = 0;
+	}
+	optional StopResult result = 1;
 }
 
 message PreapprovekeysendRequest {

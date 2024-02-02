@@ -334,6 +334,9 @@
             "complete": 1,
             "pending": 0
         },
+        "StopResult": {
+            "Shutdown complete": 0
+        },
         "WaitIndexname": {
             "created": 0,
             "deleted": 2,
@@ -1634,6 +1637,9 @@
         },
         "StaticbackupResponse": {
             "StaticBackup.scb[]": 1
+        },
+        "StopResponse": {
+            "Stop.result": 1
         },
         "TxdiscardRequest": {
             "TxDiscard.txid": 1
@@ -5785,6 +5791,10 @@
         "Stop": {
             "added": "pre-v0.10.1",
             "deprecated": null
+        },
+        "Stop.result": {
+            "added": "v24.05",
+            "deprecated": false
         },
         "TxDiscard": {
             "added": "pre-v0.10.1",
