@@ -391,6 +391,13 @@ def _extra_validator(is_request: bool):
             return True
         return is_msat_request(checker, instance)
 
+    def is_msat_or_any_or_currency(checker, instance):
+        """msat field, or any currency including currency code"""
+        pattern = re.compile(r'^\d+(\.\d+)?[A-Z][A-Z][A-Z]$')
+        if pattern.match(instance):
+            return True
+        return is_msat_or_any(checker, instance)
+
     # "msat" for request can be many forms
     if is_request:
         is_msat = is_msat_request
@@ -409,6 +416,7 @@ def _extra_validator(is_request: bool):
         "msat": is_msat,
         "msat_or_all": is_msat_or_all,
         "msat_or_any": is_msat_or_any,
+        "msat_or_any_or_currency": is_msat_or_any_or_currency,
         "txid": is_txid,
         "signature": is_signature,
         "bip340sig": is_bip340sig,
