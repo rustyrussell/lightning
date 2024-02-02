@@ -446,7 +446,6 @@ pub mod requests {
 	#[derive(Clone, Debug, Deserialize, Serialize)]
 	pub struct CreateinvoiceRequest {
 	    pub invstring: String,
-	    pub label: String,
 	    pub preimage: String,
 	}
 
@@ -1071,7 +1070,6 @@ pub mod requests {
 	}
 	#[derive(Clone, Debug, Deserialize, Serialize)]
 	pub struct WaitinvoiceRequest {
-	    pub label: String,
 	}
 
 	impl From<WaitinvoiceRequest> for Request {

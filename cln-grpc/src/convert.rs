@@ -1974,7 +1974,6 @@ impl From<requests::CreateinvoiceRequest> for pb::CreateinvoiceRequest {
     fn from(c: requests::CreateinvoiceRequest) -> Self {
         Self {
             invstring: c.invstring, // Rule #2 for type string
-            label: c.label, // Rule #2 for type string
             preimage: hex::decode(&c.preimage).unwrap(), // Rule #2 for type hex
         }
     }
@@ -2195,7 +2194,6 @@ impl From<requests::WaitanyinvoiceRequest> for pb::WaitanyinvoiceRequest {
 impl From<requests::WaitinvoiceRequest> for pb::WaitinvoiceRequest {
     fn from(c: requests::WaitinvoiceRequest) -> Self {
         Self {
-            label: c.label, // Rule #2 for type string
         }
     }
 }
@@ -2739,7 +2737,6 @@ impl From<pb::CreateinvoiceRequest> for requests::CreateinvoiceRequest {
     fn from(c: pb::CreateinvoiceRequest) -> Self {
         Self {
             invstring: c.invstring, // Rule #1 for type string
-            label: c.label, // Rule #1 for type string
             preimage: hex::encode(&c.preimage), // Rule #1 for type hex
         }
     }
@@ -2953,7 +2950,6 @@ impl From<pb::WaitanyinvoiceRequest> for requests::WaitanyinvoiceRequest {
 impl From<pb::WaitinvoiceRequest> for requests::WaitinvoiceRequest {
     fn from(c: pb::WaitinvoiceRequest) -> Self {
         Self {
-            label: c.label, // Rule #1 for type string
         }
     }
 }

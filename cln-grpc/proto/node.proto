@@ -483,7 +483,6 @@ message ConnectAddress {
 
 message CreateinvoiceRequest {
 	string invstring = 1;
-	string label = 2;
 	bytes preimage = 3;
 }
 
@@ -931,7 +930,6 @@ message WaitanyinvoicePaid_outpoint {
 }
 
 message WaitinvoiceRequest {
-	string label = 1;
 }
 
 message WaitinvoiceResponse {

@@ -13,7 +13,14 @@
       "description": ""
     },
     "label": {
-      "type": "string",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ],
       "description": ""
     },
     "preimage": {
