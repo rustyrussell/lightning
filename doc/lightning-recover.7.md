@@ -22,7 +22,12 @@ NOTE: this command only currently works with the `sqlite3` database backend.
 RETURN VALUE
 ------------
 
-On success, an empty object is returned, and your node is restarted.
+[comment]: # (GENERATE-FROM-SCHEMA-START)
+On success, an object is returned, containing:
+
+- **result** (string) (always "Recovery restart in progress") *(added v24.05)*
+
+[comment]: # (GENERATE-FROM-SCHEMA-END)
 
 AUTHOR
 ------
@@ -39,4 +44,4 @@ RESOURCES
 
 Main web site: <https://github.com/ElementsProject/lightning>
 
-[comment]: # ( SHA256STAMP:9cfaa9eb4609b36accc3e3b12a352c00ddd402307e4461f4df274146d12f6eb0)
+[comment]: # ( SHA256STAMP:f76d0486225c815e5a4188dd6a976701711bfbb04d2214bf08d930397ed363b0)
