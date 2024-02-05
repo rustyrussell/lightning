@@ -388,9 +388,9 @@ def test_opening_tiny_channel(node_factory, anchors):
             {'min-capacity-sat': l2_min_capacity, 'dev-no-reconnect': None},
             {'min-capacity-sat': l3_min_capacity, 'dev-no-reconnect': None},
             {'min-capacity-sat': l4_min_capacity, 'dev-no-reconnect': None}]
-    if anchors:
+    if anchors is False:
         for opt in opts:
-            opt['experimental-anchors'] = None
+            opt['dev-force-features'] = "-23"
     l1, l2, l3, l4 = node_factory.get_nodes(4, opts=opts)
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     l1.rpc.connect(l3.info['id'], 'localhost', l3.port)
@@ -437,8 +437,8 @@ def test_channel_abandon(node_factory, bitcoind):
 
     SATS = 10**6
 
-    # Add some for fees
-    l1.fundwallet(SATS + 10000)
+    # Add some for fees/emergency-reserve
+    l1.fundwallet(SATS + 35000)
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     l1.rpc.fundchannel(l2.info['id'], SATS, feerate='1875perkw')
 
@@ -1077,8 +1077,9 @@ def test_funding_all(node_factory, bitcoind):
 
     l1.rpc.fundchannel(l2.info['id'], "all")
 
+    # Keeps emergency reserve!
     outputs = l1.db_query('SELECT value FROM outputs WHERE status=0;')
-    assert len(outputs) == 0
+    assert outputs == [{'value': 25000}]
 
 
 @pytest.mark.openchannel('v1')
@@ -1089,7 +1090,7 @@ def test_funding_all_too_much(node_factory):
     # l2 isn't wumbo, so channel should not be!
     l1, l2 = node_factory.line_graph(2, fundchannel=False, opts=[{}, {'dev-force-features': '-19'}])
 
-    addr, txid = l1.fundwallet(2**24 + 10000)
+    addr, txid = l1.fundwallet(2**24 + 35000)
     l1.rpc.fundchannel(l2.info['id'], "all")
     assert l1.daemon.is_in_log("'all' was too large for non-wumbo channel, trimming")
 
@@ -2057,8 +2058,8 @@ def test_multifunding_feerates(node_factory, bitcoind, anchors):
     commitment_tx_feerate = str(commitment_tx_feerate_int) + 'perkw'
 
     opts = {'log-level': 'debug'}
-    if anchors:
-        opts['experimental-anchors'] = None
+    if anchors is False:
+        opts['dev-force-features'] = "-23"
     l1, l2, l3 = node_factory.get_nodes(3, opts=opts)
 
     l1.fundwallet(1 << 26)
@@ -2419,7 +2420,7 @@ def test_update_fee(node_factory, bitcoind):
     # Make payments.
     l1.pay(l2, 200000000)
     # First payment causes fee update.
-    l2.daemon.wait_for_log('peer updated fee to 11005')
+    l2.daemon.wait_for_log('peer updated fee to 3755')
     l2.pay(l1, 100000000)
 
     # Now shutdown cleanly.
@@ -2459,24 +2460,26 @@ def test_fee_limits(node_factory, bitcoind):
     # L1 asks for stupid low fee (will actually hit the floor of 253)
     l1.stop()
     l1.set_feerates((15, 15, 15, 15), False)
+    # We need to increase l2's floor, so it rejects l1.
+    l2.set_feerates((15000, 11000, 7500, 3750, 2000))
     l1.start()
 
-    l1.daemon.wait_for_log('Received WARNING .*: update_fee 258 outside range 1875-75000')
+    l1.daemon.wait_for_log('Received WARNING .*: update_fee 1255 outside range 2000-75000')
     # They hang up on *us*
     l1.daemon.wait_for_log('Peer transient failure in CHANNELD_NORMAL: channeld: Owning subdaemon channeld died')
 
     # Disconnects, but does not error.  Make sure it's noted in their status though.
     # FIXME: does not happen for l1!
     # assert 'update_fee 253 outside range 1875-75000' in only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])['status'][0]
-    assert 'update_fee 258 outside range 1875-75000' in only_one(l2.rpc.listpeerchannels(l1.info['id'])['channels'])['status'][0]
+    assert 'update_fee 1255 outside range 2000-75000' in only_one(l2.rpc.listpeerchannels(l1.info['id'])['channels'])['status'][0]
 
-    assert only_one(l2.rpc.listpeerchannels()['channels'])['feerate']['perkw'] != 258
+    assert only_one(l2.rpc.listpeerchannels()['channels'])['feerate']['perkw'] != 1255
     # Make l2 accept those fees, and it should recover.
     assert only_one(l2.rpc.setchannel(l1.get_channel_scid(l2), ignorefeelimits=True)['channels'])['ignore_fee_limits'] is True
     assert only_one(l2.rpc.listpeerchannels()['channels'])['ignore_fee_limits'] is True
 
     # Now we stay happy (and connected!)
-    wait_for(lambda: only_one(l2.rpc.listpeerchannels()['channels'])['feerate']['perkw'] == 258)
+    wait_for(lambda: only_one(l2.rpc.listpeerchannels()['channels'])['feerate']['perkw'] == 1255)
     assert only_one(l2.rpc.listpeerchannels()['channels'])['peer_connected'] is True
 
     l1.rpc.close(l2.info['id'])
@@ -2490,7 +2493,7 @@ def test_fee_limits(node_factory, bitcoind):
 
     # Trying to open a channel with too low a fee-rate is denied
     l1.rpc.connect(l4.info['id'], 'localhost', l4.port)
-    with pytest.raises(RpcError, match='They sent (ERROR|WARNING) .* feerate_per_kw 253 below minimum'):
+    with pytest.raises(RpcError, match='They sent (ERROR|WARNING) .* feerate_per_kw 1250 below minimum'):
         l1.fundchannel(l4, 10**6)
 
     # Restore to normal.
@@ -2507,7 +2510,7 @@ def test_fee_limits(node_factory, bitcoind):
 
     # Try stupid high fees
     l1.stop()
-    l1.set_feerates((15000, 11000 * 10, 7500, 3750), False)
+    l1.set_feerates((15000, 15000, 15000, 15000, 15000), False)
     l1.start()
 
     l3.daemon.wait_for_log('peer_in WIRE_UPDATE_FEE')
@@ -2537,8 +2540,14 @@ def test_update_fee_dynamic(node_factory, bitcoind):
     with pytest.raises(RpcError, match='Cannot estimate fees'):
         l1.fundchannel(l2, 10**6)
 
-    # Explicit feerate works.
-    l1.fundchannel(l2, 10**6, feerate='10000perkw')
+    # Explicit feerate does not work still (doesn't apply for anchors!)
+    # We could make it, but we need a separate commitment feerate for
+    # anchors vs non-anchors, so easier after anchors are compulsory.
+    with pytest.raises(RpcError, match='Cannot estimate fees'):
+        l1.fundchannel(l2, 10**6, feerate='10000perkw')
+
+    l1.set_feerates((2000, 2000, 2000, 2000))
+    l1.fundchannel(l2, 10**6)
 
     l1.set_feerates((15000, 11000, 7500, 3750))
 
@@ -2558,7 +2567,7 @@ def test_update_fee_dynamic(node_factory, bitcoind):
     inv = l2.rpc.invoice(5000, 'test_update_fee_dynamic2', 'test_update_fee_dynamic2')['bolt11']
     l1.rpc.pay(inv)
 
-    # Won't update fee.
+    # Won't update fee.r
     assert not l2.daemon.is_in_log('peer_in.*UPDATE_FEE',
                                    start=l2.daemon.logsearch_start)
 
@@ -2589,7 +2598,7 @@ def test_update_fee_reconnect(node_factory, bitcoind):
 
     # Make l1 send out feechange; triggers disconnect/reconnect.
     # (Note: < 10% change, so no smoothing here!)
-    l1.set_feerates((14000, 14000, 14000, 3750))
+    l1.set_feerates((14000, 14000, 14000, 14000))
     l1.daemon.wait_for_log('Setting REMOTE feerate to 14005')
     l2.daemon.wait_for_log('Setting LOCAL feerate to 14005')
     l1.daemon.wait_for_log(r'dev_disconnect: \+WIRE_COMMITMENT_SIGNED')
@@ -2890,18 +2899,10 @@ def test_no_fee_estimate(node_factory, bitcoind, executor):
     with pytest.raises(RpcError, match=r'Cannot estimate fees'):
         l1.rpc.fundchannel(l2.info['id'], 10**6, 'slow')
 
-    # Can with manual feerate.
+    # With anchors, not even with manual feerate!
     l1.rpc.withdraw(l2.rpc.newaddr()['bech32'], 10000, '1500perkb')
-    l1.rpc.fundchannel(l2.info['id'], 10**6, '2000perkw', minconf=0)
-
-    # Make sure we clean up cahnnel for later attempt.
-    l1.daemon.wait_for_log('sendrawtx exit 0')
-    l1.rpc.dev_fail(l2.info['id'])
-    l1.daemon.wait_for_log('Failing due to dev-fail command')
-    l1.wait_for_channel_onchain(l2.info['id'])
-    bitcoind.generate_block(6)
-    wait_for(lambda: only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])['state'] == 'ONCHAIN')
-    wait_for(lambda: only_one(l2.rpc.listpeerchannels(l1.info['id'])['channels'])['state'] == 'ONCHAIN')
+    with pytest.raises(RpcError, match=r'Cannot estimate fees'):
+        l1.rpc.fundchannel(l2.info['id'], 10**6, '2000perkw', minconf=0)
 
     # But can accept incoming connections.
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
@@ -3354,14 +3355,14 @@ def test_feerate_spam(node_factory, chainparams):
     l1.pay(l2, 10**9 - slack)
 
     # It will send this once (may have happened before line_graph's wait)
-    wait_for(lambda: l1.daemon.is_in_log('Setting REMOTE feerate to 11005'))
+    wait_for(lambda: l1.daemon.is_in_log('Setting REMOTE feerate to 3755'))
     wait_for(lambda: l1.daemon.is_in_log('peer_out WIRE_UPDATE_FEE'))
 
     # Now change feerates to something l1 can't afford.
-    l1.set_feerates((100000, 100000, 100000, 100000))
+    l1.set_feerates((200000, 200000, 200000, 200000))
 
-    # It will raise as far as it can (48000)
-    maxfeerate = 48000
+    # It will raise as far as it can (30000)
+    maxfeerate = 30000
     l1.daemon.wait_for_log('Setting REMOTE feerate to {}'.format(maxfeerate))
     l1.daemon.wait_for_log('peer_out WIRE_UPDATE_FEE')
 
@@ -3538,8 +3539,8 @@ def test_wumbo_channels(node_factory, bitcoind):
 @pytest.mark.openchannel('v2')
 @pytest.mark.parametrize("anchors", [False, True])
 def test_channel_features(node_factory, bitcoind, anchors):
-    if anchors:
-        opts = {'experimental-anchors': None}
+    if anchors is False:
+        opts = {'dev-force-features': "-23"}
     else:
         opts = {}
     l1, l2 = node_factory.line_graph(2, fundchannel=False, opts=opts)

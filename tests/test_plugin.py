@@ -673,7 +673,7 @@ def test_openchannel_hook(node_factory, bitcoind):
         expected.update({
             'channel_id': '.*',
             'channel_max_msat': 2100000000000000000,
-            'commitment_feerate_per_kw': '7500',
+            'commitment_feerate_per_kw': 3750,
             'funding_feerate_per_kw': '7500',
             'feerate_our_max': '150000',
             'feerate_our_min': '1875',
@@ -684,7 +684,7 @@ def test_openchannel_hook(node_factory, bitcoind):
     else:
         expected.update({
             'channel_reserve_msat': 1000000,
-            'feerate_per_kw': '7500',
+            'feerate_per_kw': 3750,
             'funding_msat': 100000000,
             'push_msat': 0,
         })
@@ -1879,7 +1879,7 @@ def test_hook_crash(node_factory, executor, bitcoind):
     # For simplicity, give us N UTXOs to spend.
     addr = l1.rpc.newaddr('p2tr')['p2tr']
     for n in nodes:
-        bitcoind.rpc.sendtoaddress(addr, (FUNDAMOUNT + 5000) / 10**8)
+        bitcoind.rpc.sendtoaddress(addr, (FUNDAMOUNT + 30000) / 10**8)
     bitcoind.generate_block(1, wait_for_mempool=len(nodes))
     sync_blockheight(bitcoind, [l1])
 
