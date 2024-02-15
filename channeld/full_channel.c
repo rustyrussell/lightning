@@ -525,7 +525,7 @@ static bool htlc_dust(const struct channel *channel,
  *
  * To mostly avoid this situation, at least from our side, we apply an
  * additional constraint when we're opener trying to add an HTLC: make
- * sure we can afford one more HTLC, even if fees increase by 100%.
+ * sure we can afford one more HTLC, even if fees increase.
  *
  * We could do this for the peer, as well, by rejecting their HTLC
  * immediately in this case.  But rejecting a remote HTLC here causes
@@ -560,39 +560,19 @@ static bool local_opener_has_fee_headroom(const struct channel *channel,
 					option_anchors_zero_fee_htlc_tx,
 					committed, adding, removing);
 
-	/* Scale the feerate up by a margin. This ensures that we have
-	 * some leeway even in rising fees. The calculation starts
-	 * with a 100% margin at very low fees, since they are likely
-	 * to rise, and can do so quickly, whereas on the higher fee
-	 * side, asking for a 100% margin is excessive, so ask for a
-	 * 10% margin. In-between these two regions we interpolate
-	 * linearly. Notice that minfeerate and maxfeerate are just
-	 * the markers of the linear interpolation, they don't have
-	 * to correspond to actual feerates seen in the network.
-	 *
-	 * See [CLN6974] for details and discussion.
-	 *
-	 * [CLN6974]: https://github.com/ElementsProject/lightning/issues/6974
-	 */
-	u64 minfeerate = 253, maxfeerate = 45000,
-	    min = feerate - minfeerate > maxfeerate ? maxfeerate
-						    : feerate - minfeerate;
-	double marginperc = 1 - min / (maxfeerate * 1.1);
-	u64 marginrate = 1 + marginperc;
-
 	/* Now, how much would it cost us if feerate increases 100% and we added
 	 * another HTLC? */
-	fee = commit_tx_base_fee(marginrate, untrimmed + 1,
+	fee = commit_tx_base_fee(marginal_feerate(feerate), untrimmed + 1,
 				 option_anchor_outputs,
 				 option_anchors_zero_fee_htlc_tx);
 	if (amount_msat_greater_eq_sat(remainder, fee))
 		return true;
 
 	status_debug("Adding HTLC would leave us only %s: we need %s for"
-		     " another HTLC if fees increase by 100%% to %uperkw",
+		     " another HTLC if fees increase from %uperkw to %uperkw",
 		     type_to_string(tmpctx, struct amount_msat, &remainder),
 		     type_to_string(tmpctx, struct amount_sat, &fee),
-		     feerate + feerate);
+		     feerate, marginal_feerate(feerate));
 	return false;
 }
 
@@ -770,6 +750,11 @@ static enum channel_add_err add_htlc(struct channel *channel,
 		if (htlc_fee)
 			*htlc_fee = fee;
 
+		status_debug("htlc_fee for %s %zu adding %zu removing == %s",
+			     recipient == LOCAL ? "us" : "them",
+			     tal_count(adding), tal_count(removing),
+			     type_to_string(tmpctx, struct amount_sat, &fee));
+
 		/* This is a little subtle:
 		 *
 		 * The change is being applied to the receiver but it will
@@ -834,6 +819,11 @@ static enum channel_add_err add_htlc(struct channel *channel,
 					    adding,
 					    removing,
 					    channel->opener);
+			status_debug("htlc_fee for %s %zu adding %zu removing == %s",
+				     recipient == LOCAL ? "us" : "them",
+				     tal_count(adding), tal_count(removing),
+				     type_to_string(tmpctx, struct amount_sat, &fee));
+
 			/* set fee output pointer if given */
 			if (htlc_fee && amount_sat_greater(fee, *htlc_fee))
 				*htlc_fee = fee;

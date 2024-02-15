@@ -673,9 +673,13 @@ static struct amount_sat commit_txfee(const struct channel *channel,
 	 *   reserve. It is recommended that this "fee spike buffer" can
 	 *   handle twice the current `feerate_per_kw` to ensure
 	 *   predictability between implementations.
-	*/
-	fee = commit_tx_base_fee(2 * feerate, num_untrimmed_htlcs + 1,
+	 */
+	fee = commit_tx_base_fee(marginal_feerate(feerate), num_untrimmed_htlcs + 1,
 				 option_anchor_outputs, option_anchors_zero_fee_htlc_tx);
+	log_debug(channel->log, "Before anchors: fee for %zu untrimmed at feerate %u (based on %u) will be %s",
+		  num_untrimmed_htlcs + 1,
+		  marginal_feerate(feerate), feerate,
+		  type_to_string(tmpctx, struct amount_sat, &fee));
 
 	if (option_anchor_outputs || option_anchors_zero_fee_htlc_tx) {
 		/* BOLT #3:
@@ -686,6 +690,8 @@ static struct amount_sat commit_txfee(const struct channel *channel,
 		 */
 		if (!amount_sat_add(&fee, fee, AMOUNT_SAT(660)))
 			; /* fee is somehow astronomical already.... */
+		log_debug(channel->log, "After anchors: fee is %s",
+			  type_to_string(tmpctx, struct amount_sat, &fee));
 	}
 
 	return fee;
