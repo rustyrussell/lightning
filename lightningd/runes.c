@@ -545,7 +545,8 @@ static struct command_result *param_restrictions(struct command *cmd,
 static struct command_result *reply_with_rune(struct command *cmd,
 					      const char *buf UNUSED,
 					      const jsmntok_t *result UNUSED,
-					      struct rune *rune)
+					      struct rune *rune,
+					      bool pname_warning)
 {
 	struct json_stream *js = json_stream_success(cmd);
 
@@ -555,7 +556,56 @@ static struct command_result *reply_with_rune(struct command *cmd,
 	if (tal_count(rune->restrs) <= 1) {
 		json_add_string(js, "warning_unrestricted_rune", "WARNING: This rune has no restrictions! Anyone who has access to this rune could drain funds from your node. Be careful when giving this to apps that you don't trust. Consider using the restrictions parameter to only allow access to specific rpc methods.");
 	}
+	if (pname_warning) {
+		json_add_string(js, "warning_pname_fixed", "pnameX restrictions fixed to remove punctuation (usually an underscore) as check will remove punctuation too.  See documentation.");
+	}
 	return command_success(cmd, js);
+}
+
+static bool fixup_one_string(char *pnamestr)
+{
+	size_t off = strlen("pname");
+	bool changed;
+
+	/* Remove punctuation! */
+	changed = false;
+	for (size_t n = off; pnamestr[n]; n++) {
+		if (cispunct(pnamestr[n])) {
+			changed = true;
+			continue;
+		}
+		pnamestr[off++] = pnamestr[n];
+	}
+	pnamestr[off++] = '\0';
+
+	return changed;
+}
+
+/* pnameXXX uses the parameter name *without* punctation.  This surprises people,
+ * so we fixup createrune here for them (Shahana is nicer than me and said we should)
+ * but warn about it when we give them the rune */
+static bool fixup_pname(struct rune_restr *restr)
+{
+	bool fixed = false;
+	for (size_t i = 0; i < tal_count(restr); i++) {
+		for (size_t j = 0; j < tal_count(restr[i].alterns); j++) {
+			struct rune_altern *a = restr[i].alterns[j];
+			char *fieldname;
+
+			if (!strstarts(a->fieldname, "pname"))
+				continue;
+
+			/* Don't mangle const strings, replace */
+			fieldname = tal_strdup(tmpctx, a->fieldname);
+			if (fixup_one_string(fieldname)) {
+				fixed = true;
+				tal_free(a->fieldname);
+				a->fieldname = tal_steal(a, fieldname);
+			}
+		}
+	}
+
+	return fixed;
 }
 
 static struct command_result *json_createrune(struct command *cmd,
@@ -565,6 +615,7 @@ static struct command_result *json_createrune(struct command *cmd,
 {
 	struct rune_and_string *ras;
 	struct rune_restr **restrs;
+	bool warning_pname;
 
 	if (!param(cmd, buffer, params,
 		   p_opt("rune", param_rune, &ras),
@@ -572,25 +623,27 @@ static struct command_result *json_createrune(struct command *cmd,
 		   NULL))
 		return command_param_failed();
 
-	if (ras != NULL ) {
-		for (size_t i = 0; i < tal_count(restrs); i++)
-			rune_add_restr(ras->rune, restrs[i]);
-		return reply_with_rune(cmd, NULL, NULL, ras->rune);
+	if (ras == NULL) {
+		ras = tal(cmd, struct rune_and_string);
+		ras->rune = rune_derive_start(cmd, cmd->ld->runes->master,
+					      tal_fmt(tmpctx, "%"PRIu64,
+						      cmd->ld->runes->next_unique_id));
+		ras->runestr = rune_to_base64(tmpctx, ras->rune);
 	}
 
-	ras = tal(cmd, struct rune_and_string);
-	ras->rune = rune_derive_start(cmd, cmd->ld->runes->master,
-				      tal_fmt(tmpctx, "%"PRIu64,
-					      cmd->ld->runes->next_unique_id));
-	ras->runestr = rune_to_base64(tmpctx, ras->rune);
-
-	for (size_t i = 0; i < tal_count(restrs); i++)
+	warning_pname = false;
+	for (size_t i = 0; i < tal_count(restrs); i++) {
+		if (fixup_pname(restrs[i]))
+			warning_pname = true;
 		rune_add_restr(ras->rune, restrs[i]);
+	}
 
-	/* Insert into DB*/
-	wallet_rune_insert(cmd->ld->wallet, ras->rune);
-	cmd->ld->runes->next_unique_id = cmd->ld->runes->next_unique_id + 1;
-	return reply_with_rune(cmd, NULL, NULL, ras->rune);
+	/* If we made it, insert into DB */
+	if (ras == NULL) {
+		wallet_rune_insert(cmd->ld->wallet, ras->rune);
+		cmd->ld->runes->next_unique_id = cmd->ld->runes->next_unique_id + 1;
+	}
+	return reply_with_rune(cmd, NULL, NULL, ras->rune, warning_pname);
 }
 
 static const struct json_command creatrune_command = {
@@ -762,14 +815,8 @@ static const char *check_condition(const tal_t *ctx,
 							 "pname%.*s",
 							 t->end - t->start,
 							 cinfo->buf + t->start);
-				size_t off = strlen("pname");
-				/* Remove punctuation! */
-				for (size_t n = off; pmemname[n]; n++) {
-					if (cispunct(pmemname[n]))
-						continue;
-					pmemname[off++] = pmemname[n];
-				}
-				pmemname[off++] = '\0';
+				/* Removes any punctuation! */
+				fixup_one_string(pmemname);
 				strmap_add(&cinfo->cached_params, pmemname, t+1);
 			}
 		} else if (cinfo->params->type == JSMN_ARRAY) {
