@@ -427,7 +427,7 @@ def test_grpc_connect_notification(node_factory):
     l2 = node_factory.get_node()
 
     # Test the connect notification
-    connect_stream = l1.grpc.SubscribeConnect(clnpb.StreamConnectRequest())
+    connect_stream = l1.grpc.SubscribeConnect(clnpb.StreamConnectRequest(), timeout=TIMEOUT)
     l2.connect(l1)
 
     for connect_event in connect_stream:
