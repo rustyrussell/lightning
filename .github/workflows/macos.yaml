@@ -22,7 +22,7 @@ jobs:
 
           (
             cd /tmp/
-            wget https://storage.googleapis.com/c-lightning-tests/bitcoin-$BITCOIN_VERSION-osx64.tar.gz -O bitcoin.tar.gz
+            wget https://bitcoincore.org/bin/bitcoin-core-27.1/bitcoin-$BITCOIN_VERSION-arm64-apple-darwin.tar.gz -O bitcoin.tar.gz
             tar -xvzf bitcoin.tar.gz
             sudo mv bitcoin-$BITCOIN_VERSION/bin/* /usr/local/bin
           )
