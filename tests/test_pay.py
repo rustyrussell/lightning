@@ -5996,3 +5996,24 @@ def test_enableoffer(node_factory):
     # Can't enable unknown.
     with pytest.raises(RpcError, match="Unknown offer"):
         l1.rpc.enableoffer(offer_id=offer1['offer_id'])
+
+
+def test_notify_sendpay_fail(node_factory):
+    """sendpay_failure status should be failed, not pending!"""
+    plugin1 = os.path.join(os.getcwd(), 'tests/plugins/all_notifications.py')
+    l1, l2 = node_factory.line_graph(2, opts={'plugin': plugin1})
+
+    # Create an invoice and delete it so it fails
+    inv = l2.rpc.invoice(10000, 'test_notify_sendpay_fail', 'test_notify_sendpay_fail')
+    l2.rpc.delinvoice('test_notify_sendpay_fail', 'unpaid')
+
+    routestep = {
+        'amount_msat': 10000,
+        'id': l2.info['id'],
+        'delay': 10,
+        'channel': l1.get_channel_scid(l2)
+    }
+
+    # Amount must be nonzero!
+    l1.rpc.sendpay([routestep], inv['payment_hash'], payment_secret=inv['payment_secret'])
+    l1.daemon.wait_for_log("notification sendpay_failure: .*'status': 'failed'")

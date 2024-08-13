@@ -595,6 +595,8 @@ void payment_failed(struct lightningd *ld, const struct htlc_out *hout,
 		}
 	}
 
+	/* Update local version as well as db: we use local var in notifications! */
+	payment->status = PAYMENT_FAILED;
 	wallet_payment_set_status(ld->wallet, &hout->payment_hash,
 				  hout->partid, hout->groupid,
 				  PAYMENT_FAILED, NULL);
