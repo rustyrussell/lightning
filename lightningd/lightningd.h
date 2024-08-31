@@ -357,6 +357,9 @@ struct lightningd {
 	/* Tell connectd not to talk after handshake */
 	bool dev_handshake_no_reply;
 
+	/* Tell connectd to block more than 1 simultanous connection attempt */
+	bool dev_limit_connections_inflight;
+
 	/* tor support */
 	struct wireaddr *proxyaddr;
 	bool always_use_proxy;
