@@ -1487,6 +1487,7 @@ static struct channel *stub_chan(struct command *cmd,
 				&nodeid,
 				&wint,
 				NULL,
+				NULL,
 				false);
 	}
 
