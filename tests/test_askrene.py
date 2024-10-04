@@ -917,12 +917,15 @@ def test_real_data(node_factory, bitcoind):
         # 97:034a5fdb2df3ce1bfd2c2aca205ce9cfeef1a5f4af21b0b5e81c453080c30d7683:🚶LightningTransact
         97: r"We could not find a usable set of paths\.  The shortest path is 103x1x0->0x3301x1646->0x1281x2323->97x1281x33241, but 97x1281x33241/1 isn't big enough to carry 100000000msat\.",
     }
+
+    reduced = 0
     for n in range(0, 100):
+        AMOUNT = 100000000
         if n in badnodes:
             with pytest.raises(RpcError, match=badnodes[n]):
                 l1.rpc.getroutes(source=l1.info['id'],
                                  destination=nodeids[n],
-                                 amount_msat=100000000,
+                                 amount_msat=AMOUNT,
                                  layers=['auto.sourcefree', 'auto.localchans'],
                                  maxfee_msat=10000000,
                                  final_cltv=18)
@@ -930,8 +933,31 @@ def test_real_data(node_factory, bitcoind):
 
         routes = l1.rpc.getroutes(source=l1.info['id'],
                                   destination=nodeids[n],
-                                  amount_msat=100000000,
+                                  amount_msat=AMOUNT,
                                   layers=['auto.sourcefree', 'auto.localchans'],
-                                  maxfee_msat=10000000,
+                                  maxfee_msat=AMOUNT,
                                   final_cltv=18)
         print(f"{n} route has {len(routes['routes'])} paths")
+
+        # Now stress it, by asking it to spend 1msat less!
+        fee = sum([r['path'][0]['amount_msat'] for r in routes['routes']]) - AMOUNT
+        try:
+            routes2 = l1.rpc.getroutes(source=l1.info['id'],
+                                       destination=nodeids[n],
+                                       amount_msat=AMOUNT,
+                                       layers=['auto.sourcefree', 'auto.localchans'],
+                                       maxfee_msat=fee - 1,
+                                       final_cltv=18)
+        except RpcError as err:
+            assert err.error['message'] == 'Could not find route without excessive cost'
+            continue
+
+        reduced += 1
+        fee2 = sum([r['path'][0]['amount_msat'] for r in routes2['routes']]) - AMOUNT
+        assert fee2 < fee
+
+        # Should get less likely
+        assert routes2['probability_ppm'] < routes['probability_ppm']
+
+    # Fails, if we get this far!
+    assert reduced == 100
