@@ -103,12 +103,12 @@ static const char *constrain_flow(const tal_t *ctx,
 		/* If amount is > max, we decrease and add note it in
 		 * case something goes wrong later. */
 		if (amount_msat_greater(msat, max)) {
-			plugin_log(rq->plugin, LOG_DBG,
-				   "Decreased %s to %s%s across %s",
-				   fmt_amount_msat(tmpctx, msat),
-				   max_cause,
-				   fmt_amount_msat(tmpctx, max),
-				   fmt_flows_step_scid(tmpctx, rq, flow, i));
+			rq_log(rq, LOG_INFORM,
+			       "Had to decreased amount %s to %s%s across %s",
+			       fmt_amount_msat(tmpctx, msat),
+			       max_cause,
+			       fmt_amount_msat(tmpctx, max),
+			       fmt_flows_step_scid(tmpctx, rq, flow, i));
 			msat = max;
 			decreased = i;
 			why_decreased = max_cause;
@@ -155,12 +155,13 @@ static const char *constrain_flow(const tal_t *ctx,
 	}
 
 	if (!amount_msat_eq(flow->delivers, msat)) {
-		plugin_log(rq->plugin, LOG_DBG, "Flow changed to deliver %s not %s, because max constrained by %s%s",
-			   fmt_amount_msat(tmpctx, msat),
-			   fmt_amount_msat(tmpctx, flow->delivers),
-			   why_decreased ? why_decreased : NULL,
-			   decreased == -1 ? "none"
-			   : fmt_flows_step_scid(tmpctx, rq, flow, decreased));
+		rq_log(rq, LOG_INFORM,
+		       "Flow changed to deliver %s not %s, because max constrained by %s%s",
+		       fmt_amount_msat(tmpctx, msat),
+		       fmt_amount_msat(tmpctx, flow->delivers),
+		       why_decreased ? why_decreased : NULL,
+		       decreased == -1 ? "none"
+		       : fmt_flows_step_scid(tmpctx, rq, flow, decreased));
 		flow->delivers = msat;
 	}
 
@@ -244,7 +245,6 @@ static struct flow *pick_most_likely_flow(struct route_query *rq,
 			continue;
 		best_prob = prob;
 		best_flow = flows[i];
-		plugin_log(rq->plugin, LOG_DBG, "Best flow is #%zu!", i);
 	}
 
 	return best_flow;
@@ -260,8 +260,6 @@ static const char *flow_violates_min(const tal_t *ctx,
 		const struct half_chan *h = flow_edge(flow, i);
 		struct amount_msat min = amount_msat(fp16_to_u64(h->htlc_min));
 
-		plugin_log(rq->plugin, LOG_DBG, "flow_violates_min: %u/%zu amt=%s, min=%s",
-			   i, tal_count(flow->path), fmt_amount_msat(tmpctx, msat), fmt_amount_msat(tmpctx, min));
 		if (amount_msat_less(msat, min)) {
 			struct short_channel_id_dir scidd;
 			get_scidd(rq->gossmap, flow, i, &scidd);
@@ -290,24 +288,14 @@ refine_with_fees_and_limits(const tal_t *ctx,
 	for (size_t i = 0; i < tal_count(*flows);) {
 		struct flow *flow = (*flows)[i];
 
-		plugin_log(rq->plugin, LOG_DBG, "Constraining flow %zu: %s",
-			   i, fmt_amount_msat(tmpctx, flow->delivers));
-		for (size_t j = 0; j < tal_count(flow->path); j++) {
-			struct amount_msat min, max;
-			get_constraints(rq, flow->path[j], flow->dirs[j], &min, &max);
-			plugin_log(rq->plugin, LOG_DBG, "->%s(max %s)",
-				   fmt_flows_step_scid(tmpctx, rq, flow, j),
-				   fmt_amount_msat(tmpctx, max));
-		}
-
 		flow_constraint_error = constrain_flow(tmpctx, rq, flow, &reservations);
 		if (!flow_constraint_error) {
 			i++;
 			continue;
 		}
 
-		plugin_log(rq->plugin, LOG_DBG, "Flow was too constrained: %s",
-			   flow_constraint_error);
+		rq_log(rq, LOG_UNUSUAL, "Flow %zu/%zu was too constrained (%s) so removing it",
+		       i, tal_count(*flows), flow_constraint_error);
 		/* This flow was reduced to 0 / impossible, remove */
 		tal_arr_remove(flows, i);
 	}
@@ -324,10 +312,10 @@ refine_with_fees_and_limits(const tal_t *ctx,
 		for (size_t i = 0; i < tal_count(*flows); i++) {
 			if (amount_msat_sub(&(*flows)[i]->delivers, (*flows)[i]->delivers, excess)) {
 				const char *err;
-				plugin_log(rq->plugin, LOG_DBG,
-					   "Flows delivered %s extra, trimming %zu/%zu",
-					   fmt_amount_msat(tmpctx, excess),
-					   i, tal_count(*flows));
+				rq_log(rq, LOG_DBG,
+				       "Flow %zu/%zu delivered %s extra, trimming",
+				       i, tal_count(*flows),
+				       fmt_amount_msat(tmpctx, excess),
 				/* In theory, this can violate min_htlc!  Thanks @Lagrang3! */
 				err = flow_violates_min(tmpctx, rq, (*flows)[i]);
 				if (err) {

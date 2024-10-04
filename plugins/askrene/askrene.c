@@ -225,6 +225,22 @@ struct amount_msat get_additional_per_htlc_cost(const struct route_query *rq,
 		return AMOUNT_MSAT(0);
 }
 
+void rq_log(struct route_query *rq,
+	    enum log_level level,
+	    const char *fmt,
+	    ...)
+{
+	va_list args;
+	const char *msg;
+
+	va_start(args, fmt);
+	msg = tal_vfmt(tmpctx, fmt, args);
+	va_end(args);
+
+	plugin_notify_message(rq->cmd, level, "%s", msg);
+	plugin_log(rq->plugin, level, "%s: %s",
+		   rq->cmd->id, msg);
+}
 
 /* Returns an error message, or sets *routes */
 static const char *get_routes(const tal_t *ctx,
@@ -344,6 +360,8 @@ static const char *get_routes(const tal_t *ctx,
 	/* FIXME: Typo in spec for CLTV in descripton!  But it breaks our spelling check, so we omit it above */
 	while (finalcltv + flows_worst_delay(flows) > 2016) {
 		delay_feefactor *= 2;
+		rq_log(rq, LOG_UNUSUAL, "The worst flow delay is %zu (> %i), retrying with delay_feefactor %f...",
+		       flows_worst_delay(flows), 2016 - finalcltv, delay_feefactor);
 		flows = minflow(rq, rq, srcnode, dstnode, amount,
 				mu, delay_feefactor, base_fee_penalty, prob_cost_factor);
 		if (!flows || delay_feefactor > 10) {
@@ -355,6 +373,10 @@ static const char *get_routes(const tal_t *ctx,
 	/* Too expensive? */
 	while (amount_msat_greater(flowset_fee(rq->plugin, flows), maxfee)) {
 		mu += 10;
+		rq_log(rq, LOG_UNUSUAL, "The flows had a fee of %s, greater than max of %s, retrying with mu of %u%%...",
+		       fmt_amount_msat(tmpctx, flowset_fee(rq->plugin, flows)),
+		       fmt_amount_msat(tmpctx, maxfee),
+		       mu);
 		flows = minflow(rq, rq, srcnode, dstnode, amount,
 				mu, delay_feefactor, base_fee_penalty, prob_cost_factor);
 		if (!flows || mu == 100) {
@@ -409,6 +431,9 @@ static const char *get_routes(const tal_t *ctx,
 			rh->delay = delay;
 		}
 		(*amounts)[i] = flows[i]->delivers;
+		struct amount_msat fee;
+		if (!amount_msat_sub(&fee, r->hops[0].amount, flows[i]->delivers))
+			abort();
 	}
 
 	*probability = flowset_probability(flows, rq);
