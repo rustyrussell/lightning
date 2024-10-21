@@ -6069,15 +6069,10 @@ def test_pay_remember_hint(node_factory):
     assert(p['parts'] == 1)
 
 
-def test_injectpaymentonion(node_factory, executor):
-    l1, l2, l3 = node_factory.line_graph(3,
-                                         wait_for_announce=True,
-                                         opts={'experimental-offers': None})
+def test_injectpaymentonion_simple(node_factory, executor):
+    l1, l2 = node_factory.line_graph(2)
 
     blockheight = l1.rpc.getinfo()['blockheight']
-    #
-    # Simple l1->l2 test.
-    #
     inv1 = l2.rpc.invoice(1000, "test_injectpaymentonion1", "test_injectpaymentonion1")
 
     # First hop for injectpaymentonion is self.
@@ -6106,9 +6101,11 @@ def test_injectpaymentonion(node_factory, executor):
     assert lsp['payment_hash'] == inv1['payment_hash']
     assert lsp['status'] == 'complete'
 
-    #
-    # l1->l2 MPP test.
-    #
+
+def test_injectpaymentonion_mpp(node_factory, executor):
+    l1, l2 = node_factory.line_graph(2)
+
+    blockheight = l1.rpc.getinfo()['blockheight']
     inv2 = l2.rpc.invoice(3000, "test_injectpaymentonion2", "test_injectpaymentonion2")
 
     # First hop for injectpaymentonion is self.
@@ -6153,9 +6150,11 @@ def test_injectpaymentonion(node_factory, executor):
         assert lsp['status'] == 'complete'
     assert len(lsps) == 2
 
-    #
-    # Test 3-hops.
-    #
+
+def test_injectpaymentonion_3hop(node_factory, executor):
+    l1, l2, l3 = node_factory.line_graph(3, wait_for_announce=True)
+
+    blockheight = l1.rpc.getinfo()['blockheight']
     inv3 = l3.rpc.invoice(1000, "test_injectpaymentonion3", "test_injectpaymentonion3")
 
     # First hop for injectpaymentonion is self.
@@ -6181,9 +6180,13 @@ def test_injectpaymentonion(node_factory, executor):
     assert lsp['payment_hash'] == inv3['payment_hash']
     assert lsp['status'] == 'complete'
 
-    #
-    # Test self-pay.
-    #
+
+def test_injectpaymentonion_selfpay(node_factory, executor):
+    l1, l2 = node_factory.line_graph(2, opts={'experimental-offers': None})
+
+    blockheight = l1.rpc.getinfo()['blockheight']
+
+    # Test simple self-pay.
     inv4 = l1.rpc.invoice(1000, "test_injectpaymentonion4", "test_injectpaymentonion4")
 
     # First hop for injectpaymentonion is self.
@@ -6205,9 +6208,7 @@ def test_injectpaymentonion(node_factory, executor):
     assert lsp['payment_hash'] == inv4['payment_hash']
     assert lsp['status'] == 'complete'
 
-    #
     # Test self-pay with MPP.
-    #
     inv5 = l1.rpc.invoice(1000, "test_injectpaymentonion5", "test_injectpaymentonion5")
 
     # First hop for injectpaymentonion is self.
@@ -6260,9 +6261,7 @@ def test_injectpaymentonion(node_factory, executor):
                     'amount_sent_msat': 1000,
                     'number_of_parts': 2}
 
-    #
     # Test self-pay with MPP from non-selfpay.
-    #
     inv6 = l2.rpc.invoice(3000, "test_injectpaymentonion6", "test_injectpaymentonion6")
 
     # First hop for injectpaymentonion is self.
@@ -6309,9 +6308,46 @@ def test_injectpaymentonion(node_factory, executor):
     assert lsp['payment_hash'] == inv6['payment_hash']
     assert lsp['status'] == 'complete'
 
-    #
-    # Now test bolt12, with stub blinded path.
-    #
+    # Test bolt12 self-pay.
+    offer = l1.rpc.offer('any')
+    inv10 = l1.rpc.fetchinvoice(offer['bolt12'], '1000msat')
+    decoded = l1.rpc.decode(inv10['invoice'])
+
+    final_tlvs = TlvPayload()
+    final_tlvs.add_field(2, tu64_encode(1000))
+    final_tlvs.add_field(4, tu64_encode(blockheight + 18))
+    final_tlvs.add_field(10, bytes.fromhex(decoded['invoice_paths'][0]['path'][0]['encrypted_recipient_data']))
+    final_tlvs.add_field(12, bytes.fromhex(decoded['invoice_paths'][0]['first_path_key']))
+    final_tlvs.add_field(18, tu64_encode(1000))
+
+    hops = [{'pubkey': l1.info['id'],
+             'payload': final_tlvs.to_bytes().hex()}]
+    onion = l1.rpc.createonion(hops=hops, assocdata=decoded['invoice_payment_hash'])
+
+    ret = l1.rpc.injectpaymentonion(onion=onion['onion'],
+                                    payment_hash=decoded['invoice_payment_hash'],
+                                    amount_msat=1000,
+                                    cltv_expiry=blockheight + 18,
+                                    partid=1,
+                                    groupid=0)
+    assert sha256(bytes.fromhex(ret['payment_preimage'])).hexdigest() == decoded['invoice_payment_hash']
+    # The label for the invoice is deterministic.
+    label = f"{decoded['offer_id']}-{decoded['invreq_payer_id']}-0"
+    assert only_one(l1.rpc.listinvoices(label)['invoices'])['status'] == 'paid'
+    lsp = only_one(l1.rpc.listsendpays(inv4['bolt11'])['payments'])
+    assert lsp['groupid'] == 0
+    assert lsp['partid'] == 1
+    assert lsp['payment_hash'] == inv4['payment_hash']
+    assert lsp['status'] == 'complete'
+
+
+def test_injectpaymentonion_blindedpath(node_factory, executor):
+    l1, l2 = node_factory.line_graph(2,
+                                     wait_for_announce=True,
+                                     opts={'experimental-offers': None})
+    blockheight = l1.rpc.getinfo()['blockheight']
+
+    # Test bolt12, with stub blinded path.
     offer = l2.rpc.offer('any')
     inv7 = l1.rpc.fetchinvoice(offer['bolt12'], '1000msat')
 
@@ -6384,15 +6420,13 @@ def test_injectpaymentonion(node_factory, executor):
     assert lsp['payment_hash'] == decoded['invoice_payment_hash']
     assert lsp['status'] == 'complete'
 
-    #
-    # Now test bolt12, with real blinded path.
-    #
+    # Now test bolt12 with real blinded path.
     l4 = node_factory.get_node(options={'experimental-offers': None})
     # Private channel.
     node_factory.join_nodes([l2, l4], announce_channels=False)
 
-    # Make sure l3 knows about other nodes, so will add route hint.
-    wait_for(lambda: len(l4.rpc.listnodes()['nodes']) == 3)
+    # Make sure l4 knows about other nodes, so will add route hint.
+    wait_for(lambda: len(l4.rpc.listnodes()['nodes']) == 2)
     offer = l4.rpc.offer('any')
     inv8 = l1.rpc.fetchinvoice(offer['bolt12'], '1000msat')
 
@@ -6437,9 +6471,7 @@ def test_injectpaymentonion(node_factory, executor):
     assert lsp['payment_hash'] == decoded['invoice_payment_hash']
     assert lsp['status'] == 'complete'
 
-    #
-    # bolt12, with blinded path which starts with us.
-    #
+    # Finally, with blinded path which starts with us.
     offer = l4.rpc.offer('any')
     inv9 = l1.rpc.fetchinvoice(offer['bolt12'], '1000msat')
 
@@ -6473,7 +6505,7 @@ def test_injectpaymentonion(node_factory, executor):
                                     partid=1,
                                     groupid=0)
     assert sha256(bytes.fromhex(ret['payment_preimage'])).hexdigest() == decoded['invoice_payment_hash']
-    # The label for l4's invoice is deterministic.
+    # The label for the invoice is deterministic.
     label = f"{decoded['offer_id']}-{decoded['invreq_payer_id']}-0"
     assert only_one(l4.rpc.listinvoices(label)['invoices'])['status'] == 'paid'
     lsp = only_one(l2.rpc.listsendpays(inv9['invoice'])['payments'])
@@ -6482,39 +6514,10 @@ def test_injectpaymentonion(node_factory, executor):
     assert lsp['payment_hash'] == decoded['invoice_payment_hash']
     assert lsp['status'] == 'complete'
 
-    #
-    # bolt12, self-pay.
-    #
-    offer = l1.rpc.offer('any')
-    inv10 = l1.rpc.fetchinvoice(offer['bolt12'], '1000msat')
-    decoded = l1.rpc.decode(inv10['invoice'])
 
-    final_tlvs = TlvPayload()
-    final_tlvs.add_field(2, tu64_encode(1000))
-    final_tlvs.add_field(4, tu64_encode(blockheight + 18))
-    final_tlvs.add_field(10, bytes.fromhex(decoded['invoice_paths'][0]['path'][0]['encrypted_recipient_data']))
-    final_tlvs.add_field(12, bytes.fromhex(decoded['invoice_paths'][0]['first_path_key']))
-    final_tlvs.add_field(18, tu64_encode(1000))
-
-    hops = [{'pubkey': l1.info['id'],
-             'payload': final_tlvs.to_bytes().hex()}]
-    onion = l1.rpc.createonion(hops=hops, assocdata=decoded['invoice_payment_hash'])
-
-    ret = l1.rpc.injectpaymentonion(onion=onion['onion'],
-                                    payment_hash=decoded['invoice_payment_hash'],
-                                    amount_msat=1000,
-                                    cltv_expiry=blockheight + 18,
-                                    partid=1,
-                                    groupid=0)
-    assert sha256(bytes.fromhex(ret['payment_preimage'])).hexdigest() == decoded['invoice_payment_hash']
-    # The label for l4's invoice is deterministic.
-    label = f"{decoded['offer_id']}-{decoded['invreq_payer_id']}-0"
-    assert only_one(l1.rpc.listinvoices(label)['invoices'])['status'] == 'paid'
-    lsp = only_one(l1.rpc.listsendpays(inv4['bolt11'])['payments'])
-    assert lsp['groupid'] == 0
-    assert lsp['partid'] == 1
-    assert lsp['payment_hash'] == inv4['payment_hash']
-    assert lsp['status'] == 'complete'
+def test_injectpaymentonion_failures(node_factory, executor):
+    l1, l2 = node_factory.line_graph(2, wait_for_announce=True)
+    blockheight = l1.rpc.getinfo()['blockheight']
 
     #
     # Failure cases should give an onion:
@@ -6526,7 +6529,7 @@ def test_injectpaymentonion(node_factory, executor):
     hops = [{'pubkey': l1.info['id'],
              'payload': serialize_payload_tlv(1000, 18 + 6, first_scid(l1, l2), blockheight).hex()},
             {'pubkey': l2.info['id'],
-             'payload': serialize_payload_final_tlv(1000, 18, 1000, blockheight, inv1['payment_secret']).hex()}]
+             'payload': serialize_payload_final_tlv(1000, 18, 1000, blockheight, '00' * 32).hex()}]
     onion = l1.rpc.createonion(hops=hops, assocdata='00' * 32)
 
     with pytest.raises(RpcError) as err:
@@ -6543,7 +6546,7 @@ def test_injectpaymentonion(node_factory, executor):
 
     # Self-pay (unknown payment_hash)
     hops = [{'pubkey': l1.info['id'],
-             'payload': serialize_payload_final_tlv(1000, 18, 1000, blockheight, inv1['payment_secret']).hex()}]
+             'payload': serialize_payload_final_tlv(1000, 18, 1000, blockheight, '00' * 32).hex()}]
     onion = l1.rpc.createonion(hops=hops, assocdata='00' * 32)
 
     with pytest.raises(RpcError) as err:
