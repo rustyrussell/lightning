@@ -521,8 +521,7 @@ static void send_channel_announcement(struct channel *channel)
 	/* Send everyone our new channel announcement */
 	broadcast_new_gossip(ld, ca, &channel->funding_sats, "channel announcement");
 
-	/* If we had a private one before, we want a public one now. */
-	cg->cupdate = tal_free(cg->cupdate);
+	/* Any private cupdate will be different from this, so will force a refresh. */
 	update_channel_update(channel, channel_should_enable(channel, true));
 
 	broadcast_new_gossip(ld, cg->cupdate, NULL, "channel update");
