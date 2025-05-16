@@ -3171,6 +3171,16 @@ def test_restorefrompeer(node_factory, bitcoind):
     assert l1.daemon.is_in_log('Peer storage sent!')
     assert l2.daemon.is_in_log('Peer storage sent!')
 
+    # This will NOT save peer storage, since it's sent before establishment!  But reconnecting will.
+    l1.rpc.disconnect(l2.info['id'], force=True)
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    l1.daemon.wait_for_logs(['peer_out WIRE_PEER_STORAGE',
+                             'peer_in WIRE_PEER_STORAGE'])
+    l2.daemon.wait_for_logs(['peer_out WIRE_PEER_STORAGE',
+                             'peer_in WIRE_PEER_STORAGE'])
+    assert not l1.daemon.is_in_log('peer_in WIRE_PEER_STORAGE_RETRIEVAL')
+    assert not l2.daemon.is_in_log('peer_in WIRE_PEER_STORAGE_RETRIEVAL')
+
     l1.stop()
     os.unlink(os.path.join(l1.daemon.lightning_dir, TEST_NETWORK, "lightningd.sqlite3"))
 
