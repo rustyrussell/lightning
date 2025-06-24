@@ -659,7 +659,7 @@ def test_reconnect_signed(node_factory):
         disconnects = ['<WIRE_COMMITMENT_SIGNED']
 
     l1 = node_factory.get_node(may_reconnect=True, disconnect=disconnects)
-    l2 = node_factory.get_node(may_reconnect=True)
+    l2 = node_factory.get_node(may_reconnect=True, opts={'dev-no-reconnect': None})
 
     l1.fundwallet(2000000)
 
