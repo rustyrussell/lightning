@@ -127,13 +127,13 @@ pub struct ConnectAddress {
     pub socket: Option<String>,
     // Path `connect.address.type`
     #[serde(rename = "type")]
-    pub item_type: ConnectAddressType,
+    pub item_type: PeerConnectAddressType,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ConnectNotification {
     // Path `connect.direction`
-    pub direction: ConnectDirection,
+    pub direction: PeerConnectDirection,
     pub address: ConnectAddress,
     pub id: PublicKey,
 }

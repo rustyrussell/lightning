@@ -186,8 +186,6 @@ def gen_enum(e, meta, override):
     """
     )
 
-    typename = e.typename
-
     if e.override() is not None:
         decl = ""  # No declaration if we have an override
         typename = e.override()
