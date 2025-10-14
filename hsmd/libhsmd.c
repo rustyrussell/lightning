@@ -542,26 +542,9 @@ static void hsm_key_for_utxo(struct privkey *privkey, struct pubkey *pubkey,
 		hsmd_status_debug("Derived public key %s from unilateral close",
 				  fmt_pubkey(tmpctx, pubkey));
 	} else {
-		/* Check if this is a BIP86 UTXO by examining the scriptPubkey */
-		const size_t script_len = tal_bytelen(utxo->scriptPubkey);
-		bool is_bip86 = false;
-
-		/* For P2TR scripts, we need to determine if it's BIP86 or regular P2TR
-		 * But BIP86 derivation requires mnemonic-based secrets */
-		if (is_p2tr(utxo->scriptPubkey, script_len, NULL) &&
-		    use_bip86_derivation(tal_bytelen(secretstuff.bip32_seed))) {
-			/* Try BIP86 derivation first and see if it matches */
-			struct pubkey test_pubkey;
-			bip86_key(NULL, &test_pubkey, utxo->keyindex);
-
-			/* Create P2TR scriptpubkey from BIP86 key and compare */
-			const u8 *bip86_script = scriptpubkey_p2tr(tmpctx, &test_pubkey);
-			if (memeq(utxo->scriptPubkey, script_len, bip86_script, tal_bytelen(bip86_script))) {
-				is_bip86 = true;
-			}
-		}
-
-		if (is_bip86) {
+		/* Modern HSMs use bip86 for p2tr. */
+		if (is_p2tr(utxo->scriptPubkey, tal_bytelen(utxo->scriptPubkey), NULL)
+		    && use_bip86_derivation(tal_bytelen(secretstuff.bip32_seed))) {
 			/* Use BIP86 derivation */
 			bip86_key(privkey, pubkey, utxo->keyindex);
 		} else {
@@ -2591,8 +2574,7 @@ u8 *hsmd_init(const u8 *secret_data, size_t secret_len, const u64 hsmd_version,
 	 */
 	/* Create TLV with HSM secret type */
 	struct tlv_hsmd_init_reply_v4_tlvs *tlvs = tlv_hsmd_init_reply_v4_tlvs_new(tmpctx);
-	tlvs->hsm_secret_type = tal(tlvs, u8);
-	*tlvs->hsm_secret_type = hsm_secret_type;
+	tlvs->hsm_secret_type = tal_dup(tlvs, u8, &hsm_secret_type);
 
 	return take(towire_hsmd_init_reply_v4(
 		    NULL, hsmd_version, caps,
