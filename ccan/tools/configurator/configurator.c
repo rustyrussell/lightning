@@ -137,8 +137,8 @@ static const struct test base_tests[] = {
 	  "DEFINES_FUNC", NULL, NULL,
 	  "static int __attribute__((const)) func(int x) { return x; }" },
 	{ "HAVE_ATTRIBUTE_DEPRECATED", "__attribute__((deprecated)) support",
-	  "DEFINES_FUNC", NULL, NULL,
-	  "static int __attribute__((deprecated)) func(int x) { return x; }" },
+	  "OUTSIDE_MAIN", NULL, NULL,
+	  "int __attribute__((deprecated)) depr(int x);" },
 	{ "HAVE_ATTRIBUTE_NONNULL", "__attribute__((nonnull)) support",
 	  "DEFINES_FUNC", NULL, NULL,
 	  "static char *__attribute__((nonnull)) func(char *p) { return p; }" },
@@ -413,7 +413,7 @@ static const struct test base_tests[] = {
 	  "#include <string.h>\n"
 	  "int main(int argc, char *argv[]) {\n"
 	  "	(void)argc;\n"
-	  "     char pad[sizeof(int *) * 1];\n"
+	  "     char pad[sizeof(int) + 1];\n"
 	  "	memcpy(pad, argv[0], sizeof(pad));\n"
 	  "	int *x = (int *)pad, *y = (int *)(pad + 1);\n"
 	  "	return *x == *y;\n"
