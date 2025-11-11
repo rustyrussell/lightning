@@ -2,6 +2,7 @@
 #include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/io/io.h>
+#include <ccan/str/hex/hex.h>
 #include <ccan/tal/str/str.h>
 #include <common/htlc_tx.h>
 #include <common/memleak.h>
@@ -27,6 +28,14 @@ static bool first_update_complete = false;
 static void next_topology_timer(struct chain_topology *topo)
 {
 	assert(!topo->extend_timer);
+
+	/* In notification mode, once we're caught up, we rely on notifications
+	 * instead of polling. But during initial sync, we still need to poll. */
+	if (topo->notification_mode && first_update_complete) {
+		log_debug(topo->log, "Skipping topology poll timer (notification mode active, already synced)");
+		return;
+	}
+
 	topo->extend_timer = new_reltimer(topo->ld->timers, topo,
 					  time_from_sec(topo->poll_seconds),
 					  try_extend_tip, topo);
@@ -1092,6 +1101,44 @@ static void get_new_block(struct bitcoind *bitcoind,
 	try_extend_tip(topo);
 }
 
+void handle_bcli_block_notification(const char *buffer,
+                                    const jsmntok_t *params,
+                                    struct chain_topology *topo)
+{
+	const char *block_hex;
+	u32 height;
+	struct bitcoin_block *blk;
+	struct bitcoin_blkid blkid;
+	const char *err;
+
+	log_info(topo->log, "Received bcli_block_detected notification");
+	log_debug(topo->log, "Notification params: %.*s",
+		  params->end - params->start, buffer + params->start);
+
+	/* Extract all fields at once using json_scan */
+	err = json_scan(tmpctx, buffer, params,
+			"{bcli_block_detected:{height:%,hash:%,block:%}}",
+			JSON_SCAN(json_to_number, &height),
+			JSON_SCAN(json_to_bitcoin_blkid, &blkid),
+			JSON_SCAN_TAL(tmpctx, json_strdup, &block_hex));
+	if (err) {
+		log_broken(topo->log, "Invalid bcli_block_detected notification: %s", err);
+		return;
+	}
+
+	/* Parse block hex */
+	blk = bitcoin_block_from_hex(tmpctx, chainparams, block_hex, strlen(block_hex));
+	if (!blk) {
+		log_broken(topo->log, "Invalid block hex in notification");
+		return;
+	}
+
+	log_info(topo->log, "Block parsed successfully, processing block %u", height);
+
+	/* Process the block directly */
+	get_new_block(topo->bitcoind, height, &blkid, blk, topo);
+}
+
 static void try_extend_tip(struct chain_topology *topo)
 {
 	topo->extend_timer = NULL;
@@ -1390,11 +1437,13 @@ void setup_topology(struct chain_topology *topo)
 	u32 blockscan_start;
 
 	/* This waits for bitcoind. */
+	log_debug(topo->ld->log, "setup_topology: Checking Bitcoin plugin commands");
 	bitcoind_check_commands(topo->bitcoind);
 
 	/* For testing.. */
 	log_debug(topo->ld->log, "All Bitcoin plugin commands registered");
 
+	log_debug(topo->ld->log, "setup_topology: Beginning database transaction");
 	db_begin_transaction(topo->ld->wallet->db);
 
 	/*~ If we were asked to rescan from an absolute height (--rescan < 0)
@@ -1413,8 +1462,10 @@ void setup_topology(struct chain_topology *topo)
 			blockscan_start = blocknum_reduce(blockscan_start, topo->ld->config.rescan);
 	}
 
+	log_debug(topo->ld->log, "setup_topology: Committing database transaction");
 	db_commit_transaction(topo->ld->wallet->db);
 
+	log_debug(topo->ld->log, "setup_topology: Getting chaininfo and feerates");
 	/* Sanity checks, then topology initialization. */
 	chaininfo->chain = NULL;
 	feerates->rates = NULL;
@@ -1422,19 +1473,25 @@ void setup_topology(struct chain_topology *topo)
 			      get_chaininfo_once, chaininfo);
 	bitcoind_estimate_fees(feerates, topo->bitcoind, get_feerates_once, feerates);
 
+	log_debug(topo->ld->log, "setup_topology: Entering first io_loop_with_timers");
 	/* Each one will break, but they might only exit once! */
 	ret = io_loop_with_timers(topo->ld);
+	log_debug(topo->ld->log, "setup_topology: First io_loop returned");
 	assert(ret == topo);
 	if (chaininfo->chain == NULL || feerates->rates == NULL) {
+		log_debug(topo->ld->log, "setup_topology: Entering second io_loop_with_timers");
 		ret = io_loop_with_timers(topo->ld);
+		log_debug(topo->ld->log, "setup_topology: Second io_loop returned");
 		assert(ret == topo);
 	}
 
+	log_debug(topo->ld->log, "setup_topology: Checking headercount and network");
 	topo->headercount = chaininfo->headercount;
 	if (!streq(chaininfo->chain, chainparams->bip70_name))
 		fatal("Wrong network! Our Bitcoin backend is running on '%s',"
 		      " but we expect '%s'.", chaininfo->chain, chainparams->bip70_name);
 
+	log_debug(topo->ld->log, "setup_topology: Setting up blockscan_start");
 	if (!blockscan_start_set) {
 		blockscan_start = blocknum_reduce(chaininfo->blockcount, topo->ld->config.rescan);
 	} else {
@@ -1454,6 +1511,7 @@ void setup_topology(struct chain_topology *topo)
 			log_broken(topo->ld->log,
 				   "bitcoind has gone backwards from %u to %u blocks, waiting...",
 				   blockscan_start, chaininfo->blockcount);
+			log_debug(topo->ld->log, "setup_topology: Waiting for height %u", blockscan_start);
 			bitcoind_getchaininfo(wh, topo->bitcoind, blockscan_start,
 					      wait_until_height_reached, wh);
 			ret = io_loop_with_timers(topo->ld);
@@ -1502,15 +1560,31 @@ void setup_topology(struct chain_topology *topo)
 	 * related to a channel.  But not if they're created by sendpsbt without any
 	 * outputs to us. */
 	watch_for_unconfirmed_txs(topo->ld, topo);
+	log_debug(topo->ld->log, "setup_topology: Committing final transaction");
 	db_commit_transaction(topo->ld->wallet->db);
 
+	log_debug(topo->ld->log, "setup_topology: Cleaning up");
 	tal_free(local_ctx);
 
 	tal_add_destructor(topo, destroy_chain_topology);
+	log_info(topo->ld->log, "setup_topology: COMPLETED SUCCESSFULLY");
 }
 
 void begin_topology(struct chain_topology *topo)
 {
+	log_debug(topo->ld->log, "begin_topology: Checking for bcli_block_detected notification topic");
+	/* Check if any plugin provides block notifications */
+	if (notifications_have_topic(topo->ld->plugins, "bcli_block_detected")) {
+		topo->notification_mode = true;
+		log_info(topo->log, "bcli block notifications detected, using notification mode");
+	} else {
+		/* FIXME: Deprecate! */
+		topo->notification_mode = false;
+		log_unusual(topo->log, "bcli block notifications not available, using polling mode");
+	}
+
+	log_debug(topo->log, "Notification mode: %s", topo->notification_mode ? "ENABLED" : "DISABLED");
+
 	/* If we were not synced, start looping to check */
 	if (!topo->bitcoind->synced)
 		retry_sync(topo);

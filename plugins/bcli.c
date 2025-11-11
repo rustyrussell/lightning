@@ -821,6 +821,55 @@ static struct command_result *getchaininfo(struct command *cmd,
 /* Forward declaration - needed for circular dependency */
 static struct command_result *poll_for_new_blocks(struct command *cmd, void *plugin_ptr UNUSED);
 
+struct getblock_stash {
+	/* Pending block change (not yet notified) */
+	u32 pending_height;
+	struct bitcoin_blkid pending_blkid;
+};
+
+/* Process getblock result and send notification with full block info */
+static struct command_result *process_getblock_for_notification(struct bitcoin_cli *bcli)
+{
+	const struct getblock_stash *gbs = bcli->stash;
+	struct json_stream *notification;
+
+	plugin_log(bcli->cmd->plugin, LOG_DBG, "process_getblock_for_notification called");
+
+	/* Only send notification if we successfully got the block */
+	if (bcli->exitstatus && *bcli->exitstatus != 0) {
+		plugin_log(bcli->cmd->plugin, LOG_BROKEN,
+			   "Failed to get raw block %s, skipping notification",
+			   fmt_bitcoin_blkid(tmpctx, &gbs->pending_blkid));
+	} else {
+		strip_trailing_whitespace(bcli->output, bcli->output_bytes);
+
+		plugin_log(bcli->cmd->plugin, LOG_DBG,
+			   "Sending bcli_block_detected notification: height=%u hash=%s",
+			   gbs->pending_height,
+			   fmt_bitcoin_blkid(tmpctx, &gbs->pending_blkid));
+
+		notification = plugin_notification_start(tmpctx, "bcli_block_detected");
+		json_add_u32(notification, "height", gbs->pending_height);
+		json_add_bitcoin_blkid(notification, "hash", &gbs->pending_blkid);
+		json_add_string(notification, "block", bcli->output);
+		plugin_notification_end(bcli->cmd->plugin, notification);
+
+		/* Update our tracking state only after successful notification */
+		bitcoind->last_height = gbs->pending_height;
+		bitcoind->last_blkid = gbs->pending_blkid;
+
+		plugin_log(bcli->cmd->plugin, LOG_DBG,
+			   "Notification sent and state updated");
+	}
+
+	/* Always reschedule the next poll */
+	bitcoind->poll_timer = global_timer(bcli->cmd->plugin,
+					    time_from_sec(10),
+					    poll_for_new_blocks, bcli->cmd->plugin);
+
+	return timer_complete(bcli->cmd);
+}
+
 /* Process getblockchaininfo result during polling */
 static struct command_result *process_poll_chaintip(struct bitcoin_cli *bcli)
 {
@@ -829,7 +878,6 @@ static struct command_result *process_poll_chaintip(struct bitcoin_cli *bcli)
 	const char *err;
 	u32 height;
 	struct bitcoin_blkid blockhash;
-	struct json_stream *notification;
 
 	/* Handle error cases first */
 	tokens = json_parse_simple(bcli, bcli->output, bcli->output_bytes);
@@ -854,18 +902,22 @@ static struct command_result *process_poll_chaintip(struct bitcoin_cli *bcli)
 		bitcoind->last_blkid = blockhash;
 	} else if (height != bitcoind->last_height ||
 		   !bitcoin_blkid_eq(&blockhash, &bitcoind->last_blkid)) {
-		/* Tip changed - send notification to lightningd */
+		struct getblock_stash *gbs;
+		/* Tip changed - store pending values and fetch raw block */
 		plugin_log(cmd->plugin, LOG_DBG,
 			   "Block change: %u -> %u",
 			   bitcoind->last_height, height);
+		gbs = tal(cmd, struct getblock_stash);
+		/* Store pending values - will be committed after successful getblock */
+		gbs->pending_height = height;
+		gbs->pending_blkid = blockhash;
 
-		notification = plugin_notification_start(tmpctx, "bcli_block_detected");
-		json_add_u32(notification, "height", height);
-		json_add_bitcoin_blkid(notification, "hash", &blockhash);
-		plugin_notification_end(cmd->plugin, notification);
+		/* Fetch the raw block and send notification */
+		start_bitcoin_cli(NULL, cmd, process_getblock_for_notification, true,
+				  BITCOIND_LOW_PRIO, gbs, "getblock",
+				  blockhash, "0", NULL);
 
-		bitcoind->last_height = height;
-		bitcoind->last_blkid = blockhash;
+		return command_still_pending(cmd);
 	}
 
 	/* Always reschedule the next poll */
@@ -1176,7 +1228,9 @@ static void memleak_mark_bitcoind(struct plugin *p, struct htable *memtable)
 static const char *init(struct command *init_cmd, const char *buffer UNUSED,
 			const jsmntok_t *config UNUSED)
 {
+	plugin_log(init_cmd->plugin, LOG_DBG, "BCLI: init() called");
 	wait_and_check_bitcoind(init_cmd->plugin);
+	plugin_log(init_cmd->plugin, LOG_DBG, "BCLI: wait_and_check_bitcoind completed");
 
 	/* Usually we fake up fees in regtest */
 	if (streq(chainparams->network_name, "regtest"))
@@ -1189,10 +1243,12 @@ static const char *init(struct command *init_cmd, const char *buffer UNUSED,
 		   "bitcoin-cli initialized and connected to bitcoind.");
 
 	/* Start the poll timer to check for new blocks */
+	plugin_log(init_cmd->plugin, LOG_DBG, "BCLI: Starting poll timer");
 	bitcoind->poll_timer = global_timer(init_cmd->plugin,
 					    time_from_sec(10),
 					    poll_for_new_blocks,
 					    init_cmd->plugin);
+	plugin_log(init_cmd->plugin, LOG_DBG, "BCLI: Poll timer started, returning from init");
 
 	return NULL;
 }

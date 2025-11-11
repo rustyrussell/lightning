@@ -23,6 +23,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <lightningd/chaintopology.h>
 #include <lightningd/io_loop_with_timers.h>
 #include <lightningd/notification.h>
 #include <lightningd/plugin.h>
@@ -617,6 +618,16 @@ static const char *plugin_notification_handle(struct plugin *plugin,
 	} else if (json_tok_streq(buffer, methtok, "message")
 		   || json_tok_streq(buffer, methtok, "progress")) {
 		return plugin_notify_handle(plugin, buffer, methtok, paramstok);
+	} else if (json_tok_streq(buffer, methtok, "bcli_block_detected")) {
+		/* Handle bcli block notifications internally for chaintopology */
+		if (plugin->plugins->ld->topology->notification_mode) {
+			log_debug(plugin->log, "Dispatching bcli_block_detected to chaintopology handler");
+			handle_bcli_block_notification(buffer, paramstok,
+						      plugin->plugins->ld->topology);
+			return NULL;
+		}
+		log_debug(plugin->log, "bcli_block_detected received but notification_mode is false, forwarding normally");
+		/* If not in notification mode, fall through to normal forwarding */
 	}
 
 	methname = json_strdup(tmpctx, buffer, methtok);

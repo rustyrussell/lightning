@@ -4685,3 +4685,116 @@ def test_bcli_block_polling_notification(node_factory, bitcoind):
     # Wait for bcli to poll and detect the new block (polls every 10 seconds)
     # We should see a log message about the block change
     l1.daemon.wait_for_log(f'Block change: {initial_height} -> {new_height}')
+
+
+def test_bcli_notification_updates_tip(node_factory, bitcoind):
+    """Test that block notifications actually update the chain tip in lightningd
+
+    This test verifies that when bcli sends a block notification, chaintopology
+    processes it and updates the chain tip accordingly.
+    """
+
+    # Start a node with notification support
+    l1 = node_factory.get_node()
+
+    # Wait for initial sync and check that notification mode is enabled
+    # These happen during startup, so we wait for both in order
+    l1.daemon.wait_for_log('bcli block notifications detected, using notification mode')
+    l1.daemon.wait_for_log(r'Initial blockchain state: height=')
+
+    # Get initial state
+    info = l1.rpc.getinfo()
+    initial_height = info['blockheight']
+
+    # Generate several new blocks
+    bitcoind.generate_block(3)
+    expected_height = initial_height + 3
+
+    # Wait for the notification to be received and processed
+    # We should see the notification handler being called
+    l1.daemon.wait_for_log('Received bcli_block_detected notification')
+
+    # Wait for the block to be processed
+    l1.daemon.wait_for_log(f'Block parsed successfully, processing block {expected_height}')
+
+    # Verify the tip has been updated by checking getinfo
+    wait_for(lambda: l1.rpc.getinfo()['blockheight'] == expected_height)
+
+    # Verify we're not polling anymore (notification mode should prevent it)
+    # We should see the "Skipping topology poll timer" message
+    l1.daemon.wait_for_log('Skipping topology poll timer.*notification mode active')
+
+    # Generate one more block to make sure notifications keep working
+    bitcoind.generate_block(1)
+    final_height = expected_height + 1
+
+    l1.daemon.wait_for_log(f'Block parsed successfully, processing block {final_height}')
+    wait_for(lambda: l1.rpc.getinfo()['blockheight'] == final_height)
+
+
+def test_bcli_notification_reorg_detection(node_factory, bitcoind):
+    """Test that blockchain reorganizations are detected when using block notifications
+
+    This test verifies that when a reorg occurs, chaintopology correctly handles it
+    even when receiving blocks via notifications instead of polling.
+    """
+
+    # Start a node with notification support
+    l1 = node_factory.get_node()
+
+    # Wait for initial sync
+    l1.daemon.wait_for_log('bcli block notifications detected, using notification mode')
+    l1.daemon.wait_for_log(r'Initial blockchain state: height=')
+
+    # Get initial state
+    info = l1.rpc.getinfo()
+    initial_height = info['blockheight']
+
+    # Generate a block and wait for it to be processed
+    bitcoind.generate_block(1)
+    height_a = initial_height + 1
+    l1.daemon.wait_for_log(f'Block parsed successfully, processing block {height_a}')
+    wait_for(lambda: l1.rpc.getinfo()['blockheight'] == height_a)
+
+    # Generate another block on top
+    bitcoind.generate_block(1)
+    height_b = height_a + 1
+    l1.daemon.wait_for_log(f'Block parsed successfully, processing block {height_b}')
+    wait_for(lambda: l1.rpc.getinfo()['blockheight'] == height_b)
+
+    # Get the block hash before the reorg
+    block_b_hash_original = bitcoind.rpc.getblockhash(height_b)
+
+    # Now cause a reorg: invalidate the last block and generate a new chain
+    bitcoind.rpc.invalidateblock(block_b_hash_original)
+
+    # Verify bitcoind has rolled back
+    assert bitcoind.rpc.getblockchaininfo()["blocks"] == height_a
+
+    # Generate a new block (different from the invalidated one)
+    # This creates a reorg at height_b
+    bitcoind.generate_block(1)
+    height_b_new = height_a + 1  # Same height but different block
+
+    # Get the new block hash
+    block_b_hash_new = bitcoind.rpc.getblockhash(height_b_new)
+
+    # Verify it's actually a different block
+    assert block_b_hash_original != block_b_hash_new
+
+    # Wait for bcli to detect the change and send notification
+    # When the new block arrives, chaintopology should detect that its prev_hash
+    # doesn't match the current tip and call remove_tip
+    l1.daemon.wait_for_log('Removing stale block')
+
+    # Wait for the NEW block to be added (different hash)
+    l1.daemon.wait_for_log(f'Adding block {height_b_new}:')
+
+    # Verify we're back at the same height with the reorganized chain
+    wait_for(lambda: l1.rpc.getinfo()['blockheight'] == height_b_new)
+
+    # Generate one more block to ensure everything continues working after reorg
+    bitcoind.generate_block(1)
+    height_c = height_b_new + 1
+    l1.daemon.wait_for_log(f'Block parsed successfully, processing block {height_c}')
+    wait_for(lambda: l1.rpc.getinfo()['blockheight'] == height_c)

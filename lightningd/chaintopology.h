@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_LIGHTNINGD_CHAINTOPOLOGY_H
 #define LIGHTNING_LIGHTNINGD_CHAINTOPOLOGY_H
 #include "config.h"
+#include <external/jsmn/jsmn.h>
 #include <lightningd/watch.h>
 
 struct bitcoin_tx;
@@ -143,6 +144,9 @@ struct chain_topology {
 	/* The number of headers known to the bitcoin backend at startup. Not
 	 * updated after the initial check. */
 	u32 headercount;
+
+	/* Whether we're using bcli block notifications instead of polling */
+	bool notification_mode;
 };
 
 /* Information relevant to locating a TX in a blockchain. */
@@ -285,4 +289,10 @@ void notify_feerate_change(struct lightningd *ld);
 void watch_unconfirmed_txid(struct lightningd *ld,
 			    struct chain_topology *topo,
 			    const struct bitcoin_txid *txid);
+
+/* Handler for bcli_block_detected notifications from bcli plugin */
+void handle_bcli_block_notification(const char *buffer,
+				   const jsmntok_t *params,
+				   struct chain_topology *topo);
+
 #endif /* LIGHTNING_LIGHTNINGD_CHAINTOPOLOGY_H */

@@ -1255,9 +1255,11 @@ int main(int argc, char *argv[])
 	/*~ Initialize all the plugins we just registered, so they can
 	 *  do their thing and tell us about themselves (including
 	 *  options registration). */
+	log_info(ld->log, "MAIN: About to initialize plugins");
 	trace_span_start("plugins/init", ld->plugins);
 	plugins_init(ld->plugins);
 	trace_span_end(ld->plugins);
+	log_info(ld->log, "MAIN: Plugins initialized");
 
 	/*~ If the plugis are misconfigured we don't want to proceed. A
 	 * misconfiguration could for example be a plugin marked as important
@@ -1360,10 +1362,13 @@ int main(int argc, char *argv[])
 
 	/*~ Initialize block topology.  This does its own io_loop to
 	 * talk to bitcoind, so does its own db transactions. */
+	log_info(ld->log, "MAIN: About to call setup_topology");
 	trace_span_start("setup_topology", ld->topology);
 	setup_topology(ld->topology);
 	trace_span_end(ld->topology);
+	log_info(ld->log, "MAIN: setup_topology completed");
 
+	log_debug(ld->log, "MAIN: Beginning transaction for delete_old_htlcs");
 	db_begin_transaction(ld->wallet->db);
 	trace_span_start("delete_old_htlcs", ld->wallet);
 	wallet_delete_old_htlcs(ld->wallet);
@@ -1372,9 +1377,11 @@ int main(int argc, char *argv[])
 	/*~ Pull peers, channels and HTLCs from db. Needs to happen after the
 	 *  topology is initialized since some decisions rely on being able to
 	 *  know the blockheight. */
+	log_debug(ld->log, "MAIN: Loading channels from wallet");
 	unconnected_htlcs_in = notleak(load_channels_from_wallet(ld,
 								 &num_channels));
 	db_commit_transaction(ld->wallet->db);
+	log_debug(ld->log, "MAIN: Loaded %zu channels", num_channels);
 
 	/*~ Now we have channels, try to ensure we have enough file descriptors
 	 * to cover 2x that many. */
