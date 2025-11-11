@@ -4647,3 +4647,41 @@ def test_openchannel_hook_channel_type(node_factory, bitcoind):
         l2.daemon.wait_for_log(r"plugin-openchannel_hook_accepter.py: accept by design: channel_type {'bits': \[12, 22\], 'names': \['static_remotekey/even', 'anchors/even'\]}")
     else:
         l2.daemon.wait_for_log(r"plugin-openchannel_hook_accepter.py: accept by design: channel_type {'bits': \[12\], 'names': \['static_remotekey/even'\]}")
+
+
+def test_bcli_block_polling_initial_state(node_factory, bitcoind):
+    """Test that bcli logs initial blockchain state on startup"""
+
+    current_height = bitcoind.rpc.getblockchaininfo()["blocks"]
+
+    # Start a node - bcli should log initial state
+    l1 = node_factory.get_node()
+
+    # Check that bcli logged the initial blockchain state
+    l1.daemon.wait_for_log(f'Initial blockchain state: height={current_height}')
+
+
+def test_bcli_block_polling_notification(node_factory, bitcoind):
+    """Test that bcli plugin sends notification when it detects a new block via polling
+
+    This test is marked as slow because bcli polls every 10 seconds, so we need
+    to wait up to 10 seconds for it to detect the block change.
+    """
+
+    # Start a node - bcli should start polling
+    l1 = node_factory.get_node()
+
+    # Wait for bcli to initialize and log the initial blockchain state
+    # This ensures bcli has started polling before we generate a new block
+    l1.daemon.wait_for_log(r'Initial blockchain state: height=')
+
+    # Now get the current block height that bcli knows about
+    initial_height = bitcoind.rpc.getblockchaininfo()["blocks"]
+
+    # Generate a new block AFTER bcli has initialized
+    bitcoind.generate_block(1)
+    new_height = initial_height + 1
+
+    # Wait for bcli to poll and detect the new block (polls every 10 seconds)
+    # We should see a log message about the block change
+    l1.daemon.wait_for_log(f'Block change: {initial_height} -> {new_height}')
