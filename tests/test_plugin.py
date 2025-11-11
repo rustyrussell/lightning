@@ -4798,3 +4798,301 @@ def test_bcli_notification_reorg_detection(node_factory, bitcoind):
     height_c = height_b_new + 1
     l1.daemon.wait_for_log(f'Block parsed successfully, processing block {height_c}')
     wait_for(lambda: l1.rpc.getinfo()['blockheight'] == height_c)
+
+
+def test_bcli_watch_registration(node_factory, bitcoind):
+    """Test that watch registration RPCs work correctly"""
+
+    l1 = node_factory.get_node()
+
+    # The node has already started and bcli is in PROVISIONAL state
+    # (the transition happens very early during startup)
+
+    # Test scriptpubkey watch registration
+    scriptpubkey = "76a914" + "00" * 20 + "88ac"  # P2PKH of 20 zero bytes
+    result = l1.rpc.call('register_scriptpubkey_watch', {'scriptpubkey': scriptpubkey})
+    assert result['added'] is True
+    l1.daemon.wait_for_log('Registered scriptpubkey watch')
+
+    # Registering the same watch should return added=false
+    result = l1.rpc.call('register_scriptpubkey_watch', {'scriptpubkey': scriptpubkey})
+    assert result['added'] is False
+    l1.daemon.wait_for_log('Scriptpubkey watch already registered')
+
+    # Test txid watch registration
+    txid = "00" * 32  # All zeros txid
+    result = l1.rpc.call('register_txid_watch', {'txid': txid})
+    assert result['added'] is True
+    l1.daemon.wait_for_log('Registered txid watch')
+
+    # Registering same txid should return added=false
+    result = l1.rpc.call('register_txid_watch', {'txid': txid})
+    assert result['added'] is False
+
+    # Test outpoint watch registration
+    result = l1.rpc.call('register_outpoint_watch', {'txid': txid, 'vout': 0})
+    assert result['added'] is True
+    l1.daemon.wait_for_log('Registered outpoint watch')
+
+    # Registering same outpoint should return added=false
+    result = l1.rpc.call('register_outpoint_watch', {'txid': txid, 'vout': 0})
+    assert result['added'] is False
+
+
+def test_bcli_watch_unregistration(node_factory, bitcoind):
+    """Test that watch unregistration RPCs work correctly"""
+
+    l1 = node_factory.get_node()
+
+    # Register watches first
+    scriptpubkey = "76a914" + "00" * 20 + "88ac"
+    txid = "00" * 32
+
+    l1.rpc.call('register_scriptpubkey_watch', {'scriptpubkey': scriptpubkey})
+    l1.rpc.call('register_txid_watch', {'txid': txid})
+    l1.rpc.call('register_outpoint_watch', {'txid': txid, 'vout': 0})
+
+    # Unregister scriptpubkey watch
+    assert l1.rpc.unwatch_scriptpubkey(scriptpubkey=scriptpubkey) == {}
+    l1.daemon.wait_for_log('Unregistered scriptpubkey watch \\(removed=1\\)')
+
+    # Unregistering again should return removed=false
+    result = l1.rpc.call('unregister_scriptpubkey_watch', {'scriptpubkey': scriptpubkey})
+    assert result['removed'] is False
+
+    # Unregister txid watch
+    result = l1.rpc.call('unregister_txid_watch', {'txid': txid})
+    assert result['removed'] is True
+
+    # Unregister outpoint watch
+    result = l1.rpc.call('unregister_outpoint_watch', {'txid': txid, 'vout': 0})
+    assert result['removed'] is True
+
+
+def test_bcli_watch_sync_complete(node_factory, bitcoind):
+    """Test that watch_sync_complete transitions state and reports counts"""
+
+    l1 = node_factory.get_node()
+
+    # Register some watches
+    scriptpubkey = "76a914" + "00" * 20 + "88ac"
+    txid1 = "00" * 32
+    txid2 = "ff" * 32
+
+    l1.rpc.call('register_scriptpubkey_watch', {'scriptpubkey': scriptpubkey})
+    l1.rpc.call('register_txid_watch', {'txid': txid1})
+    l1.rpc.call('register_txid_watch', {'txid': txid2})
+    l1.rpc.call('register_outpoint_watch', {'txid': txid1, 'vout': 0})
+
+    # Call watch_sync_complete
+    result = l1.rpc.call('watch_sync_complete', {})
+
+    assert result['state'] == 'ACTIVE'
+    assert result['scriptpubkey_watches'] == 1
+    assert result['txid_watches'] == 2
+    assert result['outpoint_watches'] == 1
+
+    # Check logs - both messages are in the same log line
+    l1.daemon.wait_for_log('Watch sync complete! Transitioning to ACTIVE. Watching: 1 scriptpubkeys, 2 txids, 1 outpoints')
+
+
+def test_bcli_filter_block_no_matches(node_factory, bitcoind):
+    """Test filtering a block with no matching transactions"""
+
+    # Use 1-second poll interval for faster tests
+    l1 = node_factory.get_node(options={'bitcoin-poll-interval': 1})
+
+    # Wait for bcli to complete its initial sync
+    l1.daemon.wait_for_log('Initial blockchain state: height=')
+
+    # Register a watch that won't match anything
+    scriptpubkey = "76a914" + "ff" * 20 + "88ac"  # Unlikely to match
+    l1.rpc.call('register_scriptpubkey_watch', {'scriptpubkey': scriptpubkey})
+
+    # Transition to ACTIVE
+    l1.rpc.call('watch_sync_complete', {})
+    l1.daemon.wait_for_log('Watch sync complete! Transitioning to ACTIVE')
+
+    # Get current height AFTER bcli has synced
+    initial_height = bitcoind.rpc.getblockchaininfo()["blocks"]
+
+    # Generate a block
+    bitcoind.generate_block(1)
+    new_height = initial_height + 1
+
+    # Wait for bcli to detect the block change (polls every 1 second now)
+    l1.daemon.wait_for_log(f'Block change: {initial_height} -> {new_height}', timeout=5)
+
+    # Wait for bcli to process and filter it
+    l1.daemon.wait_for_log('Processing new block:.*state=ACTIVE', timeout=5)
+    l1.daemon.wait_for_log('Filtering block', timeout=5)
+
+    # Should log "No matches found in block"
+    l1.daemon.wait_for_log('No matches found in block', timeout=5)
+
+
+def test_bcli_filter_block_one_match(node_factory, bitcoind):
+    """Test filtering a block with one matching transaction"""
+
+    # Use 1-second poll interval for faster tests
+    l1 = node_factory.get_node(options={'bitcoin-poll-interval': 1})
+    l2 = node_factory.get_node()
+
+    # Wait for bcli to complete its initial sync
+    l1.daemon.wait_for_log('Initial blockchain state: height=')
+
+    # Get an address from l2
+    addr = l2.rpc.newaddr()['bech32']
+
+    # Get the scriptpubkey for this address
+    addr_info = bitcoind.rpc.getaddressinfo(addr)
+    scriptpubkey = addr_info['scriptPubKey']
+
+    # Register watch for this scriptpubkey on l1
+    l1.rpc.call('register_scriptpubkey_watch', {'scriptpubkey': scriptpubkey})
+
+    # Transition to ACTIVE
+    l1.rpc.call('watch_sync_complete', {})
+    l1.daemon.wait_for_log('Watch sync complete! Transitioning to ACTIVE')
+
+    # Get current height
+    initial_height = bitcoind.rpc.getblockchaininfo()["blocks"]
+
+    # Send coins to this address (creates a transaction)
+    bitcoind.rpc.sendtoaddress(addr, 0.1)
+
+    # Mine a block containing this transaction
+    bitcoind.generate_block(1)
+    new_height = initial_height + 1
+
+    # Wait for bcli to detect the block change (polls every 1 second now)
+    l1.daemon.wait_for_log(f'Block change: {initial_height} -> {new_height}', timeout=5)
+
+    # Wait for bcli to filter and find the match
+    l1.daemon.wait_for_log('Found watched scriptpubkey in tx', timeout=5)
+    l1.daemon.wait_for_log('Found 1 relevant transactions in block', timeout=5)
+
+
+def test_bcli_filter_block_multiple_matches(node_factory, bitcoind):
+    """Test filtering a block with multiple matching transactions"""
+
+    # Use 1-second poll interval for faster tests
+    l1 = node_factory.get_node(options={'bitcoin-poll-interval': 1})
+    l2 = node_factory.get_node()
+    l3 = node_factory.get_node()
+
+    # Wait for bcli to complete its initial sync
+    l1.daemon.wait_for_log('Initial blockchain state: height=')
+
+    # Get addresses from l2 and l3
+    addr2 = l2.rpc.newaddr()['bech32']
+    addr3 = l3.rpc.newaddr()['bech32']
+
+    # Get scriptpubkeys
+    addr2_info = bitcoind.rpc.getaddressinfo(addr2)
+    addr3_info = bitcoind.rpc.getaddressinfo(addr3)
+    scriptpubkey2 = addr2_info['scriptPubKey']
+    scriptpubkey3 = addr3_info['scriptPubKey']
+
+    # Register watches for both scriptpubkeys
+    l1.rpc.call('register_scriptpubkey_watch', {'scriptpubkey': scriptpubkey2})
+    l1.rpc.call('register_scriptpubkey_watch', {'scriptpubkey': scriptpubkey3})
+
+    # Transition to ACTIVE
+    l1.rpc.call('watch_sync_complete', {})
+    l1.daemon.wait_for_log('Watch sync complete! Transitioning to ACTIVE')
+
+    # Get current height
+    initial_height = bitcoind.rpc.getblockchaininfo()["blocks"]
+
+    # Send coins to both addresses (creates two transactions)
+    bitcoind.rpc.sendtoaddress(addr2, 0.1)
+    bitcoind.rpc.sendtoaddress(addr3, 0.2)
+
+    # Mine a block containing both transactions
+    bitcoind.generate_block(1)
+    new_height = initial_height + 1
+
+    # Wait for bcli to detect the block change (polls every 1 second now)
+    l1.daemon.wait_for_log(f'Block change: {initial_height} -> {new_height}', timeout=5)
+
+    # Wait for bcli to filter and find both matches
+    l1.daemon.wait_for_log('Found 2 relevant transactions in block', timeout=5)
+
+
+def test_bcli_filter_transaction_multiple_watches(node_factory, bitcoind):
+    """Test that a transaction matching multiple watch types is only reported once"""
+
+    # Use 1-second poll interval for faster tests
+    l1 = node_factory.get_node(options={'bitcoin-poll-interval': 1})
+    l2 = node_factory.get_node(options={'bitcoin-poll-interval': 1})
+
+    # Wait for bcli to complete its initial sync
+    l1.daemon.wait_for_log('Initial blockchain state: height=')
+
+    # Fund l2 so we can create a transaction
+    addr2 = l2.rpc.newaddr()['bech32']
+    bitcoind.rpc.sendtoaddress(addr2, 1.0)
+    bitcoind.generate_block(1)
+
+    # Get the scriptpubkey
+    addr_info = bitcoind.rpc.getaddressinfo(addr2)
+    scriptpubkey = addr_info['scriptPubKey']
+
+    # Register watches: the scriptpubkey of the output
+    l1.rpc.call('register_scriptpubkey_watch', {'scriptpubkey': scriptpubkey})
+
+    # Transition to ACTIVE
+    l1.rpc.call('watch_sync_complete', {})
+    l1.daemon.wait_for_log('Watch sync complete! Transitioning to ACTIVE')
+
+    # Get current height
+    initial_height = bitcoind.rpc.getblockchaininfo()["blocks"]
+
+    # Create a transaction that will match the scriptpubkey watch
+    new_txid = bitcoind.rpc.sendtoaddress(addr2, 0.5)
+
+    # Also register the new txid
+    l1.rpc.call('register_txid_watch', {'txid': new_txid})
+
+    # Mine a block
+    bitcoind.generate_block(1)
+    new_height = initial_height + 1
+
+    # Wait for bcli to detect the block change (polls every 1 second now)
+    l1.daemon.wait_for_log(f'Block change: {initial_height} -> {new_height}', timeout=5)
+
+    # The transaction should be reported, but only once
+    # The logs should show it matched (could be txid or scriptpubkey first)
+    l1.daemon.wait_for_log('Found 1 relevant transactions in block', timeout=5)
+
+
+def test_bcli_filter_buffered_blocks(node_factory, bitcoind):
+    """Test that blocks received during PROVISIONAL state are buffered and filtered later"""
+
+    # Use 1-second poll interval for faster tests
+    l1 = node_factory.get_node(options={'bitcoin-poll-interval': 1})
+    l2 = node_factory.get_node()
+
+    # Get an address
+    addr = l2.rpc.newaddr()['bech32']
+    addr_info = bitcoind.rpc.getaddressinfo(addr)
+    scriptpubkey = addr_info['scriptPubKey']
+
+    # Send a transaction and mine it BEFORE registering watches
+    bitcoind.rpc.sendtoaddress(addr, 0.1)
+    bitcoind.generate_block(1)
+
+    # Wait for the block to be detected and buffered
+    l1.daemon.wait_for_log('Buffering block.*\\(state=PROVISIONAL\\)')
+
+    # Now register the watch
+    l1.rpc.call('register_scriptpubkey_watch', {'scriptpubkey': scriptpubkey})
+
+    # Transition to ACTIVE - this should process buffered blocks
+    l1.rpc.call('watch_sync_complete', {})
+
+    # Should process the buffered block and find the match
+    l1.daemon.wait_for_log('Processing buffered block')
+    l1.daemon.wait_for_log('Found 1 relevant transactions in block')
+    l1.daemon.wait_for_log('Processed 1 buffered blocks \\(1 with matches\\)')
