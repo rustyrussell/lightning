@@ -5044,7 +5044,6 @@ def test_zero_locktime_blocks(node_factory, bitcoind):
     sync_blockheight(bitcoind, [l1, l2, l3])
 
 
-@pytest.mark.xfail(strict=True)
 def test_filter_with_invalid_json(node_factory):
     # This crashes only in *non-developer mode*: it uses command_log()
     # in that case (since it doesn't print the invalid token in
