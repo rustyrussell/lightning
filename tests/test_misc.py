@@ -49,22 +49,33 @@ def test_names(node_factory, old_hsmsecret):
     else:
         # Note:
         # mnemonics:
-        # l1: 
-        # l2: 
-        # l3: 
+        # l1: hockey enroll sure trip track rescue original plate abandon abandon abandon account
+        # l2: hockey enroll sure trip track rescue original play abandon abandon abandon achieve
+        # l3: hockey enroll sure trip track rescue original please abandon abandon abandon ability
+        # l4: hockey enroll sure trip track rescue original pledge abandon abandon abandon achieve
+        # l5: hockey enroll sure trip track rescue original pluck abandon abandon abandon access
+        # l6: hockey enroll sure trip track rescue original plug abandon abandon abandon above
+        # private keys:
+        #
+        # l1: 0a2d7086e54a0982829f15e61d42f5bbd49d4fbdfb9b876a1064b7b89edd05aa01
+        # l2: 0c633a7c17c701a0980158f5483035e01fa8bd091b47fadf2e86e589a9f93fca01
+        # l3: 79893b45d1e57cf2ebf302af91aa52c9e573f638a61a83c6e603a331b53f452c01
+        # l4: 351895a3f18dbfd0b1c70da7c37297b8676eba3a689dc4ba825f9d3c52f3f20501
+        # l5: bb94a63cfdb447ea3a9c7953ae98539a46a90bc114b494673453b0dae58194dd01
+        # l6: 12ecb4eecac5c0c2c49fc491ae6af30fe6788736989b8f1ed05be7581bfb3d6501
         configs = [
-            ('0278121fa2313950047990c040ff913e818fa7b12296f585ede550a265730905c2', 'STRANGETOLL', '027812'),
-            ('022d223620a359a47ff7f7ac447c85c46c923da53389221a0054c11c1e3ca31d59', 'SILENTARTIST', '022d22'),
-            ('035d2b1192dfba134e10e540875d366ebc8bc353d5aa766b80c090b39c3a5d885d', 'HOPPINGFIRE', '035d2b'),
-            ('0382ce59ebf18be7d84677c2e35f23294b9992ceca95491fcf8a56c6cb2d9de199', 'JUNIORFELONY', '0382ce'),
-            ('032cf15d1ad9c4a08d26eab1918f732d8ef8fdc6abb9640bf3db174372c491304e', 'SOMBERFIRE', '032cf1'),
-            ('0265b6ab5ec860cd257865d61ef0bbf5b3339c36cbda8b26b74e7f1dca490b6518', 'LOUDPHOTO', '0265b6')
+            ('038194b5f32bdf0aa59812c86c4ef7ad2f294104fa027d1ace9b469bb6f88cf37b', 'STRANGEBOUNCE', '038194'),
+            ('033845802d25b4e074ccfd7cd8b339a41dc75bf9978a034800444b51d42b07799a', 'SILENTGOPHER', '033845'),
+            ('03cecbfdc68544cc596223b68ce0710c9e5d2c9cb317ee07822d95079acc703d31', 'GREENCHEF', '03cecb'),
+            ('02287bfac8b99b35477ebe9334eede1e32b189e24644eb701c079614712331cec0', 'JUNIORYARD', '02287b'),
+            ('0258f3ff3e0853ccc09f6fe89823056d7c0c55c95fab97674df5e1ad97a72f6265', 'BLUEFEED', '0258f3'),
+            ('02186115cb7e93e2cb4d9d9fe7a9cf5ff7a5784bfdda4f164ff041655e4bcd4fd0', 'VIOLETYARD', '021861'),
         ]
 
     nodes = node_factory.get_nodes(len(configs), opts={'old_hsmsecret': old_hsmsecret})
     for n in nodes:
         info = n.rpc.getinfo()
-        print(f"{info['id']}, {info['alias']}, {info['color']}")
+        print(f"XXX {info['id']}, {info['alias']}, {info['color']}")
 
     for n, (key, alias, color) in zip(nodes, configs):
         assert n.daemon.is_in_log(r'public key {}, alias {}.* \(color #{}\)'
