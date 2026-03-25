@@ -11,6 +11,15 @@ for file; do
     OWN_HDR='<'$(echo "$file" | sed -n 's/\.c$/.h/p')'>'
     i=1
     echo "$file":
+    # First check: does this file compile standalone?
+    cp "$file" "$file".c
+    if ! $CCMD /tmp/out.$$.o "$file".c 2>/tmp/err.$$.txt; then
+	echo " does not compile standalone:"
+	cat /tmp/err.$$.txt >&2
+	rm -f "$file".c /tmp/out.$$.o /tmp/err.$$.txt
+	exit 1
+    fi
+    rm -f "$file".c /tmp/out.$$.o /tmp/err.$$.txt
     while true; do
 	# Don't eliminate config.h includes!
 	LINE="$(grep '^#include <' "$file" | grep -v '[<"]config.h[">]' | grep -F -v "$OWN_HDR" | tail -n +$i | head -n1)"
