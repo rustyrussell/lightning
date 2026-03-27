@@ -3,7 +3,6 @@
 #include <bitcoin/chainparams.h>
 #include <ccan/crypto/sha256/sha256.h>
 #include <ccan/tal/str/str.h>
-#include <common/amount.h>
 #include <common/json_stream.h>
 #include <plugins/bkpr/bookkeeper.h>
 #include <plugins/bkpr/channel_event.h>

@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include <ccan/short_types/short_types.h>
+#include <common/amount.h>
 #include <common/utils.h>
 
 struct amount_msat;

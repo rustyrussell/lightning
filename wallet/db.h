@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_WALLET_DB_H
 #define LIGHTNING_WALLET_DB_H
 #include "config.h"
+#include <ccan/tal/tal.h>
 
 struct ext_key;
 struct indexes;

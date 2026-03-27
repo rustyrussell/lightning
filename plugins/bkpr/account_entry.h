@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_PLUGINS_BKPR_ACCOUNT_ENTRY_H
 #define LIGHTNING_PLUGINS_BKPR_ACCOUNT_ENTRY_H
 #include "config.h"
+#include <stdbool.h>
 
 #define NUM_ACCOUNT_ENTRY_TAGS (REBALANCEFEE + 1)
 enum account_entry_tag {

@@ -2,6 +2,8 @@
 #define LIGHTNING_CONNECTD_ONION_MESSAGE_H
 #include "config.h"
 #include <ccan/short_types/short_types.h>
+struct daemon;
+struct peer;
 
 /* Onion message comes in from peer. */
 void handle_onion_message(struct daemon *daemon,

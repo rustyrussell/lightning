@@ -1,8 +1,10 @@
 #ifndef LIGHTNING_LIGHTNINGD_RUNES_H
 #define LIGHTNING_LIGHTNINGD_RUNES_H
 #include "config.h"
+#include <ccan/short_types/short_types.h>
 
 struct rune;
+struct lightningd;
 
 /* Initialize ld->runes enough for rune_is_ours(): needs HSM. */
 struct runes *runes_early_init(struct lightningd *ld);

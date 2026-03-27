@@ -1,10 +1,13 @@
 #ifndef LIGHTNING_GOSSIPD_SEEKER_H
 #define LIGHTNING_GOSSIPD_SEEKER_H
 #include "config.h"
+#include <stdbool.h>
 
 struct daemon;
 struct node_id;
 struct short_channel_id;
+struct htable;
+struct peer;
 
 struct seeker *new_seeker(struct daemon *daemon);
 

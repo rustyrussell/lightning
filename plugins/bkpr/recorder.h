@@ -3,6 +3,11 @@
 
 #include "config.h"
 #include <ccan/tal/tal.h>
+#include <common/amount.h>
+struct bitcoin_outpoint;
+struct bkpr;
+struct command;
+struct sha256;
 
 struct account;
 struct bitcoin_txid;

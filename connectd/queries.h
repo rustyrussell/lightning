@@ -1,6 +1,11 @@
 #ifndef LIGHTNING_CONNECTD_QUERIES_H
 #define LIGHTNING_CONNECTD_QUERIES_H
 #include "config.h"
+#include <ccan/short_types/short_types.h>
+#include <ccan/tal/tal.h>
+struct daemon;
+struct gossmap;
+struct peer;
 
 /* See if there's a query to respond to: if so, return some msgs */
 const u8 **maybe_create_query_responses(const tal_t *ctx,

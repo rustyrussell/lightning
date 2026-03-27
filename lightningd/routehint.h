@@ -5,6 +5,7 @@
 #include <ccan/short_types/short_types.h>
 #include <ccan/tal/tal.h>
 #include <common/amount.h>
+#include <external/jsmn/jsmn.h>
 #include <stdbool.h>
 
 struct lightningd;

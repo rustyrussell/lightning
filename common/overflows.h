@@ -2,6 +2,8 @@
 #define LIGHTNING_COMMON_OVERFLOWS_H
 #include "config.h"
 #include <ccan/short_types/short_types.h>
+#include <stdbool.h>
+#include <stddef.h>
 
 static inline bool add_overflows_size_t(uint64_t a, uint64_t b)
 {

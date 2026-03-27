@@ -3,8 +3,10 @@
 #define LIGHTNING_LIGHTNINGD_PEER_HTLCS_H
 #include "config.h"
 #include <common/htlc_wire.h>
+#include <common/utils.h>
 
 struct channel;
+struct peer;
 struct htlc_in;
 struct htlc_in_map;
 struct htlc_out;

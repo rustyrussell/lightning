@@ -6,6 +6,7 @@
 #include <ccan/time/time.h>
 #include <common/amount.h>
 #include <common/gossmap.h>
+struct flow;
 
 struct route_query;
 

@@ -1,7 +1,13 @@
 #ifndef LIGHTNING_WALLET_WALLETRPC_H
 #define LIGHTNING_WALLET_WALLETRPC_H
 #include "config.h"
+#include <ccan/compiler/compiler.h>
+#include <ccan/short_types/short_types.h>
+#include <stdbool.h>
+#include <wallet/wallet.h>
 
+struct command;
+struct pubkey;
 struct utxo;
 
 /* We evaluate reserved timeouts lazily, so use this. */

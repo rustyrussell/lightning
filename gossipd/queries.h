@@ -2,6 +2,8 @@
 #define LIGHTNING_GOSSIPD_QUERIES_H
 #include "config.h"
 #include <ccan/short_types/short_types.h>
+#include <common/gossip_constants.h>
+#include <stdbool.h>
 
 struct channel_update_timestamps;
 struct daemon;

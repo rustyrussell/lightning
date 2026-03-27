@@ -9,6 +9,9 @@ struct lightningd;
 struct peer;
 struct pubkey;
 struct wireaddr_internal;
+struct short_channel_id;
+struct node_id;
+struct subd;
 
 /* Returns fd for gossipd to talk to connectd */
 int connectd_init(struct lightningd *ld);

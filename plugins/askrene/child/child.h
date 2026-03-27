@@ -7,6 +7,8 @@
 #include <common/amount.h>
 #include <common/fp16.h>
 #include <stdbool.h>
+struct gossmap_node;
+struct gossmap_chan;
 
 struct additional_cost_htable;
 struct gossmap;

@@ -2,6 +2,7 @@
 #define LIGHTNING_LIGHTNINGD_CHANNEL_CONTROL_H
 #include "config.h"
 #include <ccan/short_types/short_types.h>
+#include <lightningd/channel_state.h>
 #include <stdbool.h>
 
 struct channel;
@@ -10,6 +11,13 @@ struct lightningd;
 struct peer_fd;
 struct peer;
 struct txlocator;
+struct bitcoin_outpoint;
+struct bitcoin_txid;
+struct channel_inflight;
+struct command;
+struct command_result;
+struct pubkey;
+struct short_channel_id;
 
 bool peer_start_channeld(struct channel *channel,
 			 struct peer_fd *peer_fd,

@@ -2,6 +2,9 @@
 #define LIGHTNING_PLUGINS_FUNDER_POLICY_H
 #include "config.h"
 #include <common/amount.h>
+struct command;
+struct command_result;
+struct json_stream;
 
 struct plugin;
 struct lease_rates;

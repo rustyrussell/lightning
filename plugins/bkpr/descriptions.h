@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_PLUGINS_BKPR_DESCRIPTIONS_H
 #define LIGHTNING_PLUGINS_BKPR_DESCRIPTIONS_H
 #include "config.h"
+#include <ccan/tal/tal.h>
 
 struct command;
 struct bkpr;

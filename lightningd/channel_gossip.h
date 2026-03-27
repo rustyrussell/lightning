@@ -8,6 +8,7 @@ struct channel;
 struct lightningd;
 struct peer;
 struct peer_update;
+struct node_id;
 
 /* Initialize channel->channel_gossip state */
 void channel_gossip_init(struct channel *channel,

@@ -2,6 +2,7 @@
 #define LIGHTNING_PLUGINS_OFFERS_INV_HOOK_H
 #include "config.h"
 #include <plugins/libplugin.h>
+struct blinded_path;
 
 /* We got an onionmessage with an invoice!  reply_path could be NULL. */
 struct command_result *handle_invoice(struct command *cmd,

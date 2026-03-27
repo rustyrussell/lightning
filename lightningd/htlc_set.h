@@ -10,6 +10,8 @@
 
 struct lightningd;
 struct logger;
+struct secret;
+struct preimage;
 
 /* Could be an incoming HTLC, could be a local payment */
 struct incoming_payment {

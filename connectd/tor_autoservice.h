@@ -5,6 +5,8 @@
 #include <ccan/tal/tal.h>
 #include <stdbool.h>
 #include <stdlib.h>
+struct wireaddr;
+struct wireaddr_internal;
 
 struct wireaddr *tor_autoservice(const tal_t *ctx,
 				 const struct wireaddr_internal *tor_serviceaddr,

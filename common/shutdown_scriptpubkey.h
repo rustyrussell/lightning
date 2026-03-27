@@ -2,6 +2,7 @@
 #define LIGHTNING_COMMON_SHUTDOWN_SCRIPTPUBKEY_H
 #include "config.h"
 #include <ccan/short_types/short_types.h>
+#include <stdbool.h>
 
 /* BOLT #2:
  *

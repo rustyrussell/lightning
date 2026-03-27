@@ -1,10 +1,18 @@
 #ifndef LIGHTNING_GOSSIPD_GOSSMAP_MANAGE_H
 #define LIGHTNING_GOSSIPD_GOSSMAP_MANAGE_H
 #include "config.h"
+#include <bitcoin/short_channel_id.h>
+#include <ccan/short_types/short_types.h>
+#include <ccan/tal/tal.h>
+#include <stdbool.h>
 
 struct daemon;
 struct gossmap_manage;
 struct chan_dying;
+struct amount_sat;
+struct gossmap;
+struct htable;
+struct node_id;
 
 struct gossmap_manage *gossmap_manage_new(const tal_t *ctx,
 					  struct daemon *daemon);

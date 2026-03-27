@@ -1,8 +1,10 @@
 #ifndef LIGHTNING_COMMON_DEPRECATION_H
 #define LIGHTNING_COMMON_DEPRECATION_H
 #include "config.h"
+#include <ccan/compiler/compiler.h>
 #include <ccan/short_types/short_types.h>
 #include <ccan/typesafe_cb/typesafe_cb.h>
+#include <stdbool.h>
 
 /**
  * deprecated_ok - should we allow a feature?

@@ -5,7 +5,6 @@
 #include <ccan/json_out/json_out.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/str/str.h>
-#include <ccan/tal/tal.h>
 #include <common/memleak.h>
 #include <common/mkdatastorekey.h>
 #include <common/utils.h>

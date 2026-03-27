@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_COMMON_BLINDING_H
 #define LIGHTNING_COMMON_BLINDING_H
 #include "config.h"
+#include <stdbool.h>
 
 struct privkey;
 struct pubkey;

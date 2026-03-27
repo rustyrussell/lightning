@@ -2,12 +2,14 @@
 #define LIGHTNING_OPENINGD_COMMON_H
 
 #include "config.h"
+#include <common/amount.h>
 #include <common/utils.h>
 
 struct amount_sat;
 struct bitcoin_tx;
 struct bitcoin_signature;
 struct channel_config;
+struct feature_set;
 
 
 bool check_config_bounds(const tal_t *ctx,

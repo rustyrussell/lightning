@@ -1,6 +1,8 @@
 #ifndef LIGHTNING_PLUGINS_FETCHINVOICE_H
 #define LIGHTNING_PLUGINS_FETCHINVOICE_H
 #include "config.h"
+#include <external/jsmn/jsmn.h>
+struct secret;
 
 struct command_result;
 struct command;

@@ -4,6 +4,7 @@
 #include "config.h"
 #include <ccan/tal/str/str.h>
 #include <common/json_parse_simple.h>
+struct bkpr;
 
 struct command;
 struct command_result;

@@ -2,8 +2,10 @@
 #define LIGHTNING_WALLET_MIGRATIONS_H
 
 #include "config.h"
+#include <ccan/tal/tal.h>
 
 struct lightningd;
+struct db;
 
 struct db_migration {
 	const char *sql;

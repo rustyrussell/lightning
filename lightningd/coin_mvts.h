@@ -8,6 +8,7 @@ struct htlc_in;
 struct htlc_out;
 struct json_stream;
 struct lightningd;
+struct db;
 
 struct account_balance {
 	const char *acct_id;

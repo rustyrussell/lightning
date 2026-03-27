@@ -2,11 +2,13 @@
 #define LIGHTNING_LIGHTNINGD_CLOSING_CONTROL_H
 #include "config.h"
 #include <ccan/short_types/short_types.h>
+#include <ccan/tal/tal.h>
 #include <stdbool.h>
 
 struct channel;
 struct lightningd;
 struct peer_fd;
+struct bitcoin_tx;
 
 /* Find cmd_id for closing command, if any. */
 const char *cmd_id_from_close_command(const tal_t *ctx,

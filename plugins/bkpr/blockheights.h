@@ -1,6 +1,8 @@
 #ifndef LIGHTNING_PLUGINS_BKPR_BLOCKHEIGHTS_H
 #define LIGHTNING_PLUGINS_BKPR_BLOCKHEIGHTS_H
 #include "config.h"
+#include <ccan/short_types/short_types.h>
+#include <ccan/tal/tal.h>
 
 struct command;
 struct bkpr;

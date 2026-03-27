@@ -1,7 +1,12 @@
 #ifndef LIGHTNING_GOSSIPD_TXOUT_FAILURES_H
 #define LIGHTNING_GOSSIPD_TXOUT_FAILURES_H
 #include "config.h"
+#include <bitcoin/short_channel_id.h>
 #include <ccan/intmap/intmap.h>
+#include <ccan/tal/tal.h>
+#include <stdbool.h>
+struct daemon;
+struct oneshot;
 
 /* Cache for txout queries that failed. Allows us to skip failed
  * checks if we get another announcement for the same scid. */

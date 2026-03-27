@@ -1,10 +1,19 @@
 #ifndef LIGHTNING_PLUGINS_OFFERS_H
 #define LIGHTNING_PLUGINS_OFFERS_H
 #include "config.h"
+#include <bitcoin/privkey.h>
+#include <bitcoin/pubkey.h>
+#include <ccan/short_types/short_types.h>
+#include <common/amount.h>
+#include <external/jsmn/jsmn.h>
+#include <stdbool.h>
 
 struct command_result;
 struct command;
 struct onion_message;
+struct tlv_onionmsg_tlv;
+struct blinded_path;
+struct gossmap;
 struct plugin;
 
 /* plugin_data for this plugin */

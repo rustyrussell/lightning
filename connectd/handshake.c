@@ -5,7 +5,6 @@
 #include <ccan/endian/endian.h>
 #include <ccan/io/io.h>
 #include <ccan/mem/mem.h>
-#include <ccan/time/time.h>
 #include <common/crypto_state.h>
 #include <common/ecdh.h>
 #include <common/randbytes.h>

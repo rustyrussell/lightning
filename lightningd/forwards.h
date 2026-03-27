@@ -7,6 +7,7 @@
 
 struct json_stream;
 struct lightningd;
+struct preimage;
 struct sha256;
 
 /* /!\ This is a DB ENUM, please do not change the numbering of any

@@ -4,6 +4,13 @@
 #include "config.h"
 #include <lightningd/subd.h>
 
+struct amount_sat;
+struct channel;
+struct channel_config;
+struct channel_inflight;
+struct command;
+struct json_stream;
+struct peer;
 struct peer_fd;
 
 bool peer_start_dualopend(struct peer *peer, struct peer_fd *peer_fd,

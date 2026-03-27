@@ -2,9 +2,12 @@
 #define LIGHTNING_PLUGINS_SPENDER_OPENCHANNEL_H
 #include "config.h"
 #include <ccan/tal/tal.h>
+#include <plugins/libplugin.h>
 
 struct wally_psbt;
 struct command;
+struct multifundchannel_command;
+struct multifundchannel_destination;
 
 extern const struct plugin_notification openchannel_notifs[];
 extern const size_t num_openchannel_notifs;

@@ -2,10 +2,13 @@
 #define LIGHTNING_LIGHTNINGD_HSM_CONTROL_H
 #include "config.h"
 #include <ccan/short_types/short_types.h>
+#include <ccan/tal/tal.h>
+#include <stdbool.h>
 
 struct lightningd;
 struct node_id;
 struct ext_key;
+struct pubkey;
 
 /* Ask HSM for a new fd for a subdaemon to use. */
 int hsm_get_client_fd(struct lightningd *ld,

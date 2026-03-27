@@ -6,6 +6,9 @@
 #include "config.h"
 #include <plugins/renepay/route.h>
 
+struct command;
+struct command_result;
+
 struct routetracker{
 	/* Routes that we compute and are kept here before sending them. */
 	struct route **computed_routes;

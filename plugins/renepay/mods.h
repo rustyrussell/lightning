@@ -2,6 +2,7 @@
 #define LIGHTNING_PLUGINS_RENEPAY_MODS_H
 
 #include "config.h"
+#include <stdbool.h>
 
 struct payment;
 struct command_result;

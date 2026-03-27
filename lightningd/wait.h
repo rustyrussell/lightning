@@ -3,6 +3,7 @@
 #include "config.h"
 #include <common/json_param.h>
 
+struct db;
 struct lightningd;
 
 /* This WAIT_SUBSYSTEM_X corresponds to listXs */

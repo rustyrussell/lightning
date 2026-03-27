@@ -11,7 +11,10 @@
 #include "config.h"
 #include <bitcoin/short_channel_id.h>
 #include <common/amount.h>
+#include <common/fp16.h>
 #include <common/node_id.h>
+struct gossmap;
+struct gossmap_localmods;
 
 struct askrene;
 struct command;

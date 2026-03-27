@@ -1,8 +1,10 @@
 #ifndef LIGHTNING_PLUGINS_ASKRENE_CHILD_ADDITIONAL_COSTS_H
 #define LIGHTNING_PLUGINS_ASKRENE_CHILD_ADDITIONAL_COSTS_H
 #include "config.h"
+#include <bitcoin/short_channel_id.h>
 #include <ccan/htable/htable_type.h>
 #include <ccan/tal/tal.h>
+#include <common/amount.h>
 
 /* "spendable" for a channel assumes a single HTLC: for additional HTLCs,
  * the need to pay for fees (if we're the owner) reduces it */

@@ -2,6 +2,8 @@
 #define LIGHTNING_LIGHTNINGD_OPTIONS_H
 #include "config.h"
 #include <ccan/ccan/opt/opt.h>
+#include <ccan/tal/tal.h>
+#include <stdbool.h>
 
 struct hsm_secret;
 struct json_stream;

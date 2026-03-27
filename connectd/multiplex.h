@@ -9,6 +9,7 @@
 struct peer;
 struct io_conn;
 struct feature_set;
+struct daemon;
 
 /* Take over peer_conn as peer->to_peer */
 struct io_plan *multiplex_peer_setup(struct io_conn *peer_conn,

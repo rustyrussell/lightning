@@ -4,6 +4,7 @@
 #include "config.h"
 #include <ccan/compiler/compiler.h>
 #include <ccan/short_types/short_types.h>
+#include <stdbool.h>
 #include <wally_psbt.h>
 
 struct bitcoin_tx;
