@@ -2,9 +2,7 @@
 #define LIGHTNING_PLUGINS_BKPR_CHANNEL_EVENT_H
 
 #include "config.h"
-#include <ccan/short_types/short_types.h>
 #include <common/amount.h>
-#include <common/utils.h>
 
 struct amount_msat;
 struct bkpr;

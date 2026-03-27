@@ -4,10 +4,7 @@
 #include "../json_param.c"
 #include "../json_parse_simple.c"
 #include "../json_stream.c"
-#include <ccan/json_out/json_out.h>
-#include <common/json_command.h>
 #include <common/setup.h>
-#include <stdio.h>
 
 struct command;
 

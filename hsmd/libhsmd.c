@@ -1,9 +1,7 @@
 #include "config.h"
-#include <bitcoin/privkey.h>
 #include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/crypto/hkdf_sha256/hkdf_sha256.h>
-#include <ccan/mem/mem.h>
 #include <ccan/tal/str/str.h>
 #include <common/bolt12_id.h>
 #include <common/bolt12_merkle.h>
@@ -12,17 +10,12 @@
 #include <common/key_derive.h>
 #include <common/lease_rates.h>
 #include <common/memleak.h>
-#include <common/status.h>
 #include <common/utils.h>
 #include <hsmd/libhsmd.h>
 #include <hsmd/permissions.h>
 #include <inttypes.h>
 #include <secp256k1_ecdh.h>
 #include <secp256k1_schnorrsig.h>
-#include <sodium/utils.h>
-#include <stddef.h>
-#include <wally_bip32.h>
-#include <wally_bip39.h>
 #include <wally_psbt.h>
 
 /* The negotiated protocol version ends up in here. */

@@ -1,12 +1,8 @@
 #ifndef LIGHTNING_PLUGINS_ASKRENE_CHILD_CHILD_H
 #define LIGHTNING_PLUGINS_ASKRENE_CHILD_CHILD_H
 #include "config.h"
-#include <ccan/compiler/compiler.h>
-#include <ccan/short_types/short_types.h>
 #include <ccan/time/time.h>
-#include <common/amount.h>
 #include <common/fp16.h>
-#include <stdbool.h>
 struct gossmap_node;
 struct gossmap_chan;
 

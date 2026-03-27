@@ -1,11 +1,8 @@
 #ifndef LIGHTNING_GOSSIPD_GOSSIPD_H
 #define LIGHTNING_GOSSIPD_GOSSIPD_H
 #include "config.h"
-#include <ccan/ccan/opt/opt.h>
 #include <ccan/htable/htable_type.h>
 #include <ccan/timer/timer.h>
-#include <common/node_id.h>
-#include <lightningd/options.h>
 #include <wire/peer_wire.h>
 
 /* connectd forwards gossip messages to us. */

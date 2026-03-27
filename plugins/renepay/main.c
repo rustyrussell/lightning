@@ -1,25 +1,17 @@
 #include "config.h"
 #include <ccan/array_size/array_size.h>
 #include <ccan/cast/cast.h>
-#include <ccan/htable/htable_type.h>
-#include <ccan/tal/str/str.h>
-#include <common/bolt11.h>
 #include <common/bolt12_merkle.h>
 #include <common/clock_time.h>
 #include <common/features.h>
-#include <common/gossmap.h>
-#include <common/gossmods_listpeerchannels.h>
 #include <common/json_param.h>
 #include <common/json_stream.h>
 #include <common/memleak.h>
-#include <common/pseudorand.h>
-#include <common/utils.h>
 #include <errno.h>
 #include <plugins/renepay/json.h>
 #include <plugins/renepay/mods.h>
 #include <plugins/renepay/payplugin.h>
 #include <plugins/renepay/routetracker.h>
-#include <stdio.h>
 
 // TODO(eduardo): notice that pending attempts performed with another
 // pay plugin are not considered by the uncertainty network in renepay,

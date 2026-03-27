@@ -3,7 +3,6 @@
 #include "../common/wireaddr.c"
 
 #include <stdio.h>
-#include <common/amount.h>
 #include <common/pseudorand.h>
 #include <common/setup.h>
 

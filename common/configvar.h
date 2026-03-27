@@ -1,7 +1,6 @@
 #ifndef LIGHTNING_COMMON_CONFIGVAR_H
 #define LIGHTNING_COMMON_CONFIGVAR_H
 #include "config.h"
-#include <ccan/opt/opt.h>
 #include <ccan/short_types/short_types.h>
 #include <ccan/tal/tal.h>
 

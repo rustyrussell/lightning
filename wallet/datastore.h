@@ -5,7 +5,6 @@
 #include "config.h"
 #include <ccan/short_types/short_types.h>
 #include <ccan/tal/tal.h>
-#include <stdbool.h>
 
 struct db;
 struct db_stmt;

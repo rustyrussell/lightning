@@ -1,5 +1,4 @@
 #include "config.h"
-#include <bitcoin/script.h>
 #include <ccan/asort/asort.h>
 #include <ccan/mem/mem.h>
 #include <channeld/channeld_wiregen.h>
@@ -9,7 +8,9 @@
 #include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
 #include <lightningd/hsm_control.h>
+#include <lightningd/htlc_end.h>
 #include <lightningd/lightningd.h>
+#include <lightningd/peer_control.h>
 #include <wally_psbt.h>
 
 /* This is attached to each anchor tx retransmission */

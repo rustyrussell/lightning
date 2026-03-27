@@ -1,7 +1,5 @@
 #include "config.h"
-#include <tests/fuzz/libfuzz.h>
 #include <tests/fuzz/wire.h>
-#include <wire/peer_wire.h>
 
 struct update_fulfill_htlc {
 	struct channel_id channel_id;

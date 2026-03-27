@@ -1,8 +1,5 @@
 #include "config.h"
-#include <stdint.h>
-#include <tests/fuzz/libfuzz.h>
 #include <tests/fuzz/wire.h>
-#include <wire/peer_wire.h>
 
 struct funding_created {
 	struct channel_id temporary_channel_id;

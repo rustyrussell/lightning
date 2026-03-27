@@ -2,7 +2,6 @@
 #define LIGHTNING_COMMON_STATUS_WIRE_H
 #include "config.h"
 #include <ccan/short_types/short_types.h>
-#include <common/status_levels.h>
 #include <stddef.h>
 
 enum status_failreason fromwire_status_failreason(const u8 **cursor,

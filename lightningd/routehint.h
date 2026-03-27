@@ -2,11 +2,8 @@
 #ifndef LIGHTNING_LIGHTNINGD_ROUTEHINT_H
 #define LIGHTNING_LIGHTNINGD_ROUTEHINT_H
 #include "config.h"
-#include <ccan/short_types/short_types.h>
-#include <ccan/tal/tal.h>
 #include <common/amount.h>
 #include <external/jsmn/jsmn.h>
-#include <stdbool.h>
 
 struct lightningd;
 struct short_channel_id;

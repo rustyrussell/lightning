@@ -1,7 +1,6 @@
 #ifndef LIGHTNING_LIGHTNINGD_HTLC_SET_H
 #define LIGHTNING_LIGHTNINGD_HTLC_SET_H
 #include "config.h"
-#include <ccan/crypto/sha256/sha256.h>
 #include <ccan/crypto/siphash24/siphash24.h>
 #include <ccan/htable/htable_type.h>
 #include <common/amount.h>

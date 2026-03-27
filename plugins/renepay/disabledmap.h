@@ -2,11 +2,9 @@
 #define LIGHTNING_PLUGINS_RENEPAY_DISABLEDMAP_H
 
 #include "config.h"
-#include <bitcoin/short_channel_id.h>
 #include <ccan/bitmap/bitmap.h>
 #include <ccan/htable/htable_type.h>
 #include <common/gossmap.h>
-#include <common/node_id.h>
 
 static inline const struct short_channel_id_dir *
 self_scidd(const struct short_channel_id_dir *self)

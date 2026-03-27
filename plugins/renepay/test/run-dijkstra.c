@@ -1,9 +1,5 @@
 #include "config.h"
-#include <stdio.h>
 #include <assert.h>
-#include <common/wireaddr.h>
-#include <common/bigsize.h>
-#include <common/channel_id.h>
 #include <common/setup.h>
 #include <common/utils.h>
 #include <wire/onion_wiregen.h>

@@ -1,5 +1,4 @@
 #include "config.h"
-#include <assert.h>
 #include <bitcoin/chainparams.h>
 #include <ccan/list/list.h>
 #include <ccan/mem/mem.h>

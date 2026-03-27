@@ -1,24 +1,17 @@
 #include "config.h"
-#include <assert.h>
 #include <ccan/asort/asort.h>
-#include <ccan/bitmap/bitmap.h>
 #include <ccan/list/list.h>
-#include <ccan/tal/str/str.h>
-#include <ccan/tal/tal.h>
 #include <common/utils.h>
 #include <float.h>
 #include <inttypes.h>
 #include <math.h>
 #include <plugins/askrene/child/algorithm.h>
 #include <plugins/askrene/child/child_log.h>
-#include <plugins/askrene/child/dijkstra.h>
 #include <plugins/askrene/child/explain_failure.h>
 #include <plugins/askrene/child/flow.h>
-#include <plugins/askrene/child/graph.h>
 #include <plugins/askrene/child/mcf.h>
 #include <plugins/askrene/child/refine.h>
 #include <plugins/askrene/child/route_query.h>
-#include <stdint.h>
 
 /* # Optimal payments
  *

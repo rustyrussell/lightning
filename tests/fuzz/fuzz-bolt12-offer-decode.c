@@ -1,11 +1,6 @@
 #include "config.h"
 #include <assert.h>
-#include <ccan/mem/mem.h>
-#include <common/bolt12.h>
-#include <common/utils.h>
-#include <stddef.h>
 #include <tests/fuzz/bolt12.h>
-#include <tests/fuzz/libfuzz.h>
 
 const char *bech32_hrp = "lno";
 

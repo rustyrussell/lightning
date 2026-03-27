@@ -1,10 +1,7 @@
 #include "config.h"
 #include "../json_parse.c"
 #include "../json_parse_simple.c"
-#include <assert.h>
-#include <ccan/tal/str/str.h>
 #include <common/channel_type.h>
-#include <common/clock_time.h>
 #include <common/json_filter.h>
 #include <common/sciddir_or_pubkey.h>
 #include <common/setup.h>

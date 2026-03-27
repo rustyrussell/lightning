@@ -1,11 +1,10 @@
 #include "config.h"
-#include <bitcoin/preimage.h>
 #include <ccan/mem/mem.h>
 #include <ccan/tal/str/str.h>
 #include <common/json_command.h>
-#include <common/json_stream.h>
 #include <inttypes.h>
 #include <lightningd/forwards.h>
+#include <lightningd/htlc_end.h>
 #include <lightningd/jsonrpc.h>
 #include <lightningd/lightningd.h>
 

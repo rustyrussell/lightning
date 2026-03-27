@@ -2,8 +2,6 @@
 #define LIGHTNING_PLUGINS_BKPR_CHANNELSAPY_H
 #include "config.h"
 
-#include <ccan/short_types/short_types.h>
-#include <ccan/tal/tal.h>
 #include <common/amount.h>
 struct bkpr;
 struct command;

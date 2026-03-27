@@ -1,10 +1,10 @@
 #include "config.h"
-#include <assert.h>
 #include <ccan/tal/str/str.h>
 #include <common/overflows.h>
 #include <common/utils.h>
 #include <math.h>
 #include <plugins/renepay/chan_extra.h>
+#include <plugins/renepay/errorcodes.h>
 
 bool chan_extra_is_busy(const struct chan_extra *const ce)
 {

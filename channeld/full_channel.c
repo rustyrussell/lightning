@@ -4,6 +4,7 @@
 #include <ccan/array_size/array_size.h>
 #include <channeld/commit_tx.h>
 #include <channeld/full_channel.h>
+#include <channeld/full_channel_error.h>
 #include <common/blockheight_states.h>
 #include <common/features.h>
 #include <common/fee_states.h>

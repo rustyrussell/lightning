@@ -4,10 +4,6 @@
 #include <common/bech32.h>
 #include <common/bolt11.h>
 #include <common/setup.h>
-#include <common/utils.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <tests/fuzz/libfuzz.h>
 
 // Default mutator defined by libFuzzer.

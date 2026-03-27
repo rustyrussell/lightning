@@ -2,6 +2,7 @@
 #include "../bigsize.c"
 #include "../blinding.c"
 #include "../hmac.c"
+#include <bitcoin/tx.h>
 #include <common/channel_id.h>
 #include <common/setup.h>
 #include <stdio.h>

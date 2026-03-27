@@ -1,10 +1,5 @@
 #include "config.h"
-#include <assert.h>
-#include <ccan/mem/mem.h>
-#include <common/node_id.h>
-#include <tests/fuzz/libfuzz.h>
 #include <tests/fuzz/wire.h>
-#include <wire/peer_wire.h>
 
 struct node_announcement {
 	secp256k1_ecdsa_signature signature;

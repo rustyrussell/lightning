@@ -3,8 +3,6 @@
 #include "config.h"
 #include <bitcoin/short_channel_id.h>
 #include <ccan/intmap/intmap.h>
-#include <ccan/tal/tal.h>
-#include <stdbool.h>
 struct daemon;
 struct oneshot;
 

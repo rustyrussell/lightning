@@ -1,5 +1,4 @@
 #include "config.h"
-#include <assert.h>
 #include <bitcoin/base58.h>
 #include <ccan/mem/mem.h>
 #include <ccan/str/hex/hex.h>

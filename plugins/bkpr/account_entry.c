@@ -2,7 +2,6 @@
 
 #include <ccan/tal/str/str.h>
 #include <plugins/bkpr/account_entry.h>
-#include <stddef.h>
 
 static const char *tags[] = {
 	"journal_entry",

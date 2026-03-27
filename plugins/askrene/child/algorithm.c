@@ -1,6 +1,5 @@
 #include "config.h"
 #include <ccan/bitmap/bitmap.h>
-#include <ccan/tal/tal.h>
 #include <plugins/askrene/child/algorithm.h>
 #include <plugins/askrene/child/priorityqueue.h>
 

@@ -2,16 +2,11 @@
 #define LIGHTNING_LIGHTNINGD_CHANNEL_H
 #include "config.h"
 #include <bitcoin/signature.h>
-#include <ccan/htable/htable_type.h>
+#include <ccan/time/time.h>
 #include <common/channel_config.h>
-#include <common/channel_id.h>
-#include <common/channel_type.h>
-#include <common/derive_basepoints.h>
 #include <common/scb_wiregen.h>
 #include <common/tx_roles.h>
-#include <common/utils.h>
 #include <gossipd/gossipd_wiregen.h>
-#include <lightningd/channel_state.h>
 #include <wallet/wallet.h>
 
 struct uncommitted_channel;

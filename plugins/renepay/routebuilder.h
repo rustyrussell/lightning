@@ -2,11 +2,20 @@
 #define LIGHTNING_PLUGINS_RENEPAY_ROUTEBUILDER_H
 
 #include "config.h"
+#include <assert.h>
+#include <bitcoin/preimage.h>
+#include <bitcoin/short_channel_id.h>
+#include <ccan/build_assert/build_assert.h>
+#include <ccan/crypto/siphash24/siphash24.h>
+#include <ccan/htable/htable_type.h>
 #include <ccan/tal/tal.h>
+#include <common/amount.h>
 #include <common/gossmap.h>
+#include <common/json_parse_simple.h>
+#include <plugins/renepay/chan_extra.h>
 #include <plugins/renepay/disabledmap.h>
+#include <plugins/renepay/errorcodes.h>
 #include <plugins/renepay/payment_info.h>
-#include <plugins/renepay/route.h>
 #include <plugins/renepay/uncertainty.h>
 
 struct route **get_routes(const tal_t *ctx,

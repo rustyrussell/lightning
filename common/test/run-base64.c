@@ -1,8 +1,5 @@
 #include "config.h"
 #include "../base64.c"
-#include <assert.h>
-#include <bitcoin/script.h>
-#include <ccan/base64/base64.h>
 #include <common/amount.h>
 #include <common/pseudorand.h>
 #include <common/setup.h>

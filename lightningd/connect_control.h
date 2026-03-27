@@ -1,8 +1,6 @@
 #ifndef LIGHTNING_LIGHTNINGD_CONNECT_CONTROL_H
 #define LIGHTNING_LIGHTNINGD_CONNECT_CONTROL_H
 #include "config.h"
-#include <ccan/short_types/short_types.h>
-#include <ccan/tal/tal.h>
 #include <common/utils.h>
 
 struct lightningd;

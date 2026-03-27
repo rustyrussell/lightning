@@ -1,7 +1,5 @@
 #include "config.h"
-#include <tests/fuzz/libfuzz.h>
 #include <tests/fuzz/wire.h>
-#include <wire/peer_wire.h>
 
 struct channel_update {
 	secp256k1_ecdsa_signature signature;

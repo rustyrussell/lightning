@@ -2,7 +2,6 @@
 #define LIGHTNING_DB_UTILS_H
 #include "config.h"
 #include <ccan/short_types/short_types.h>
-#include <ccan/take/take.h>
 #include <ccan/tal/tal.h>
 
 struct db;

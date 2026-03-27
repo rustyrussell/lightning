@@ -29,7 +29,6 @@
 #include <common/psbt_internal.h>
 #include <common/psbt_open.h>
 #include <common/read_peer_msg.h>
-#include <common/setup.h>
 #include <common/status.h>
 #include <common/subdaemon.h>
 #include <common/wire_error.h>

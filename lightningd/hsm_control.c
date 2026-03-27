@@ -5,7 +5,6 @@
 #include <common/bolt12_id.h>
 #include <common/errcode.h>
 #include <common/hsm_capable.h>
-#include <common/hsm_secret.h>
 #include <common/hsm_version.h>
 #include <common/json_command.h>
 #include <errno.h>
@@ -14,7 +13,6 @@
 #include <lightningd/jsonrpc.h>
 #include <lightningd/lightningd.h>
 #include <lightningd/subd.h>
-#include <wally_bip32.h>
 #include <wire/wire_sync.h>
 
 static int hsm_get_fd(struct lightningd *ld,

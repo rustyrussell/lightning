@@ -7,17 +7,11 @@
 #include "common/amount.c"
 #include "common/channel_id.c"
 #include "common/node_id.c"
-#include "wire/tlvstream.h"
+#include "wire/tlvstream.c"
 
-#include <stdio.h>
-
-#include <common/channel_type.h>
-#include <common/memleak.h>
 #include <common/randbytes.h>
 #include <common/setup.h>
 #include <common/sphinx.h>
-#include <common/wireaddr.h>
-#include <wire/tlvstream.c>
 
 extern secp256k1_context *secp256k1_ctx;
 

@@ -1,6 +1,5 @@
 #include "config.h"
 #include <assert.h>
-#include <ccan/read_write_all/read_write_all.h>
 #include <ccan/tal/str/str.h>
 #include <common/status_wiregen.h>
 #include <common/utils.h>

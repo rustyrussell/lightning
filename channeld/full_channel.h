@@ -3,7 +3,6 @@
 #define LIGHTNING_CHANNELD_FULL_CHANNEL_H
 #include "config.h"
 #include <channeld/channeld_htlc.h>
-#include <channeld/full_channel_error.h>
 #include <common/initial_channel.h>
 #include <common/sphinx.h>
 

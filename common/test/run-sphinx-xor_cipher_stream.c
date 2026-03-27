@@ -1,6 +1,5 @@
 #include "config.h"
 #include "../sphinx.c"
-#include <bitcoin/tx.h>
 #include <common/setup.h>
 #include <stdio.h>
 

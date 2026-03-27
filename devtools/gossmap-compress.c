@@ -14,7 +14,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <wire/peer_wiregen.h>
 #if HAVE_ZLIB
 #include <zlib.h>

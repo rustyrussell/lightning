@@ -1,15 +1,10 @@
 #include "config.h"
-#include <bitcoin/tx.h>
 #include <ccan/array_size/array_size.h>
-#include <ccan/json_escape/json_escape.h>
 #include <ccan/mem/mem.h>
 #include <ccan/tal/str/str.h>
 #include <common/iso4217.h>
-#include <common/json_command.h>
 #include <common/json_param.h>
 #include <common/json_stream.h>
-#include <common/utils.h>
-#include <inttypes.h>
 #include <plugins/bkpr/bookkeeper.h>
 #include <plugins/bkpr/incomestmt.h>
 #include <plugins/bkpr/report.h>

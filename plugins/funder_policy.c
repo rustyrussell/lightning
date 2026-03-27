@@ -1,5 +1,4 @@
 #include "config.h"
-#include <assert.h>
 #include <bitcoin/script.h>
 #include <ccan/tal/str/str.h>
 #include <common/json_stream.h>

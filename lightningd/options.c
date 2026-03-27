@@ -2,8 +2,8 @@
 #include <ccan/array_size/array_size.h>
 #include <ccan/cast/cast.h>
 #include <ccan/err/err.h>
+#include <ccan/intmap/intmap.h>
 #include <ccan/noerr/noerr.h>
-#include <ccan/opt/opt.h>
 #include <ccan/read_write_all/read_write_all.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/path/path.h>
@@ -23,8 +23,8 @@
 #include <lightningd/options.h>
 #include <lightningd/plugin.h>
 #include <lightningd/subd.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 /* FIXME: Put into ccan/time. */
 #define TIME_FROM_SEC(sec) { { .tv_nsec = 0, .tv_sec = sec } }

@@ -2,6 +2,7 @@
 #define LIGHTNING_CHANNELD_CHANNELD_HTLC_H
 #include "config.h"
 #include <ccan/crypto/sha256/sha256.h>
+#include <ccan/crypto/siphash24/siphash24.h>
 #include <common/amount.h>
 #include <common/htlc.h>
 #include <common/pseudorand.h>

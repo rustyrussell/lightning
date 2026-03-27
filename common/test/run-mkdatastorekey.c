@@ -1,7 +1,5 @@
 #include "config.h"
 #include <assert.h>
-#include <ccan/str/str.h>
-#include <ccan/tal/tal.h>
 #include <common/amount.h>
 #include <common/setup.h>
 #include <stdio.h>

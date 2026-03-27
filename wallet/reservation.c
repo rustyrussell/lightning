@@ -1,7 +1,6 @@
 /* Dealing with reserving UTXOs */
 #include "config.h"
 #include <bitcoin/psbt.h>
-#include <bitcoin/script.h>
 #include <ccan/cast/cast.h>
 #include <common/json_command.h>
 #include <common/psbt_open.h>
@@ -11,7 +10,7 @@
 #include <lightningd/hsm_control.h>
 #include <lightningd/jsonrpc.h>
 #include <lightningd/lightningd.h>
-#include <wallet/txfilter.h>
+#include <lightningd/peer_control.h>
 
 /* 12 hours is usually enough reservation time */
 #define RESERVATION_DEFAULT (6 * 12)

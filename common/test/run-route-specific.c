@@ -7,14 +7,11 @@
  */
 #include "config.h"
 #include <assert.h>
-#include <bitcoin/chainparams.h>
 #include <ccan/crc32c/crc32c.h>
-#include <common/channel_type.h>
 #include <common/dijkstra.h>
 #include <common/gossip_store.h>
 #include <common/gossip_store_wiregen.h>
 #include <common/gossmap.h>
-#include <common/memleak.h>
 #include <common/route.h>
 #include <common/sciddir_or_pubkey.h>
 #include <common/setup.h>

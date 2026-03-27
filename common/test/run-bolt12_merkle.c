@@ -1,6 +1,8 @@
 #define SUPERVERBOSE printf
 #include "config.h"
 /* Needed before including bolt12_merkle.c: */
+  #include <bitcoin/tx.h>
+  #include <common/utils.h>
   #include <stdio.h>
 #include "../bolt12_merkle.c"
 #include <assert.h>

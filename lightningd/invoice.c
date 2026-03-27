@@ -1,12 +1,10 @@
 #include "config.h"
-#include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/asort/asort.h>
 #include <ccan/json_escape/json_escape.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/str/str.h>
 #include <common/blindedpath.h>
-#include <common/bolt11_json.h>
 #include <common/bolt12_id.h>
 #include <common/bolt12_merkle.h>
 #include <common/clock_time.h>
@@ -15,6 +13,7 @@
 #include <common/random_select.h>
 #include <common/timeout.h>
 #include <hsmd/hsmd_wiregen.h>
+#include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
 #include <lightningd/hsm_control.h>
 #include <lightningd/invoice.h>

@@ -1,5 +1,4 @@
 #include "config.h"
-#include <bitcoin/script.h>
 #include <ccan/mem/mem.h>
 #include <common/addr.h>
 #include <common/base64.h>
@@ -10,10 +9,10 @@
 #include <db/exec.h>
 #include <errno.h>
 #include <hsmd/hsmd_wiregen.h>
+#include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
 #include <lightningd/hsm_control.h>
 #include <lightningd/notification.h>
-#include <wallet/txfilter.h>
 #include <wallet/walletrpc.h>
 #include <wire/wire_sync.h>
 

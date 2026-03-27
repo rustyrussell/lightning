@@ -1,10 +1,7 @@
 #include "config.h"
 
 #include <common/setup.h>
-#include <common/status_levels.h>
-#include <common/utils.h>
 #include <stdio.h>
-#include <unistd.h>
 
 #include "lightningd/log.h"
 

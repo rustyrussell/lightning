@@ -6,7 +6,6 @@
 #include <common/jsonrpc_io.h>
 #include <common/utils.h>
 #include <errno.h>
-#include <unistd.h>
 
 #define READ_CHUNKSIZE (1024*1024)
 

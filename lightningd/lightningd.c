@@ -22,7 +22,6 @@
 #include "config.h"
 
 /*~ Various bitcoin-related helpers live in the bitcoin/ directory */
-#include <bitcoin/script.h>
 
 /*~ These headers are from CCAN: http://ccodearchive.net.
  *
@@ -50,7 +49,6 @@
 #include <common/deprecation.h>
 #include <common/ecdh_hsmd.h>
 #include <common/errcode.h>
-#include <common/hsm_secret.h>
 #include <common/memleak.h>
 #include <common/timeout.h>
 #include <common/trace.h>
@@ -68,16 +66,19 @@
 #include <lightningd/connect_control.h>
 #include <lightningd/gossip_control.h>
 #include <lightningd/hsm_control.h>
+#include <lightningd/htlc_end.h>
+#include <lightningd/htlc_set.h>
 #include <lightningd/io_loop_with_timers.h>
 #include <lightningd/lightningd.h>
 #include <lightningd/onchain_control.h>
+#include <lightningd/peer_control.h>
 #include <lightningd/peer_htlcs.h>
 #include <lightningd/plugin_hook.h>
 #include <lightningd/runes.h>
 #include <lightningd/subd.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 #include <wallet/invoices.h>
-#include <wally_bip32.h>
 
 static void destroy_alt_subdaemons(struct lightningd *ld);
 static void memleak_help_alt_subdaemons(struct htable *memtable,

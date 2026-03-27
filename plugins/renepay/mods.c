@@ -1,20 +1,15 @@
 #include "config.h"
 #include <ccan/asort/asort.h>
-#include <ccan/bitmap/bitmap.h>
-#include <common/amount.h>
 #include <common/bolt11.h>
 #include <common/clock_time.h>
 #include <common/gossmods_listpeerchannels.h>
 #include <common/json_stream.h>
-#include <plugins/renepay/json.h>
-#include <plugins/renepay/mcf.h>
 #include <plugins/renepay/mods.h>
+#include <plugins/renepay/payment.h>
 #include <plugins/renepay/payplugin.h>
 #include <plugins/renepay/renepayconfig.h>
-#include <plugins/renepay/route.h>
 #include <plugins/renepay/routebuilder.h>
 #include <plugins/renepay/routetracker.h>
-#include <unistd.h>
 #include <wire/bolt12_wiregen.h>
 
 #define OP_NULL NULL

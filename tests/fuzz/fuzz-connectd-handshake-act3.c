@@ -13,12 +13,7 @@
  *   5. responder fails to validate the packet
  */
 #include "config.h"
-#include <assert.h>
-#include <ccan/io/io.h>
-#include <ccan/mem/mem.h>
-#include <common/utils.h>
 #include <tests/fuzz/connectd_handshake.h>
-#include <tests/fuzz/libfuzz.h>
 
 /* Storage for the valid Act 1 packet extracted from the initiator. */
 static u8 act_one[ACT_ONE_SIZE];

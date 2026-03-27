@@ -1,5 +1,4 @@
 #include "config.h"
-#include <assert.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/crypto/siphash24/siphash24.h>
 #include <ccan/endian/endian.h>

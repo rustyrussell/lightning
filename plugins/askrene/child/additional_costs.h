@@ -3,7 +3,6 @@
 #include "config.h"
 #include <bitcoin/short_channel_id.h>
 #include <ccan/htable/htable_type.h>
-#include <ccan/tal/tal.h>
 #include <common/amount.h>
 
 /* "spendable" for a channel assumes a single HTLC: for additional HTLCs,

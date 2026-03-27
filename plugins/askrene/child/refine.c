@@ -1,15 +1,11 @@
 #include "config.h"
 #include <ccan/asort/asort.h>
-#include <ccan/cast/cast.h>
-#include <ccan/tal/str/str.h>
-#include <common/gossmap.h>
 #include <common/utils.h>
 #include <plugins/askrene/child/child_log.h>
 #include <plugins/askrene/child/flow.h>
 #include <plugins/askrene/child/refine.h>
 #include <plugins/askrene/child/route_query.h>
 #include <plugins/askrene/reserve.h>
-#include <string.h>
 
 /* We (ab)use the reservation system to place temporary reservations
  * on channels while we are refining each flow.  This has the effect

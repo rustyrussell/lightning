@@ -1,9 +1,6 @@
 #ifndef LIGHTNING_WALLET_WALLETRPC_H
 #define LIGHTNING_WALLET_WALLETRPC_H
 #include "config.h"
-#include <ccan/compiler/compiler.h>
-#include <ccan/short_types/short_types.h>
-#include <stdbool.h>
 #include <wallet/wallet.h>
 
 struct command;

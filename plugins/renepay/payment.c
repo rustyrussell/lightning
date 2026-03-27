@@ -1,11 +1,6 @@
 #include "config.h"
-#include <bitcoin/preimage.h>
-#include <bitcoin/privkey.h>
-#include <ccan/tal/str/str.h>
-#include <ccan/tal/tal.h>
 #include <common/clock_time.h>
-#include <common/json_stream.h>
-#include <common/memleak.h>
+#include <plugins/renepay/disabledmap.h>
 #include <plugins/renepay/json.h>
 #include <plugins/renepay/payment.h>
 #include <plugins/renepay/payplugin.h>

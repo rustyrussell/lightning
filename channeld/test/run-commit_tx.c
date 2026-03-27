@@ -13,12 +13,8 @@ static bool print_superverbose;
 #include <ccan/array_size/array_size.h>
 #include <ccan/err/err.h>
 #include <ccan/str/hex/hex.h>
-#include <common/channel_id.h>
-#include <common/daemon.h>
 #include <common/key_derive.h>
-#include <common/memleak.h>
 #include <common/setup.h>
-#include <common/status.h>
 
 /* Turn this on to brute-force fee values */
 /*#define DEBUG */

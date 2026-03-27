@@ -6,7 +6,6 @@
 #include <common/onion_message.h>
 #include <common/randbytes.h>
 #include <common/sphinx.h>
-#include <sodium.h>
 
 struct tlv_encrypted_data_tlv **new_encdata_tlvs(const tal_t *ctx,
 						 const struct pubkey *ids,

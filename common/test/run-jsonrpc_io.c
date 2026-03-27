@@ -1,9 +1,7 @@
 /* Body of tests written by ChatGPT 5 */
 #include "config.h"
-#include <assert.h>
 #include <ccan/io/io.h>
 #include <common/amount.h>
-#include <common/bigsize.h>
 #include <common/pseudorand.h>
 #include <common/setup.h>
 #include <stdio.h>

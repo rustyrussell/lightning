@@ -1,22 +1,13 @@
 #include "config.h"
 
-#include <ccan/array_size/array_size.h>
 #include <ccan/asort/asort.h>
 #include <ccan/tal/str/str.h>
-#include <common/coin_mvt.h>
 #include <common/json_stream.h>
 #include <common/lease_rates.h>
-#include <db/bindings.h>
-#include <db/common.h>
-#include <db/exec.h>
-#include <db/utils.h>
 #include <plugins/bkpr/account.h>
-#include <plugins/bkpr/account_entry.h>
-#include <plugins/bkpr/bookkeeper.h>
 #include <plugins/bkpr/chain_event.h>
 #include <plugins/bkpr/channel_event.h>
 #include <plugins/bkpr/channelsapy.h>
-#include <plugins/bkpr/onchain_fee.h>
 #include <plugins/bkpr/recorder.h>
 
 #define BLOCK_YEAR 52364

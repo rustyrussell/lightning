@@ -3,8 +3,6 @@
 #include "config.h"
 #include <ccan/short_types/short_types.h>
 #include <ccan/tal/tal.h>
-#include <stdbool.h>
-#include <stdlib.h>
 struct wireaddr;
 struct wireaddr_internal;
 

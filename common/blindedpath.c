@@ -1,5 +1,4 @@
 #include "config.h"
-#include <bitcoin/tx.h>
 #include <common/blindedpath.h>
 #include <common/blinding.h>
 #include <common/bolt11.h>

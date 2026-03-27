@@ -1,7 +1,6 @@
 #ifndef LIGHTNING_LIGHTNINGD_LOG_H
 #define LIGHTNING_LIGHTNINGD_LOG_H
 #include "config.h"
-#include <ccan/time/time.h>
 #include <common/status.h>
 #include <jsmn.h>
 

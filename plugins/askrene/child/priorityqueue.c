@@ -1,5 +1,6 @@
 #define NDEBUG 1
 #include "config.h"
+#include <gheap.h>
 #include <plugins/askrene/child/priorityqueue.h>
 
 /* priorityqueue: a data structure for pairs (key, value) with

@@ -1,7 +1,6 @@
 #ifndef LIGHTNING_COMMON_MKDATASTOREKEY_H
 #define LIGHTNING_COMMON_MKDATASTOREKEY_H
 #include "config.h"
-#include <ccan/compiler/compiler.h>
 #include <ccan/tal/tal.h>
 
 /* Generate an array of strings from these values: great for making

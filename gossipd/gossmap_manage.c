@@ -27,7 +27,6 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 #define GOSSIP_STORE_COMPACT_FILENAME "gossip_store.compact"
 

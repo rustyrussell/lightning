@@ -1,10 +1,8 @@
 #include "config.h"
 #include <assert.h>
-#include <bitcoin/tx.h>
 #include <ccan/cast/cast.h>
 #include <ccan/ilog/ilog.h>
 #include <common/bolt12_merkle.h>
-#include <common/utils.h>
 
 #ifndef SUPERVERBOSE
 #define SUPERVERBOSE(...)

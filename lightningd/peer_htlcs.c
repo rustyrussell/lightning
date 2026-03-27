@@ -3,15 +3,14 @@
 #include <ccan/mem/mem.h>
 #include <ccan/tal/str/str.h>
 #include <channeld/channeld_wiregen.h>
-#include <common/amount.h>
 #include <common/blinding.h>
 #include <common/ecdh.h>
 #include <common/json_command.h>
-#include <common/json_parse.h>
 #include <common/onion_decode.h>
 #include <common/onionreply.h>
 #include <common/timeout.h>
 #include <db/exec.h>
+#include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
 #include <lightningd/coin_mvts.h>
 #include <lightningd/notification.h>

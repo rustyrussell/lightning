@@ -1,5 +1,4 @@
 #include "config.h"
-#include <assert.h>
 #include <common/ecdh.h>
 #include <common/ecdh_hsmd.h>
 #include <common/utils.h>

@@ -1,6 +1,4 @@
 #include "config.h"
-#include <assert.h>
-#include <ccan/tal/tal.h>
 #include <common/setup.h>
 #include <inttypes.h>
 #include <stdio.h>

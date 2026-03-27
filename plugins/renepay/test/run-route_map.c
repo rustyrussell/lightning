@@ -2,19 +2,8 @@
  * */
 
 #include "config.h"
-#include <ccan/array_size/array_size.h>
-#include <ccan/read_write_all/read_write_all.h>
-#include <common/bigsize.h>
-#include <common/channel_id.h>
-#include <common/gossip_store.h>
-#include <common/node_id.h>
 #include <common/setup.h>
-#include <common/wireaddr.h>
 #include <stdio.h>
-#include <assert.h>
-
-#include <bitcoin/short_channel_id.h>
-#include <ccan/htable/htable_type.h>
 
 #define RENEPAY_UNITTEST
 #include "../flow.c"

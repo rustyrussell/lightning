@@ -1,9 +1,6 @@
 #ifndef LIGHTNING_PLUGINS_RENEPAY_UNCERTAINTY_H
 #define LIGHTNING_PLUGINS_RENEPAY_UNCERTAINTY_H
 #include "config.h"
-#include <ccan/tal/tal.h>
-#include <common/gossmap.h>
-#include <plugins/renepay/chan_extra.h>
 #include <plugins/renepay/route.h>
 
 /* FIXME a hard coded constant to indicate a limit on any channel

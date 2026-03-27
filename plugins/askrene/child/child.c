@@ -1,11 +1,9 @@
 #include "config.h"
-#include <assert.h>
 #include <ccan/json_out/json_out.h>
 #include <ccan/read_write_all/read_write_all.h>
 #include <ccan/tal/str/str.h>
 #include <common/json_stream.h>
 #include <common/route.h>
-#include <common/utils.h>
 #include <plugins/askrene/child/child.h>
 #include <plugins/askrene/child/child_log.h>
 #include <plugins/askrene/child/flow.h>

@@ -1,14 +1,7 @@
 #include "config.h"
-#include <assert.h>
 #include <ccan/read_write_all/read_write_all.h>
 #include <ccan/str/hex/hex.h>
-#include <common/bigsize.h>
-#include <common/channel_id.h>
-#include <common/node_id.h>
 #include <common/setup.h>
-#include <common/utils.h>
-#include <common/wireaddr.h>
-#include <stdio.h>
 #include <wire/onion_wiregen.h>
 
 #define MYLOG "/tmp/debug.txt"

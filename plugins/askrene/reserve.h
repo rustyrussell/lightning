@@ -5,7 +5,6 @@
  * everyone to reserve / unreserve paths as they use them. */
 #include "config.h"
 #include <bitcoin/short_channel_id.h>
-#include <common/amount.h>
 #include <common/fp16.h>
 struct gossmap;
 

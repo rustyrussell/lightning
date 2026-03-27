@@ -3,9 +3,6 @@
 #include "config.h"
 #include <bitcoin/short_channel_id.h>
 #include <bitcoin/signature.h>
-#include <ccan/short_types/short_types.h>
-#include <ccan/tal/tal.h>
-#include <stdbool.h>
 
 struct channel;
 struct lightningd;

@@ -2,9 +2,8 @@
 #define LIGHTNING_PLUGINS_RENEPAY_FLOW_H
 #include "config.h"
 #include <bitcoin/short_channel_id.h>
-#include <ccan/htable/htable_type.h>
+#include <ccan/build_assert/build_assert.h>
 #include <common/amount.h>
-#include <common/gossmap.h>
 #include <plugins/renepay/chan_extra.h>
 #include <plugins/renepay/errorcodes.h>
 

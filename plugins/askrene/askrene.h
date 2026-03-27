@@ -1,13 +1,7 @@
 #ifndef LIGHTNING_PLUGINS_ASKRENE_ASKRENE_H
 #define LIGHTNING_PLUGINS_ASKRENE_ASKRENE_H
 #include "config.h"
-#include <bitcoin/short_channel_id.h>
-#include <ccan/bitmap/bitmap.h>
-#include <ccan/htable/htable_type.h>
-#include <ccan/list/list.h>
-#include <common/amount.h>
 #include <common/fp16.h>
-#include <common/node_id.h>
 #include <plugins/libplugin.h>
 
 struct gossmap_chan;

@@ -3,8 +3,6 @@
 #include "../peer_control.c"
 #include "../routehint.c"
 #include <ccan/alignof/alignof.h>
-#include <common/daemon.h>
-#include <common/errcode.h>
 #include <common/setup.h>
 #include <stdio.h>
 
@@ -661,7 +659,7 @@ u8 *towire_openingd_dev_memleak(const tal_t *ctx UNNEEDED)
 /* Generated stub for unwatch_scriptpubkey_ */
 bool unwatch_scriptpubkey_(const tal_t *ctx UNNEEDED,
 			   struct chain_topology *topo UNNEEDED,
-			   const u8 *scriptpubkey TAKES UNNEEDED,
+			   const u8 *scriptpubkey UNNEEDED,
 			   const struct bitcoin_outpoint *expected_outpoint UNNEEDED,
 			   struct amount_sat expected_amount UNNEEDED,
 			   void (*cb)(struct lightningd *ld UNNEEDED,
@@ -730,6 +728,14 @@ void wallet_transaction_add(struct wallet *w UNNEEDED, const struct wally_tx *tx
 /* Generated stub for wallet_transaction_height */
 u32 wallet_transaction_height(struct wallet *w UNNEEDED, const struct bitcoin_txid *txid UNNEEDED)
 { fprintf(stderr, "wallet_transaction_height called!\n"); abort(); }
+/* Generated stub for wallet_unreserve_utxo */
+void wallet_unreserve_utxo(struct wallet *w UNNEEDED, struct utxo *utxo UNNEEDED,
+			   u32 current_height UNNEEDED, u32 unreserve UNNEEDED)
+{ fprintf(stderr, "wallet_unreserve_utxo called!\n"); abort(); }
+/* Generated stub for wallet_utxo_get */
+struct utxo *wallet_utxo_get(const tal_t *ctx UNNEEDED, struct wallet *w UNNEEDED,
+			     const struct bitcoin_outpoint *outpoint UNNEEDED)
+{ fprintf(stderr, "wallet_utxo_get called!\n"); abort(); }
 /* Generated stub for watch_blockdepth_ */
 bool watch_blockdepth_(const tal_t *ctx UNNEEDED,
 		       struct chain_topology *topo UNNEEDED,
@@ -759,17 +765,6 @@ bool watch_scriptpubkey_(const tal_t *ctx UNNEEDED,
 void watch_splice_inflight(struct lightningd *ld UNNEEDED,
 			   struct channel_inflight *inflight UNNEEDED)
 { fprintf(stderr, "watch_splice_inflight called!\n"); abort(); }
-/* Generated stub for watch_txid_ */
-struct txwatch *watch_txid_(const tal_t *ctx UNNEEDED,
-			    struct chain_topology *topo UNNEEDED,
-			    const struct bitcoin_txid *txid UNNEEDED,
-			    enum watch_result (*cb)(struct lightningd *ld UNNEEDED,
-						    const struct bitcoin_txid * UNNEEDED,
-						    const struct bitcoin_tx * UNNEEDED,
-						    unsigned int depth UNNEEDED,
-						    void *arg) UNNEEDED,
-			    void *arg UNNEEDED)
-{ fprintf(stderr, "watch_txid_ called!\n"); abort(); }
 /* Generated stub for watch_txo */
 struct txowatch *watch_txo(const tal_t *ctx UNNEEDED,
 			   struct chain_topology *topo UNNEEDED,

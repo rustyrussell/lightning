@@ -4,11 +4,9 @@
  */
 #include "config.h"
 #include <assert.h>
-#include <ccan/mem/mem.h>
 #include <ccan/str/hex/hex.h>
 #include <common/cryptomsg.h>
 #include <common/setup.h>
-#include <common/utils.h>
 #include <tests/fuzz/libfuzz.h>
 
 /* Initial crypto states for each fuzz iteration. These are constant after

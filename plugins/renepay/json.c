@@ -1,8 +1,10 @@
 #include "config.h"
+#include <bitcoin/preimage.h>
 #include <common/json_stream.h>
 #include <common/onionreply.h>
 #include <common/sphinx.h>
 #include <plugins/renepay/json.h>
+#include <plugins/renepay/route.h>
 
 /* See if this notification is about one of our flows. */
 struct routekey *tal_routekey_from_json(const tal_t *ctx, const char *buf,

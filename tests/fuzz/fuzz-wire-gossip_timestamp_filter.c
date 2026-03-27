@@ -1,7 +1,5 @@
 #include "config.h"
-#include <tests/fuzz/libfuzz.h>
 #include <tests/fuzz/wire.h>
-#include <wire/peer_wire.h>
 
 struct gossip_timestamp_filter {
 	struct bitcoin_blkid chain_hash;

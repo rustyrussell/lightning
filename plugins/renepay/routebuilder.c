@@ -1,9 +1,7 @@
 #include "config.h"
-#include <ccan/bitmap/bitmap.h>
 #include <plugins/renepay/mcf.h>
 #include <plugins/renepay/routebuilder.h>
 
-#include <stdio.h>
 
 static void uncertainty_remove_routes(struct uncertainty *uncertainty,
 				   struct route **routes)

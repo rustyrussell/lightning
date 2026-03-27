@@ -2,7 +2,6 @@
 #define LIGHTNING_PLUGINS_ASKRENE_CHILD_ROUTE_QUERY_H
 #include "config.h"
 #include <ccan/bitmap/bitmap.h>
-#include <ccan/short_types/short_types.h>
 #include <common/fp16.h>
 struct gossmap_chan;
 struct layer;

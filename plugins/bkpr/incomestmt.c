@@ -1,16 +1,11 @@
 #include "config.h"
-#include <assert.h>
-#include <bitcoin/chainparams.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/json_escape/json_escape.h>
 #include <ccan/tal/str/str.h>
 #include <common/clock_time.h>
-#include <common/coin_mvt.h>
 #include <common/json_stream.h>
-#include <inttypes.h>
 #include <plugins/bkpr/account.h>
 #include <plugins/bkpr/account_entry.h>
-#include <plugins/bkpr/bookkeeper.h>
 #include <plugins/bkpr/chain_event.h>
 #include <plugins/bkpr/channel_event.h>
 #include <plugins/bkpr/descriptions.h>
@@ -19,7 +14,6 @@
 #include <plugins/bkpr/rebalances.h>
 #include <plugins/bkpr/recorder.h>
 #include <plugins/bkpr/sql.h>
-#include <time.h>
 
 #define ONCHAIN_FEE "onchain_fee"
 

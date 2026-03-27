@@ -15,14 +15,13 @@
 /* eg: { "jsonrpc":"2.0", "method" : "dev-echo", "params" : [ "hello", "Arabella!" ], "id" : "1" } */
 #include "config.h"
 #include <ccan/array_size/array_size.h>
-#include <ccan/asort/asort.h>
 #include <ccan/err/err.h>
+#include <ccan/intmap/intmap.h>
 #include <ccan/io/io.h>
 #include <ccan/json_escape/json_escape.h>
 #include <ccan/json_out/json_out.h>
 #include <ccan/tal/path/path.h>
 #include <ccan/tal/str/str.h>
-#include <common/codex32.h>
 #include <common/json_command.h>
 #include <common/json_filter.h>
 #include <common/jsonrpc_io.h>
@@ -34,7 +33,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <lightningd/jsonrpc.h>
+#include <lightningd/peer_control.h>
 #include <lightningd/plugin_hook.h>
+#include <stdio.h>
+#include <sys/stat.h>
 
 
 /* Dummy structure. */

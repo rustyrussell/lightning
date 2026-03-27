@@ -1,11 +1,8 @@
 /* Pipe through jq to create format-string-test.json */
 #include "config.h"
 #include <assert.h>
-#include <ccan/array_size/array_size.h>
 #include <ccan/tal/grab_file/grab_file.h>
-#include <ccan/tal/path/path.h>
 #include <ccan/tal/str/str.h>
-#include <common/bolt12.h>
 #include <common/bolt12_merkle.h>
 #include <common/features.h>
 #include <common/setup.h>

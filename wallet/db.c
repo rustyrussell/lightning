@@ -1,8 +1,8 @@
 #include "config.h"
 #include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
+#include <ccan/intmap/intmap.h>
 #include <ccan/tal/str/str.h>
-#include <common/utils.h>
 #include <common/version.h>
 #include <db/bindings.h>
 #include <db/common.h>
@@ -13,7 +13,6 @@
 #include <lightningd/channel.h>
 #include <lightningd/hsm_control.h>
 #include <lightningd/plugin_hook.h>
-#include <wallet/account_migration.h>
 #include <wallet/db.h>
 #include <wallet/migrations.h>
 #include <wallet/psbt_fixup.h>

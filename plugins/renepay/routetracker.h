@@ -4,6 +4,7 @@
 /* This module provides entry points for the management of a route thread. */
 
 #include "config.h"
+#include <common/json_parse_simple.h>
 #include <plugins/renepay/route.h>
 
 struct command;

@@ -1,7 +1,6 @@
 #include "config.h"
 #include "../channel_type.c"
 #include "../features.c"
-#include <ccan/tal/str/str.h>
 #include <common/setup.h>
 #include <stdio.h>
 #include <lightningd/channel_state.h>

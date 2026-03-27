@@ -1,4 +1,5 @@
 #include "config.h"
+#include <common/node_id.h>
 #include <common/utils.h>
 #include <plugins/renepay/disabledmap.h>
 

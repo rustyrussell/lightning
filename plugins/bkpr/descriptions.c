@@ -1,19 +1,15 @@
 #include "config.h"
 
-#include <bitcoin/tx.h>
-#include <ccan/htable/htable_type.h>
 #include <ccan/json_out/json_out.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/str/str.h>
 #include <common/memleak.h>
 #include <common/mkdatastorekey.h>
-#include <common/utils.h>
 #include <plugins/bkpr/bookkeeper.h>
 #include <plugins/bkpr/chain_event.h>
 #include <plugins/bkpr/channel_event.h>
 #include <plugins/bkpr/descriptions.h>
 #include <plugins/libplugin.h>
-#include <wire/wire.h>
 
 /* We keep two hashes; one for UTXO descriptions, one for payment_hashes */
 struct utxo_desc {

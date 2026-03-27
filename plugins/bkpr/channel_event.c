@@ -1,7 +1,5 @@
 #include "config.h"
 
-#include <bitcoin/chainparams.h>
-#include <ccan/crypto/sha256/sha256.h>
 #include <ccan/tal/str/str.h>
 #include <common/json_stream.h>
 #include <plugins/bkpr/bookkeeper.h>

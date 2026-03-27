@@ -1,5 +1,6 @@
 #define NDEBUG 1
 #include "config.h"
+#include <gheap.h>
 #include <plugins/renepay/dijkstra.h>
 
 /* In the heap we keep node idx, but in this structure we keep the distance

@@ -3,14 +3,11 @@
 #include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/tal/str/str.h>
-#include <common/addr.h>
 #include <common/channel_type.h>
 #include <common/json_channel_type.h>
 #include <common/json_param.h>
 #include <common/json_stream.h>
-#include <common/memleak.h>
 #include <common/psbt_open.h>
-#include <common/pseudorand.h>
 #include <inttypes.h>
 #include <plugins/spender/multifundchannel.h>
 #include <plugins/spender/openchannel.h>

@@ -1,8 +1,7 @@
 #ifndef LIGHTNING_WALLET_INVOICES_H
 #define LIGHTNING_WALLET_INVOICES_H
 #include "config.h"
-#include <bitcoin/preimage.h>
-#include <ccan/tal/tal.h>
+#include <ccan/time/time.h>
 #include <wallet/wallet.h>
 
 struct amount_msat;

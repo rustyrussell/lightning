@@ -1,12 +1,10 @@
 #include "config.h"
 #include <ccan/cast/cast.h>
-#include <ccan/str/str.h>
 #include <ccan/tal/str/str.h>
 #include <db/bindings.h>
 #include <db/common.h>
 #include <db/utils.h>
 #include <wallet/datastore.h>
-#include <wallet/db.h>
 
 /* Does k1 match k2 as far as k2 goes? */
 bool datastore_key_startswith(const char **k1, const char **k2)

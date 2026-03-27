@@ -3,7 +3,6 @@
  */
 #include "config.h"
 #include <assert.h>
-#include <ccan/crypto/sha256/sha256.h>
 #include <ccan/mem/mem.h>
 #include <openssl/evp.h>
 #include <openssl/sha.h>

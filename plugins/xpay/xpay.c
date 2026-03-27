@@ -1,30 +1,19 @@
 #include "config.h"
 #include <ccan/array_size/array_size.h>
-#include <ccan/crypto/siphash24/siphash24.h>
-#include <ccan/htable/htable_type.h>
-#include <ccan/json_escape/json_escape.h>
-#include <ccan/json_out/json_out.h>
 #include <ccan/tal/str/str.h>
-#include <common/bolt11.h>
 #include <common/bolt12.h>
 #include <common/clock_time.h>
 #include <common/daemon.h>
-#include <common/dijkstra.h>
 #include <common/features.h>
 #include <common/gossmap.h>
-#include <common/gossmods_listpeerchannels.h>
 #include <common/json_param.h>
 #include <common/json_stream.h>
 #include <common/memleak.h>
 #include <common/onion_encode.h>
 #include <common/onionreply.h>
-#include <common/pseudorand.h>
-#include <common/route.h>
-#include <common/wireaddr.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <plugins/libplugin.h>
-#include <stdarg.h>
 
 /* For the whole plugin */
 struct xpay {

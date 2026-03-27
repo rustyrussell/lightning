@@ -5,7 +5,6 @@
  * even make your own! */
 #include "config.h"
 #include <bitcoin/feerate.h>
-#include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/io/io.h>
 #include <ccan/tal/str/str.h>

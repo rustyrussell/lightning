@@ -1,6 +1,6 @@
 #include "config.h"
-#include <bitcoin/preimage.h>
 #include <ccan/cast/cast.h>
+#include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
 #include <lightningd/coin_mvts.h>
 #include <lightningd/notification.h>

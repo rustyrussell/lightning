@@ -1,13 +1,12 @@
 #include "config.h"
 #include <assert.h>
+#include <bitcoin/privkey.h>
 #include <ccan/mem/mem.h>
-#include <ccan/tal/grab_file/grab_file.h>
 #include <ccan/tal/str/str.h>
-#include <common/errcode.h>
 #include <common/hsm_secret.h>
 #include <common/memleak.h>
 #include <common/utils.h>
-#include <errno.h>
+#include <sodium.h>
 #include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>

@@ -1,8 +1,5 @@
 #include "config.h"
-#include <common/channel_id.h>
-#include <tests/fuzz/libfuzz.h>
 #include <tests/fuzz/wire.h>
-#include <wire/peer_wire.h>
 
 struct stfu {
 	struct channel_id channel_id;

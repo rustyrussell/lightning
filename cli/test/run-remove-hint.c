@@ -1,14 +1,6 @@
 #include "config.h"
 #include "config_test.h"
-#include <common/amount.h>
-#include <common/bigsize.h>
-#include <common/channel_id.h>
-#include <common/configvar.h>
-#include <common/daemon.h>
-#include <common/json_stream.h>
-#include <common/node_id.h>
 #include <common/setup.h>
-#include <common/wireaddr.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <sys/socket.h>

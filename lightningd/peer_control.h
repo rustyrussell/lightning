@@ -1,14 +1,7 @@
 #ifndef LIGHTNING_LIGHTNINGD_PEER_CONTROL_H
 #define LIGHTNING_LIGHTNINGD_PEER_CONTROL_H
 #include "config.h"
-#include <ccan/compiler/compiler.h>
-#include <ccan/crypto/shachain/shachain.h>
-#include <ccan/list/list.h>
-#include <common/channel_config.h>
-#include <common/htlc.h>
-#include <common/json_parse.h>
-#include <common/node_id.h>
-#include <common/wireaddr.h>
+#include <ccan/time/time.h>
 #include <wallet/wallet.h>
 
 struct channel_type;

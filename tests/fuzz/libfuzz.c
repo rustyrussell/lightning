@@ -1,18 +1,14 @@
 #include "config.h"
 
 #include <assert.h>
+#include <ccan/crypto/siphash24/siphash24.h>
 #include <ccan/err/err.h>
 #include <ccan/isaac/isaac64.h>
-#include <ccan/short_types/short_types.h>
 #include <ccan/tal/grab_file/grab_file.h>
 #include <ccan/tal/path/path.h>
-#include <ccan/tal/tal.h>
 #include <common/pseudorand.h>
 #include <common/setup.h>
 #include <dirent.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
 #include <tests/fuzz/libfuzz.h>
 #include <unistd.h>
 

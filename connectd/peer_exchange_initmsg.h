@@ -1,10 +1,8 @@
 #ifndef LIGHTNING_CONNECTD_PEER_EXCHANGE_INITMSG_H
 #define LIGHTNING_CONNECTD_PEER_EXCHANGE_INITMSG_H
 #include "config.h"
-#include <ccan/short_types/short_types.h>
-#include <ccan/time/time.h>
+#include <ccan/typesafe_cb/typesafe_cb.h>
 #include <connectd/handshake.h>
-#include <stdbool.h>
 
 struct crypto_state;
 struct daemon;

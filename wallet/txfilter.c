@@ -1,7 +1,5 @@
 #include "config.h"
-#include <bitcoin/script.h>
 #include <common/memleak.h>
-#include <common/utils.h>
 #include <wallet/txfilter.h>
 #include <wallet/wallet.h>
 

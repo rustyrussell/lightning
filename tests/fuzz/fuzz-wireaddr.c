@@ -1,9 +1,7 @@
 #include "config.h"
 #include <assert.h>
 #include <bitcoin/chainparams.h>
-#include <ccan/ccan/tal/str/str.h>
 #include <common/setup.h>
-#include <common/utils.h>
 #include <common/wireaddr.h>
 #include <tests/fuzz/libfuzz.h>
 

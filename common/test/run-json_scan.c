@@ -1,7 +1,6 @@
 #include "config.h"
 #include "../json_parse.c"
 #include "../json_parse_simple.c"
-#include <common/amount.h>
 #include <common/setup.h>
 #include <stdio.h>
 #include <wire/wire.h>

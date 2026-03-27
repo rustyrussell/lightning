@@ -17,6 +17,7 @@
 #include <connectd/connectd_wiregen.h>
 #include <errno.h>
 #include <hsmd/permissions.h>
+#include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
 #include <lightningd/channel_control.h>
 #include <lightningd/channel_gossip.h>
@@ -31,7 +32,6 @@
 #include <lightningd/plugin_hook.h>
 #include <openingd/dualopend_wiregen.h>
 #include <stdio.h>
-#include <unistd.h>
 
 struct commit_rcvd {
 	struct channel *channel;

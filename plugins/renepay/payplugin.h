@@ -1,12 +1,18 @@
 #ifndef LIGHTNING_PLUGINS_RENEPAY_PAYPLUGIN_H
 #define LIGHTNING_PLUGINS_RENEPAY_PAYPLUGIN_H
 #include "config.h"
-#include <ccan/list/list.h>
-#include <common/node_id.h>
-#include <plugins/libplugin.h>
-#include <plugins/renepay/flow.h>
-#include <plugins/renepay/payment.h>
-#include <plugins/renepay/renepayconfig.h>
+#include <assert.h>
+#include <bitcoin/preimage.h>
+#include <bitcoin/short_channel_id.h>
+#include <ccan/build_assert/build_assert.h>
+#include <ccan/crypto/siphash24/siphash24.h>
+#include <ccan/htable/htable_type.h>
+#include <ccan/tal/tal.h>
+#include <common/amount.h>
+#include <common/gossmap.h>
+#include <common/json_parse_simple.h>
+#include <plugins/renepay/chan_extra.h>
+#include <plugins/renepay/errorcodes.h>
 #include <plugins/renepay/uncertainty.h>
 
 // TODO(eduardo): renepaystatus should be similar to paystatus

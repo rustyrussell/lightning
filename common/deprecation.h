@@ -3,7 +3,6 @@
 #include "config.h"
 #include <ccan/compiler/compiler.h>
 #include <ccan/short_types/short_types.h>
-#include <ccan/typesafe_cb/typesafe_cb.h>
 #include <stdbool.h>
 
 /**

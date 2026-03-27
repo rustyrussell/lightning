@@ -1,12 +1,9 @@
 #ifndef LIGHTNING_COMMON_HSM_SECRET_H
 #define LIGHTNING_COMMON_HSM_SECRET_H
 #include "config.h"
-#include <bitcoin/privkey.h>
 #include <ccan/crypto/sha256/sha256.h>
 #include <ccan/short_types/short_types.h>
 #include <ccan/tal/tal.h>
-#include <sodium.h>
-#include <sys/types.h>
 
 /* Length constants for encrypted HSM secret files */
 #define HS_HEADER_LEN crypto_secretstream_xchacha20poly1305_HEADERBYTES

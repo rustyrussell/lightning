@@ -1,7 +1,5 @@
 #include "config.h"
-#include <ccan/array_size/array_size.h>
 #include <ccan/time/time.h>
-#include <common/daemon.h>
 #include <common/setup.h>
 #include <common/status.h>
 #include <stdio.h>

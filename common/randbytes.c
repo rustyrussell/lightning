@@ -2,14 +2,9 @@
 #include <assert.h>
 #include <ccan/crypto/siphash24/siphash24.h>
 #include <ccan/endian/endian.h>
-#include <ccan/tal/tal.h>
-#include <common/memleak.h>
-#include <common/pseudorand.h>
 #include <common/randbytes.h>
 #include <common/utils.h>
 #include <sodium/randombytes.h>
-#include <stdlib.h>
-#include <unistd.h>
 
 static bool used = false;
 static u64 dev_seed = 0;

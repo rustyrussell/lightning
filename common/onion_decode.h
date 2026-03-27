@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_COMMON_ONION_DECODE_H
 #define LIGHTNING_COMMON_ONION_DECODE_H
 #include "config.h"
+#include <ccan/build_assert/build_assert.h>
 #include <common/onion_encode.h>
 
 /**

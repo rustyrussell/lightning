@@ -2,7 +2,6 @@
 #define LIGHTNING_PLUGINS_BKPR_INCOMESTMT_H
 
 #include "config.h"
-#include <ccan/tal/tal.h>
 #include <common/amount.h>
 #include <common/json_parse_simple.h>
 #include <stdio.h>

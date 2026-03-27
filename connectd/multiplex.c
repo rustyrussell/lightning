@@ -21,7 +21,6 @@
 #include <connectd/queries.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <netinet/in.h>
 #include <wire/peer_wire.h>
 #include <wire/wire_io.h>
 

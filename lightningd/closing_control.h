@@ -1,9 +1,7 @@
 #ifndef LIGHTNING_LIGHTNINGD_CLOSING_CONTROL_H
 #define LIGHTNING_LIGHTNINGD_CLOSING_CONTROL_H
 #include "config.h"
-#include <ccan/short_types/short_types.h>
 #include <ccan/tal/tal.h>
-#include <stdbool.h>
 
 struct channel;
 struct lightningd;

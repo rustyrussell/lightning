@@ -2,7 +2,6 @@
 #define LIGHTNING_PLUGINS_SPENDER_SPLICE_H
 #include "config.h"
 
-#include <common/amount.h>
 #include <plugins/libplugin.h>
 
 extern const struct plugin_command splice_commands[];

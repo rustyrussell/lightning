@@ -9,7 +9,8 @@
 #include <common/features.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <lightningd/lightningd.h>
+#include <lightningd/htlc_set.h>
+#include <lightningd/wait.h>
 
 bool dev_bolt11_old_order;
 bool dev_bolt11_omit_c_value;

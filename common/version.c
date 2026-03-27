@@ -1,4 +1,5 @@
 #include "config.h"
+#include <ccan/opt/opt.h>
 #include <common/configvar.h>
 #include <common/version.h>
 #include <stdio.h>

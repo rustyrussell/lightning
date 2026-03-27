@@ -1,14 +1,7 @@
 #include "config.h"
 #include "../seeker.c"
 #include <ccan/err/err.h>
-#include <common/blinding.h>
-#include <common/channel_type.h>
-#include <common/ecdh.h>
-#include <common/json_stream.h>
-#include <common/onionreply.h>
-#include <common/sciddir_or_pubkey.h>
 #include <common/setup.h>
-#include <common/wireaddr.h>
 #include <common/gossip_store_wiregen.h>
 #include <stdio.h>
 

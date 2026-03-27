@@ -1,7 +1,5 @@
 #include "config.h"
-#include <tests/fuzz/libfuzz.h>
 #include <tests/fuzz/wire.h>
-#include <wire/peer_wire.h>
 
 struct tx_remove_input {
 	struct channel_id channel_id;

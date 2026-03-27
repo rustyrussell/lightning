@@ -5,6 +5,7 @@
 #include <lightningd/channel.h>
 #include <lightningd/gossip_generation.h>
 #include <lightningd/lightningd.h>
+#include <lightningd/peer_control.h>
 
 /* Once we know which way nodes go, it's easy to construct */
 static u8 *create_channel_announcement_dir(const tal_t *ctx,

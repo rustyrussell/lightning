@@ -2,7 +2,6 @@
 #define LIGHTNING_CONNECTD_HANDSHAKE_H
 #include "config.h"
 #include <ccan/time/time.h>
-#include <ccan/typesafe_cb/typesafe_cb.h>
 
 struct crypto_state;
 struct io_conn;

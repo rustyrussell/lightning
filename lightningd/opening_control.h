@@ -1,7 +1,18 @@
 #ifndef LIGHTNING_LIGHTNINGD_OPENING_CONTROL_H
 #define LIGHTNING_LIGHTNINGD_OPENING_CONTROL_H
 #include "config.h"
-#include <ccan/short_types/short_types.h>
+#include <ccan/build_assert/build_assert.h>
+#include <ccan/compiler/compiler.h>
+#include <ccan/crypto/shachain/shachain.h>
+#include <ccan/crypto/siphash24/siphash24.h>
+#include <ccan/list/list.h>
+#include <common/channel_config.h>
+#include <common/htlc.h>
+#include <common/htlc_state.h>
+#include <common/json_parse.h>
+#include <common/node_id.h>
+#include <common/onion_encode.h>
+#include <common/wireaddr.h>
 #include <lightningd/peer_control.h>
 
 struct channel_id;

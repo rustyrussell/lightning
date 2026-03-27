@@ -5,7 +5,6 @@
 #include <common/closing_fee.h>
 #include <common/fee_states.h>
 #include <common/json_command.h>
-#include <common/randbytes.h>
 #include <common/wire_error.h>
 #include <hsmd/hsmd_wiregen.h>
 #include <lightningd/channel.h>
@@ -16,7 +15,6 @@
 #include <lightningd/notification.h>
 #include <lightningd/opening_common.h>
 #include <lightningd/subd.h>
-#include <wallet/txfilter.h>
 
 void channel_set_owner(struct channel *channel, struct subd *owner)
 {

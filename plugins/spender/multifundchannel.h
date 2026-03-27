@@ -2,8 +2,6 @@
 #define LIGHTNING_PLUGINS_SPENDER_MULTIFUNDCHANNEL_H
 #include "config.h"
 
-#include <ccan/ccan/list/list.h>
-#include <common/channel_id.h>
 #include <plugins/libplugin.h>
 
 extern const struct plugin_command multifundchannel_commands[];

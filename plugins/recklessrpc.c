@@ -11,8 +11,6 @@
 #include <common/memleak.h>
 #include <errno.h>
 #include <plugins/libplugin.h>
-#include <signal.h>
-#include <unistd.h>
 
 static struct plugin *plugin;
 

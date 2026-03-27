@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_LIGHTNINGD_CHAINTOPOLOGY_H
 #define LIGHTNING_LIGHTNINGD_CHAINTOPOLOGY_H
 #include "config.h"
+#include <bitcoin/tx.h>
 #include <lightningd/watch.h>
 
 struct bitcoin_tx;

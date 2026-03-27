@@ -1,9 +1,6 @@
 #ifndef LIGHTNING_CONNECTD_MULTIPLEX_H
 #define LIGHTNING_CONNECTD_MULTIPLEX_H
 #include "config.h"
-#include <ccan/short_types/short_types.h>
-#include <common/crypto_state.h>
-#include <common/msg_queue.h>
 #include <common/node_id.h>
 
 struct peer;

@@ -1,10 +1,10 @@
 #ifndef LIGHTNING_PLUGINS_RENEPAY_PAYMENT_H
 #define LIGHTNING_PLUGINS_RENEPAY_PAYMENT_H
 #include "config.h"
-#include <common/gossmap.h>
+#include <ccan/build_assert/build_assert.h>
+#include <ccan/crypto/siphash24/siphash24.h>
 #include <common/route.h>
 #include <plugins/libplugin.h>
-#include <plugins/renepay/disabledmap.h>
 #include <plugins/renepay/payment_info.h>
 
 enum payment_status { PAYMENT_PENDING, PAYMENT_SUCCESS, PAYMENT_FAIL };

@@ -3,7 +3,6 @@
 #include <common/onion_encode.h>
 #include <common/sphinx.h>
 #include <plugins/renepay/json.h>
-#include <plugins/renepay/payment.h>
 #include <plugins/renepay/payplugin.h>
 #include <plugins/renepay/routefail.h>
 #include <plugins/renepay/routetracker.h>

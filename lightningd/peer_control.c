@@ -1,12 +1,10 @@
 #include "config.h"
 #include <bitcoin/feerate.h>
-#include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/asort/asort.h>
 #include <ccan/tal/str/str.h>
 #include <channeld/channeld_wiregen.h>
 #include <common/addr.h>
-#include <common/channel_id.h>
 #include <common/htlc_trim.h>
 #include <common/initial_commit_tx.h>
 #include <common/json_channel_type.h>
@@ -19,6 +17,7 @@
 #include <errno.h>
 #include <hsmd/hsmd_wiregen.h>
 #include <lightningd/anchorspend.h>
+#include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
 #include <lightningd/channel_control.h>
 #include <lightningd/channel_gossip.h>
@@ -39,7 +38,6 @@
 #include <onchaind/onchaind_wiregen.h>
 #include <openingd/dualopend_wiregen.h>
 #include <openingd/openingd_wiregen.h>
-#include <unistd.h>
 
 /* FIXME: Reorder! */
 static void peer_disconnected(struct lightningd *ld,

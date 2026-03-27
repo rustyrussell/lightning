@@ -1,16 +1,13 @@
 #include "config.h"
-#include <assert.h>
 #include <ccan/list/list.h>
 #include <ccan/lqueue/lqueue.h>
 #include <ccan/tal/str/str.h>
-#include <ccan/tal/tal.h>
 #include <common/pseudorand.h>
 #include <common/utils.h>
 #include <math.h>
 #include <plugins/renepay/dijkstra.h>
 #include <plugins/renepay/flow.h>
 #include <plugins/renepay/mcf.h>
-#include <stdint.h>
 
 /* # Optimal payments
  *

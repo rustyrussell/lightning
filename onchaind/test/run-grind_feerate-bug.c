@@ -6,7 +6,6 @@
 #include <ccan/str/hex/hex.h>
 #include <common/randbytes.h>
 #include <common/setup.h>
-#include <stdio.h>
 
 #define main test_main
 int test_main(int argc, char *argv[]);

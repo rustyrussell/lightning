@@ -1,9 +1,5 @@
 #include "config.h"
-#include <assert.h>
-#include <ccan/mem/mem.h>
-#include <tests/fuzz/libfuzz.h>
 #include <tests/fuzz/wire.h>
-#include <wire/peer_wire.h>
 
 struct init {
 	u8 *globalfeatures;

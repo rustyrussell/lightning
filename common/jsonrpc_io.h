@@ -2,8 +2,6 @@
 #ifndef LIGHTNING_COMMON_JSONRPC_IO_H
 #define LIGHTNING_COMMON_JSONRPC_IO_H
 #include "config.h"
-#include <ccan/tal/tal.h>
-#include <ccan/typesafe_cb/typesafe_cb.h>
 #include <common/json_parse_simple.h>
 
 struct io_conn;

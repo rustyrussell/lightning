@@ -1,8 +1,5 @@
 #include "config.h"
-#include <ccan/mem/mem.h>
-#include <tests/fuzz/libfuzz.h>
 #include <tests/fuzz/wire.h>
-#include <wire/peer_wire.h>
 
 struct ping {
 	u16 num_pong_bytes;

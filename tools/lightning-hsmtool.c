@@ -19,9 +19,9 @@
 #include <common/memleak.h>
 #include <common/utils.h>
 #include <common/utxo.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <sodium.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <wally_bip32.h>

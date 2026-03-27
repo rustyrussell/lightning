@@ -9,20 +9,16 @@
 #include "config.h"
 #include <ccan/array_size/array_size.h>
 #include <ccan/noerr/noerr.h>
-#include <ccan/tal/grab_file/grab_file.h>
 #include <ccan/tal/str/str.h>
 #include <common/clock_time.h>
-#include <common/dijkstra.h>
 #include <common/gossmap.h>
 #include <common/gossmods_listpeerchannels.h>
 #include <common/json_param.h>
 #include <common/json_stream.h>
 #include <common/memleak.h>
-#include <common/route.h>
 #include <common/status_wiregen.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <math.h>
 #include <plugins/askrene/askrene.h>
 #include <plugins/askrene/child/additional_costs.h>
 #include <plugins/askrene/child/child.h>
@@ -31,7 +27,6 @@
 #include <plugins/askrene/reserve.h>
 #include <sys/wait.h>
 #include <wire/wire_io.h>
-#include <wire/wire_sync.h>
 
 struct router_child {
 	/* Inside askrene->children */

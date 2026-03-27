@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_HSMD_HSM_UTXO_H
 #define LIGHTNING_HSMD_HSM_UTXO_H
 #include "config.h"
+#include <ccan/crypto/siphash24/siphash24.h>
 #include <common/utxo.h>
 
 /* FIXME: If we make our static_remotekey a normal keypath key, we can

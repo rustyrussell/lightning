@@ -11,17 +11,13 @@
  *  aae761377f3b4f1f07d982783b902314b61a9cbe6ccfdfa96559039f07e332ed
  */
 #include "config.h"
-#include <bitcoin/script.h>
-#include <ccan/crypto/hkdf_sha256/hkdf_sha256.h>
-#include <ccan/htable/htable_type.h>
-#include <ccan/mem/mem.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/str/str.h>
 #include <channeld/channeld_wiregen.h>
 #include <channeld/full_channel.h>
+#include <channeld/full_channel_error.h>
 #include <common/blinding.h>
 #include <common/daemon_conn.h>
-#include <common/derive_basepoints.h>
 #include <common/ecdh.h>
 #include <common/gossmap.h>
 #include <common/onion_decode.h>
@@ -29,13 +25,9 @@
 #include <common/subdaemon.h>
 #include <common/timeout.h>
 #include <common/utils.h>
-#include <common/wire_error.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <secp256k1_ecdh.h>
-#include <stdio.h>
-#include <unistd.h>
 #include <wire/wire_sync.h>
 
 /* stdin == requests, 3 == peer, 4 = HSM */

@@ -1,8 +1,6 @@
 #ifndef LIGHTNING_PLUGINS_ASKRENE_CHILD_FLOW_H
 #define LIGHTNING_PLUGINS_ASKRENE_CHILD_FLOW_H
 #include "config.h"
-#include <bitcoin/short_channel_id.h>
-#include <common/amount.h>
 #include <common/gossmap.h>
 
 struct plugin;

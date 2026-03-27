@@ -2,32 +2,12 @@
 #include "common/json_filter.c"
 #include "test_utils.h"
 
-#include <bitcoin/tx.h>
-#include <ccan/tal/str/str.h>
-#include <common/clock_time.h>
-#include <common/coin_mvt.h>
-#include <common/daemon.h>
-#include <common/deprecation.h>
-#include <common/fee_states.h>
-#include <common/htlc.h>
-#include <common/json_param.h>
-#include <common/json_parse_simple.h>
-#include <common/json_stream.h>
-#include <common/plugin.h>
+#include <db/common.h>
+#include <ccan/array_size/array_size.h>
 #include <common/setup.h>
 #include <common/trace.h>
-#include <common/utils.h>
-#include <plugins/bkpr/account.h>
-#include <plugins/bkpr/account_entry.h>
-#include <plugins/bkpr/bookkeeper.h>
-#include <plugins/bkpr/chain_event.h>
-#include <plugins/bkpr/channel_event.h>
-#include <plugins/bkpr/onchain_fee.h>
-#include <plugins/bkpr/recorder.h>
-#include <plugins/libplugin.h>
 #include <stdio.h>
 #include <unistd.h>
-#include <wire/wire.h>
 
 #include "plugins/bkpr/account.c"
 #include "plugins/bkpr/blockheights.c"

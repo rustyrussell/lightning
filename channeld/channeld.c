@@ -19,6 +19,7 @@
 #include <channeld/channeld.h>
 #include <channeld/channeld_wiregen.h>
 #include <channeld/full_channel.h>
+#include <channeld/full_channel_error.h>
 #include <channeld/splice.h>
 #include <channeld/watchtower.h>
 #include <common/billboard.h>

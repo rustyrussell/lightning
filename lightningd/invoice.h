@@ -1,6 +1,7 @@
 #ifndef LIGHTNING_LIGHTNINGD_INVOICE_H
 #define LIGHTNING_LIGHTNINGD_INVOICE_H
 #include "config.h"
+#include <ccan/time/time.h>
 #include <wallet/wallet.h>
 
 struct amount_msat;

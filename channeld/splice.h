@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include <bitcoin/short_channel_id.h>
+#include <ccan/build_assert/build_assert.h>
 #include <channeld/inflight.h>
 #include <common/amount.h>
 #include <common/htlc.h>

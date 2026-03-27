@@ -1,5 +1,4 @@
 #include "config.h"
-#include <bitcoin/script.h>
 #include <ccan/tal/str/str.h>
 #include <channeld/channeld_wiregen.h>
 #include <closingd/closingd_wiregen.h>
@@ -20,6 +19,7 @@
 #include <lightningd/jsonrpc.h>
 #include <lightningd/lightningd.h>
 #include <lightningd/opening_common.h>
+#include <lightningd/peer_control.h>
 #include <lightningd/peer_fd.h>
 #include <openingd/dualopend_wiregen.h>
 

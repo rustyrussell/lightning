@@ -3,7 +3,6 @@
 
 #include "config.h"
 #include <plugins/renepay/payment.h>
-#include <plugins/renepay/route.h>
 
 struct routekey *tal_routekey_from_json(const tal_t *ctx, const char *buf,
 					const jsmntok_t *obj);

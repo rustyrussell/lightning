@@ -3,10 +3,8 @@
 #include "config.h"
 #include <bitcoin/privkey.h>
 #include <bitcoin/pubkey.h>
-#include <ccan/short_types/short_types.h>
 #include <common/amount.h>
 #include <external/jsmn/jsmn.h>
-#include <stdbool.h>
 
 struct command_result;
 struct command;

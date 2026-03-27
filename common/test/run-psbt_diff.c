@@ -1,6 +1,5 @@
 #include "config.h"
 #include <common/setup.h>
-#include <stdio.h>
 #include "../amount.c"
 #include "../psbt_open.c"
 

@@ -1,8 +1,5 @@
 #include "config.h"
-#include <common/daemon.h>
-#include <common/node_id.c>
 #include <common/setup.h>
-#include <common/status_levels.c>
 #include <stdio.h>
 
 #define fwrite test_fwrite

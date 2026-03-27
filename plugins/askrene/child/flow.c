@@ -1,15 +1,9 @@
 #include "config.h"
-#include <assert.h>
 #include <ccan/tal/str/str.h>
-#include <ccan/tal/tal.h>
-#include <common/fp16.h>
-#include <common/overflows.h>
-#include <math.h>
 #include <plugins/askrene/child/child_log.h>
 #include <plugins/askrene/child/flow.h>
 #include <plugins/askrene/child/route_query.h>
 #include <plugins/libplugin.h>
-#include <stdio.h>
 
 #ifndef SUPERVERBOSE
 #define SUPERVERBOSE(...)

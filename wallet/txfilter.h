@@ -1,7 +1,6 @@
 #ifndef LIGHTNING_WALLET_TXFILTER_H
 #define LIGHTNING_WALLET_TXFILTER_H
 #include "config.h"
-#include <bitcoin/pubkey.h>
 #include <bitcoin/tx.h>
 
 /**

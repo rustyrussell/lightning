@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <bitcoin/short_channel_id.h>
+#include <ccan/crypto/siphash24/siphash24.h>
 #include <ccan/list/list.h>
 #include <common/hash_u5.h>
 #include <common/node_id.h>

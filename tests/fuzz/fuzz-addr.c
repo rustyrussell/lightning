@@ -4,7 +4,6 @@
 #include <ccan/mem/mem.h>
 #include <common/addr.h>
 #include <common/setup.h>
-#include <common/utils.h>
 #include <tests/fuzz/libfuzz.h>
 
 void init(int *argc, char ***argv)

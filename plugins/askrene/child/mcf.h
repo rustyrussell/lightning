@@ -4,7 +4,6 @@
  * from renepay, as modified to fit askrene */
 #include "config.h"
 #include <ccan/time/time.h>
-#include <common/amount.h>
 #include <common/gossmap.h>
 struct flow;
 

@@ -5,6 +5,7 @@
 #include <ccan/crc32c/crc32c.h>
 #include <common/decode_array.h>
 #include <common/gossmap.h>
+#include <common/msg_queue.h>
 #include <common/status.h>
 #include <common/utils.h>
 #include <common/wire_error.h>

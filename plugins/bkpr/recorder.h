@@ -2,7 +2,6 @@
 #define LIGHTNING_PLUGINS_BKPR_RECORDER_H
 
 #include "config.h"
-#include <ccan/tal/tal.h>
 #include <common/amount.h>
 struct bitcoin_outpoint;
 struct bkpr;

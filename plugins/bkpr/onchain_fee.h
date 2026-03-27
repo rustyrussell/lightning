@@ -2,8 +2,6 @@
 #define LIGHTNING_PLUGINS_BKPR_ONCHAIN_FEE_H
 
 #include "config.h"
-#include <bitcoin/tx.h>
-#include <ccan/short_types/short_types.h>
 #include <plugins/bkpr/bookkeeper.h>
 
 struct account;

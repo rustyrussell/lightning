@@ -1,9 +1,6 @@
 #include "config.h"
-#include <ccan/array_size/array_size.h>
-#include <common/setup.h>
 #include <stdio.h>
 #include <tests/fuzz/libfuzz.h>
-#include <wire/wire.h>
 
   #include "../../plugins/funder_policy.c"
 

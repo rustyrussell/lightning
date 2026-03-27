@@ -1,28 +1,18 @@
 #include "config.h"
-#include <bitcoin/chainparams.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/cast/cast.h>
 #include <ccan/json_escape/json_escape.h>
 #include <ccan/json_out/json_out.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/str/str.h>
-#include <ccan/tal/tal.h>
-#include <ccan/time/time.h>
-#include <common/bolt11.h>
 #include <common/bolt12.h>
 #include <common/clock_time.h>
-#include <common/coin_mvt.h>
 #include <common/iso4217.h>
 #include <common/json_param.h>
 #include <common/json_stream.h>
 #include <common/memleak.h>
 #include <common/mkdatastorekey.h>
-#include <common/node_id.h>
-#include <db/exec.h>
-#include <errno.h>
-#include <inttypes.h>
 #include <plugins/bkpr/account.h>
-#include <plugins/bkpr/account_entry.h>
 #include <plugins/bkpr/blockheights.h>
 #include <plugins/bkpr/bookkeeper.h>
 #include <plugins/bkpr/chain_event.h>
@@ -35,8 +25,6 @@
 #include <plugins/bkpr/recorder.h>
 #include <plugins/bkpr/report.h>
 #include <plugins/libplugin.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 #define CHAIN_MOVE "chain_mvt"
 #define CHANNEL_MOVE "channel_mvt"

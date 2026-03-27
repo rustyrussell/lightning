@@ -1,6 +1,5 @@
 #include "config.h"
 #include <bitcoin/feerate.h>
-#include <bitcoin/script.h>
 #include <ccan/cast/cast.h>
 #include <ccan/tal/str/str.h>
 #include <common/htlc_tx.h>
@@ -16,7 +15,10 @@
 #include <lightningd/channel_control.h>
 #include <lightningd/coin_mvts.h>
 #include <lightningd/hsm_control.h>
+#include <lightningd/htlc_end.h>
+#include <lightningd/lightningd.h>
 #include <lightningd/onchain_control.h>
+#include <lightningd/peer_control.h>
 #include <lightningd/peer_htlcs.h>
 #include <lightningd/subd.h>
 #include <onchaind/onchaind_wiregen.h>

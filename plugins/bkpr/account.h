@@ -2,7 +2,6 @@
 #define LIGHTNING_PLUGINS_BKPR_ACCOUNT_H
 
 #include "config.h"
-#include <ccan/short_types/short_types.h>
 #include <common/coin_mvt.h>
 
 struct node_id;

@@ -1,7 +1,6 @@
 #ifndef LIGHTNING_PLUGINS_ASKRENE_CHILD_CHILD_LOG_H
 #define LIGHTNING_PLUGINS_ASKRENE_CHILD_CHILD_LOG_H
 #include "config.h"
-#include <ccan/tal/tal.h>
 #include <common/status_levels.h>
 
 /* Logs this, and also returns the string allocated off ctx */

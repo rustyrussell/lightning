@@ -1,25 +1,13 @@
 #include "config.h"
 
-#include <assert.h>
-#include <bitcoin/chainparams.h>
-#include <bitcoin/pubkey.h>
-#include <bitcoin/script.h>
-#include <bitcoin/tx.h>
-#include <ccan/tal/tal.h>
-#include <common/amount.h>
 #include <common/blockheight_states.h>
 #include <common/channel_type.h>
 #include <common/fee_states.h>
 #include <common/initial_channel.h>
 #include <common/setup.h>
 #include <common/status.h>
-#include <common/utils.h>
 #include <fcntl.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 #include <tests/fuzz/libfuzz.h>
-#include <wire/wire.h>
 
 void init(int *argc, char ***argv)
 {

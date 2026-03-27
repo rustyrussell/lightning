@@ -1,12 +1,8 @@
 #include "config.h"
-#include <assert.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/crypto/siphash24/siphash24.h>
 #include <ccan/htable/htable_type.h>
-#include <ccan/short_types/short_types.h>
-#include <ccan/tal/tal.h>
 #include <common/amount.h>
-#include <common/memleak.h>
 #include <common/pseudorand.h>
 #include <common/setup.h>
 #include <common/utils.h>

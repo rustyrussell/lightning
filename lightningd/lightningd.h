@@ -2,13 +2,9 @@
 #define LIGHTNING_LIGHTNINGD_LIGHTNINGD_H
 #include "config.h"
 #include <ccan/ccan/opt/opt.h>
-#include <lightningd/htlc_end.h>
-#include <lightningd/htlc_set.h>
+#include <ccan/time/time.h>
 #include <lightningd/options.h>
-#include <lightningd/peer_control.h>
-#include <lightningd/wait.h>
-#include <signal.h>
-#include <sys/stat.h>
+#include <stdbool.h>
 #include <wallet/wallet.h>
 
 struct amount_msat;

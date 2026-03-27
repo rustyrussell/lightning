@@ -1,14 +1,11 @@
 /* Tool for limited downgrade of an offline node */
 #include "config.h"
-#include <bitcoin/chainparams.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/err/err.h>
 #include <ccan/opt/opt.h>
 #include <ccan/tal/path/path.h>
 #include <ccan/tal/str/str.h>
 #include <common/configdir.h>
-#include <common/node_id.h>
-#include <common/utils.h>
 #include <db/bindings.h>
 #include <db/common.h>
 #include <db/exec.h>

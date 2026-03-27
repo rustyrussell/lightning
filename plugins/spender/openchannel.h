@@ -1,7 +1,6 @@
 #ifndef LIGHTNING_PLUGINS_SPENDER_OPENCHANNEL_H
 #define LIGHTNING_PLUGINS_SPENDER_OPENCHANNEL_H
 #include "config.h"
-#include <ccan/tal/tal.h>
 #include <plugins/libplugin.h>
 
 struct wally_psbt;

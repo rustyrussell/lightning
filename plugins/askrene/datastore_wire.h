@@ -2,10 +2,8 @@
 #define LIGHTNING_PLUGINS_ASKRENE_DATASTORE_WIRE_H
 #include "config.h"
 #include <bitcoin/short_channel_id.h>
-#include <ccan/short_types/short_types.h>
 #include <common/amount.h>
 #include <common/node_id.h>
-#include <stdbool.h>
 
 /* Different elements in the datastore */
 enum dstore_layer_type {

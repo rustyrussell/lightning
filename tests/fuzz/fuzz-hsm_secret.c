@@ -1,10 +1,11 @@
 #include "config.h"
 #include <assert.h>
 
+#include <bitcoin/privkey.h>
 #include <ccan/mem/mem.h>
 #include <common/hsm_secret.h>
 #include <common/setup.h>
-#include <stdlib.h>
+#include <sodium.h>
 #include <tests/fuzz/libfuzz.h>
 
 void init(int *argc, char ***argv)

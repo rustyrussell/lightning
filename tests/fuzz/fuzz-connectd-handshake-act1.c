@@ -8,11 +8,7 @@
  *     - we fail the handshake
  */
 #include "config.h"
-#include <assert.h>
-#include <ccan/io/io.h>
-#include <common/utils.h>
 #include <tests/fuzz/connectd_handshake.h>
-#include <tests/fuzz/libfuzz.h>
 
 /* The io_write() interceptor.
  *

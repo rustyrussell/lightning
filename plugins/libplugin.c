@@ -19,7 +19,6 @@
 #include <inttypes.h>
 #include <plugins/libplugin.h>
 #include <stdio.h>
-#include <unistd.h>
 
 #define READ_CHUNKSIZE 4096
 

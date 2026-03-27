@@ -5,7 +5,6 @@
 #include <ccan/noerr/noerr.h>
 #include <ccan/read_write_all/read_write_all.h>
 #include <ccan/tal/grab_file/grab_file.h>
-#include <ccan/tal/str/str.h>
 #include <common/clock_time.h>
 #include <common/json_param.h>
 #include <common/json_stream.h>

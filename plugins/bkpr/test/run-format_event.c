@@ -1,12 +1,6 @@
 /* plugins/bkpr/test/run-report.c */
 #include "config.h"
-#include <assert.h>
-#include <ccan/str/str.h>
-#include <ccan/tal/str/str.h>
-#include <common/amount.h>
-#include <common/json_parse.h>
 #include <common/setup.h>
-#include <plugins/bkpr/bookkeeper.h>
 
 #include "../report.c"
 

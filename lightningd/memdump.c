@@ -7,13 +7,12 @@
 #include <common/timeout.h>
 #include <connectd/connectd_wiregen.h>
 #include <hsmd/hsmd_wiregen.h>
-#include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
-#include <lightningd/closed_channel.h>
 #include <lightningd/hsm_control.h>
 #include <lightningd/jsonrpc.h>
 #include <lightningd/lightningd.h>
 #include <lightningd/memdump.h>
+#include <lightningd/peer_control.h>
 #include <lightningd/subd.h>
 
 struct leak_detect {

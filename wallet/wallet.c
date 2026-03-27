@@ -1,8 +1,6 @@
 #include "config.h"
-#include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/asort/asort.h>
-#include <ccan/cast/cast.h>
 #include <ccan/mem/mem.h>
 #include <ccan/tal/str/str.h>
 #include <channeld/channeld_wiregen.h>
@@ -16,6 +14,7 @@
 #include <db/common.h>
 #include <db/exec.h>
 #include <db/utils.h>
+#include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
 #include <lightningd/channel_gossip.h>
 #include <lightningd/closed_channel.h>
@@ -30,7 +29,6 @@
 #include <wallet/migrations.h>
 #include <wallet/txfilter.h>
 #include <wallet/wallet.h>
-#include <wally_bip32.h>
 
 #define SQLITE_MAX_UINT 0x7FFFFFFFFFFFFFFF
 #define DIRECTION_INCOMING 0

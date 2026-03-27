@@ -1,6 +1,7 @@
 #include "config.h"
 #include <lightningd/channel.h>
 #include <lightningd/lightningd.h>
+#include <lightningd/peer_control.h>
 #include <lightningd/routehint.h>
 
 static bool scid_in_arr(const struct short_channel_id *scidarr,

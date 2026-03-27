@@ -3,7 +3,6 @@
 #include "config.h"
 #include <ccan/short_types/short_types.h>
 #include <ccan/tal/tal.h>
-#include <gheap.h>
 
 /* Allocation of resources for the heap. */
 struct dijkstra *dijkstra_new(const tal_t *ctx, size_t max_num_nodes);

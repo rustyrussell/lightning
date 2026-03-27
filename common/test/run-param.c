@@ -4,11 +4,7 @@
 #include "../json_filter.c"
 #include "../json_parse.c"
 #include "../json_parse_simple.c"
-#include <assert.h>
 #include <ccan/array_size/array_size.h>
-#include <common/channel_type.h>
-#include <common/clock_time.h>
-#include <common/memleak.h>
 #include <common/setup.h>
 #include <stdio.h>
 

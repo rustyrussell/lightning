@@ -1,6 +1,4 @@
 #include "config.h"
-#include <ccan/array_size/array_size.h>
-#include <ccan/htable/htable_type.h>
 #include <ccan/json_out/json_out.h>
 #include <ccan/tal/str/str.h>
 #include <common/clock_time.h>

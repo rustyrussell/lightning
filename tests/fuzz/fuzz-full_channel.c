@@ -5,6 +5,7 @@
 #include "config.h"
 #include <ccan/ccan/array_size/array_size.h>
 #include <channeld/full_channel.h>
+#include <channeld/full_channel_error.h>
 #include <common/blockheight_states.h>
 #include <common/channel_type.h>
 #include <common/fee_states.h>

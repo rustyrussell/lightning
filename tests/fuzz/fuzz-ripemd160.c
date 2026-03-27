@@ -3,7 +3,6 @@
  */
 #include "config.h"
 #include <assert.h>
-#include <ccan/crypto/ripemd160/ripemd160.h>
 #include <ccan/mem/mem.h>
 #include <openssl/evp.h>
 #include <openssl/provider.h>

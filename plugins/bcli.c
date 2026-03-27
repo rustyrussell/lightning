@@ -11,7 +11,6 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <plugins/libplugin.h>
-#include <unistd.h>
 
 /* Bitcoin Core RPC error code for duplicate transaction */
 #define RPC_TRANSACTION_ALREADY_IN_CHAIN -27

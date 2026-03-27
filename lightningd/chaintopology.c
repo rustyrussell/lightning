@@ -1,5 +1,4 @@
 #include "config.h"
-#include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
 #include <ccan/io/io.h>
 #include <ccan/tal/str/str.h>
@@ -17,7 +16,6 @@
 #include <lightningd/io_loop_with_timers.h>
 #include <lightningd/notification.h>
 #include <math.h>
-#include <wallet/txfilter.h>
 
 /* Mutual recursion via timer. */
 static void try_extend_tip(struct chain_topology *topo);

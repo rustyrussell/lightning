@@ -1,7 +1,7 @@
 #ifndef LIGHTNING_LIGHTNINGD_PAY_H
 #define LIGHTNING_LIGHTNINGD_PAY_H
 #include "config.h"
-#include <common/errcode.h>
+#include <ccan/time/time.h>
 #include <wallet/wallet.h>
 
 struct htlc_out;

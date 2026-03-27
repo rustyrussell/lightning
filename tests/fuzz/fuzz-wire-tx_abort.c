@@ -1,9 +1,5 @@
 #include "config.h"
-#include <ccan/mem/mem.h>
-#include <common/channel_id.h>
-#include <tests/fuzz/libfuzz.h>
 #include <tests/fuzz/wire.h>
-#include <wire/peer_wire.h>
 
 struct tx_abort {
 	struct channel_id channel_id;

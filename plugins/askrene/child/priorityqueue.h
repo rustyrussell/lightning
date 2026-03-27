@@ -6,7 +6,6 @@
 #include "config.h"
 #include <ccan/short_types/short_types.h>
 #include <ccan/tal/tal.h>
-#include <gheap.h>
 
 /* Allocation of resources for the heap. */
 struct priorityqueue *priorityqueue_new(const tal_t *ctx,

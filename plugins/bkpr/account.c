@@ -1,16 +1,12 @@
 #include "config.h"
 
-#include <ccan/htable/htable_type.h>
 #include <ccan/json_out/json_out.h>
-#include <ccan/str/str.h>
 #include <ccan/tal/str/str.h>
 #include <common/memleak.h>
 #include <common/mkdatastorekey.h>
-#include <common/node_id.h>
 #include <plugins/bkpr/account.h>
 #include <plugins/bkpr/bookkeeper.h>
 #include <plugins/bkpr/chain_event.h>
-#include <plugins/bkpr/recorder.h>
 #include <plugins/libplugin.h>
 #include <wire/wire.h>
 

@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include <bitcoin/block.h>
+#include <ccan/build_assert/build_assert.h>
 #include <common/amount.h>
 #include <common/bip32.h>
 

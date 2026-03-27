@@ -3,7 +3,6 @@
 
 #include "config.h"
 #include <bitcoin/tx.h>
-#include <ccan/short_types/short_types.h>
 
 struct amount_msat;
 struct bkpr;

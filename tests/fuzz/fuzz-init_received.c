@@ -7,7 +7,6 @@
 #include <ccan/ccan/io/io.h>
 #include <ccan/ccan/str/hex/hex.h>
 #include <common/setup.h>
-#include <common/utils.h>
 #include <fcntl.h>
 #include <tests/fuzz/libfuzz.h>
 

@@ -7,7 +7,6 @@
 #include <ccan/opt/opt.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/str/str.h>
-#include <ccan/time/time.h>
 #include <common/bech32.h>
 #include <common/bolt11.h>
 #include <common/clock_time.h>

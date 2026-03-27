@@ -2,7 +2,6 @@
 #define LIGHTNING_PLUGINS_RENEPAY_MCF_H
 #include "config.h"
 #include <ccan/bitmap/bitmap.h>
-#include <common/amount.h>
 #include <common/gossmap.h>
 
 struct chan_extra_map;

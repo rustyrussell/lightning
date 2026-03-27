@@ -5,10 +5,7 @@
 #include <common/htlc_state.h>
 #include <db/bindings.h>
 #include <db/common.h>
-#include <db/exec.h>
 #include <db/utils.h>
-#include <wallet/account_migration.h>
-#include <wallet/db.h>
 #include <wallet/migrations.h>
 
 static const char *revert_too_early(const tal_t *ctx, struct db *db)

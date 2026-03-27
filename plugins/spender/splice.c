@@ -4,11 +4,8 @@
 #include <ccan/array_size/array_size.h>
 #include <ccan/err/err.h>
 #include <ccan/tal/str/str.h>
-#include <ccan/tal/tal.h>
 #include <common/addr.h>
 #include <common/json_param.h>
-#include <common/json_parse.h>
-#include <common/json_stream.h>
 #include <common/psbt_open.h>
 #include <common/splice_script.h>
 #include <inttypes.h>

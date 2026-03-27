@@ -2,11 +2,8 @@
 #define LIGHTNING_PLUGINS_RENEPAY_CHAN_EXTRA_H
 
 #include "config.h"
-#include <bitcoin/short_channel_id.h>
 #include <ccan/htable/htable_type.h>
-#include <common/amount.h>
 #include <common/gossmap.h>
-#include <plugins/renepay/errorcodes.h>
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))

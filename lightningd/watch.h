@@ -2,7 +2,6 @@
 #define LIGHTNING_LIGHTNINGD_WATCH_H
 #include "config.h"
 #include <bitcoin/script.h>
-#include <bitcoin/tx.h>
 #include <ccan/htable/htable_type.h>
 
 struct block;

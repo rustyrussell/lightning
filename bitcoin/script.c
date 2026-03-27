@@ -5,9 +5,9 @@
 #include <bitcoin/preimage.h>
 #include <bitcoin/pubkey.h>
 #include <bitcoin/script.h>
+#include <ccan/crypto/siphash24/siphash24.h>
 #include <ccan/mem/mem.h>
 #include <common/pseudorand.h>
-#include <common/randbytes.h>
 #include <common/utils.h>
 #include <wally_script.h>
 

@@ -8,8 +8,6 @@
 #include <common/hsm_secret.h>
 #include <common/json_param.h>
 #include <common/json_stream.h>
-#include <common/setup.h>
-#include <common/utils.h>
 #include <errno.h>
 #include <plugins/libplugin.h>
 

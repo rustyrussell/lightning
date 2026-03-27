@@ -2,9 +2,6 @@
 #define LIGHTNING_GOSSIPD_GOSSMAP_MANAGE_H
 #include "config.h"
 #include <bitcoin/short_channel_id.h>
-#include <ccan/short_types/short_types.h>
-#include <ccan/tal/tal.h>
-#include <stdbool.h>
 
 struct daemon;
 struct gossmap_manage;

@@ -4,6 +4,7 @@
 #include <lightningd/closed_channel.h>
 #include <lightningd/jsonrpc.h>
 #include <lightningd/lightningd.h>
+#include <lightningd/peer_control.h>
 
 size_t hash_cid(const struct channel_id *cid)
 {

@@ -1,11 +1,8 @@
 #include "config.h"
 #include <assert.h>
-#include <ccan/ccan/array_size/array_size.h>
 #include <ccan/ccan/tal/str/str.h>
-#include <common/bech32.h>
 #include <common/codex32.h>
 #include <common/setup.h>
-#include <common/utils.h>
 #include <tests/fuzz/libfuzz.h>
 
 /* Default mutator defined by libFuzzer */

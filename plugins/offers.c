@@ -2,7 +2,6 @@
 #include "config.h"
 #include <ccan/array_size/array_size.h>
 #include <ccan/bitops/bitops.h>
-#include <ccan/mem/mem.h>
 #include <ccan/rune/rune.h>
 #include <ccan/tal/str/str.h>
 #include <common/bech32.h>

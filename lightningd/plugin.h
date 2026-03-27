@@ -1,7 +1,6 @@
 #ifndef LIGHTNING_LIGHTNINGD_PLUGIN_H
 #define LIGHTNING_LIGHTNINGD_PLUGIN_H
 #include "config.h"
-#include <ccan/intmap/intmap.h>
 #include <lightningd/jsonrpc.h>
 #include <lightningd/lightningd.h>
 

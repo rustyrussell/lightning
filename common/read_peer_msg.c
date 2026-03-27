@@ -1,5 +1,4 @@
 #include "config.h"
-#include <bitcoin/chainparams.h>
 #include <common/peer_failed.h>
 #include <common/read_peer_msg.h>
 #include <common/status.h>

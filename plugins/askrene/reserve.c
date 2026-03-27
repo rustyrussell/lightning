@@ -1,6 +1,4 @@
 #include "config.h"
-#include <assert.h>
-#include <ccan/htable/htable_type.h>
 #include <ccan/tal/str/str.h>
 #include <common/gossmap.h>
 #include <common/json_stream.h>

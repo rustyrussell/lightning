@@ -1,6 +1,4 @@
 #include "config.h"
-#include <assert.h>
-#include <bitcoin/chainparams.h>
 #include <common/amount.h>
 #include <common/pseudorand.h>
 #include <common/setup.h>

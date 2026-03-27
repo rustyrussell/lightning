@@ -11,6 +11,7 @@
 #include <connectd/connectd_wiregen.h>
 #include <errno.h>
 #include <hsmd/permissions.h>
+#include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
 #include <lightningd/channel_control.h>
 #include <lightningd/channel_gossip.h>
@@ -22,7 +23,6 @@
 #include <lightningd/notification.h>
 #include <lightningd/peer_fd.h>
 #include <lightningd/peer_htlcs.h>
-#include <unistd.h>
 
 struct stfu_result
 {

@@ -5,6 +5,7 @@
 #include <bitcoin/pubkey.h>
 #include <bitcoin/signature.h>
 #include <bitcoin/tx.h>
+#include <ccan/build_assert/build_assert.h>
 #include <common/amount.h>
 
 struct inflight {

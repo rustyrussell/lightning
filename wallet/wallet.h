@@ -6,8 +6,6 @@
 #include <ccan/crypto/shachain/shachain.h>
 #include <ccan/rune/rune.h>
 #include <common/htlc.h>
-#include <common/htlc_state.h>
-#include <common/onion_encode.h>
 #include <common/penalty_base.h>
 #include <common/utxo.h>
 #include <common/wallet.h>

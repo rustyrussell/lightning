@@ -2,7 +2,6 @@
 #define LIGHTNING_LIGHTNINGD_PLUGIN_HOOK_H
 
 #include "config.h"
-#include <common/json_parse_simple.h>
 #include <lightningd/plugin.h>
 
 /**

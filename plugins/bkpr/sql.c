@@ -1,6 +1,6 @@
 #include "config.h"
 
-#include <common/json_stream.h>
+#include <ccan/tal/str/str.h>
 #include <plugins/bkpr/blockheights.h>
 #include <plugins/bkpr/chain_event.h>
 #include <plugins/bkpr/channel_event.h>

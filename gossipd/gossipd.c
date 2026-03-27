@@ -13,7 +13,6 @@
  */
 #include "config.h"
 #include <ccan/tal/str/str.h>
-#include <common/clock_time.h>
 #include <common/daemon_conn.h>
 #include <common/memleak.h>
 #include <common/status.h>

@@ -1,15 +1,7 @@
 #include "config.h"
-#include <assert.h>
-#include <common/amount.h>
-#include <common/memleak.h>
-#include <common/node_id.h>
 #include <common/setup.h>
-#include <common/status.c>
-#include <common/status_levels.h>
 #include <common/wireaddr.c>
 #include <connectd/netaddress.c>
-#include <stdio.h>
-#include <wire/wire.h>
 
 #define DEFAULT_PORT 9735
 

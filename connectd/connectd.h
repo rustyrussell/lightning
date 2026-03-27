@@ -5,6 +5,7 @@
 #include <ccan/htable/htable_type.h>
 #include <ccan/membuf/membuf.h>
 #include <ccan/timer/timer.h>
+#include <ccan/typesafe_cb/typesafe_cb.h>
 #include <common/bigsize.h>
 #include <common/crypto_state.h>
 #include <common/node_id.h>

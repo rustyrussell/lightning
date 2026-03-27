@@ -7,7 +7,6 @@
 #include <errno.h>
 #include <lightningd/notification.h>
 #include <lightningd/plugin_control.h>
-#include <unistd.h>
 
 /* A dummy structure used to give multiple arguments to callbacks. */
 struct plugin_command {

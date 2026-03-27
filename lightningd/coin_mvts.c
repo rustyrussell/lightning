@@ -1,7 +1,7 @@
 #include "config.h"
 #include <ccan/tal/str/str.h>
-#include <common/clock_time.h>
 #include <common/json_command.h>
+#include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
 #include <lightningd/coin_mvts.h>
 #include <lightningd/notification.h>

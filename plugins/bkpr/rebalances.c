@@ -1,19 +1,12 @@
 #include "config.h"
 
-#include <ccan/htable/htable_type.h>
 #include <ccan/json_out/json_out.h>
-#include <ccan/str/str.h>
 #include <ccan/tal/str/str.h>
-#include <common/coin_mvt.h>
 #include <common/memleak.h>
 #include <common/mkdatastorekey.h>
-#include <common/node_id.h>
-#include <common/utils.h>
-#include <inttypes.h>
 #include <plugins/bkpr/bookkeeper.h>
 #include <plugins/bkpr/rebalances.h>
 #include <plugins/libplugin.h>
-#include <wire/wire.h>
 
 /* Hash table contains a pair of these: [a, b] and [b, a] */
 struct rebalance_pair {

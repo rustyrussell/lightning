@@ -1,5 +1,4 @@
 #include "config.h"
-#include <common/cryptomsg.h>
 #include <common/peer_failed.h>
 #include <common/peer_io.h>
 #include <common/per_peer_state.h>
