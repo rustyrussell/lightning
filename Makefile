@@ -527,6 +527,16 @@ else
 	PYTHONPATH=$(MY_CHECK_PYTHONPATH) TEST_DEBUG=1 TEST_LOG_IGNORE_ERRORS=1 VALGRIND=$(VALGRIND) uv run $(PYTEST) $(PYTEST_TESTS) $(PYTEST_OPTS)
 endif
 
+check: check-standalone-headers
+
+# Check that headers include enough to compile by themselves.
+check-standalone-headers: $(ALL_GEN_HEADERS) $(ALL_GEN_SOURCES)
+	./devtools/reduce-includes.sh -n $(ALL_NONGEN_HEADERS)
+
+reduce-includes: $(ALL_GEN_HEADERS) $(ALL_GEN_SOURCES)
+	./devtools/reduce-includes.sh -p -k $(ALL_NONGEN_HEADERS)
+	./devtools/reduce-includes.sh -k $(ALL_NONGEN_SOURCES)
+
 check-fuzz: $(ALL_FUZZ_TARGETS)
 ifneq ($(FUZZING),0)
 	@tests/fuzz/check-fuzz.sh
