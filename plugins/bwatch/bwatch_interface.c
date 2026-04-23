@@ -220,13 +220,10 @@ static struct command_result *chaininfo_err(struct command *cmd,
 					    const jsmntok_t *result,
 					    void *unused UNUSED)
 {
-	struct bwatch *bwatch = bwatch_of(cmd->plugin);
-	plugin_log(cmd->plugin, LOG_DBG,
+	plugin_log(cmd->plugin, LOG_BROKEN,
 		   "chaininfo RPC failed: %.*s",
 		   json_tok_full_len(result), json_tok_full(buf, result));
-	bwatch->poll_timer = global_timer(cmd->plugin, time_from_sec(0),
-					  bwatch_poll_chain, NULL);
-	return timer_complete(cmd);
+	return chaininfo_ack(cmd, method, buf, result, unused);
 }
 
 /* Got chain state from bcli: optionally roll back, then forward to watchman. */
