@@ -419,15 +419,12 @@ struct command_result *json_bwatch_add_scid(struct command *cmd,
 	struct short_channel_id *scid;
 	u32 *start_block;
 
-	if (!param_check(cmd, buffer, params,
-			 p_req("owner", param_string, &owner),
-			 p_req("scid", param_short_channel_id, &scid),
-			 p_req("start_block", param_u32, &start_block),
-			 NULL))
+	if (!param(cmd, buffer, params,
+		   p_req("owner", param_string, &owner),
+		   p_req("scid", param_short_channel_id, &scid),
+		   p_req("start_block", param_u32, &start_block),
+		   NULL))
 		return command_param_failed();
-
-	if (command_check_only(cmd))
-		return command_check_done(cmd);
 
 	/* New owner is appended to the watch's owner list; same owner
 	 * re-adding lowers start_block if needed (rescan handled later). */
@@ -447,14 +444,11 @@ struct command_result *json_bwatch_del_scid(struct command *cmd,
 	const char *owner;
 	struct short_channel_id *scid;
 
-	if (!param_check(cmd, buffer, params,
-			 p_req("owner", param_string, &owner),
-			 p_req("scid", param_short_channel_id, &scid),
-			 NULL))
+	if (!param(cmd, buffer, params,
+		   p_req("owner", param_string, &owner),
+		   p_req("scid", param_short_channel_id, &scid),
+		   NULL))
 		return command_param_failed();
-
-	if (command_check_only(cmd))
-		return command_check_done(cmd);
 
 	bwatch_del_watch(cmd, bwatch, WATCH_SCID,
 			 NULL, NULL, scid, NULL, owner);
