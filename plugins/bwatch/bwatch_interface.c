@@ -465,14 +465,11 @@ struct command_result *json_bwatch_add_blockdepth(struct command *cmd,
 	const char *owner;
 	u32 *start_block;
 
-	if (!param_check(cmd, buffer, params,
-			 p_req("owner", param_string, &owner),
-			 p_req("start_block", param_u32, &start_block),
-			 NULL))
+	if (!param(cmd, buffer, params,
+		   p_req("owner", param_string, &owner),
+		   p_req("start_block", param_u32, &start_block),
+		   NULL))
 		return command_param_failed();
-
-	if (command_check_only(cmd))
-		return command_check_done(cmd);
 
 	/* start_block doubles as the watch key (confirm_height) and
 	 * the anchor for depth = tip - start_block + 1. */
@@ -492,14 +489,11 @@ struct command_result *json_bwatch_del_blockdepth(struct command *cmd,
 	const char *owner;
 	u32 *start_block;
 
-	if (!param_check(cmd, buffer, params,
-			 p_req("owner", param_string, &owner),
-			 p_req("start_block", param_u32, &start_block),
-			 NULL))
+	if (!param(cmd, buffer, params,
+		   p_req("owner", param_string, &owner),
+		   p_req("start_block", param_u32, &start_block),
+		   NULL))
 		return command_param_failed();
-
-	if (command_check_only(cmd))
-		return command_check_done(cmd);
 
 	bwatch_del_watch(cmd, bwatch, WATCH_BLOCKDEPTH,
 			 NULL, NULL, NULL, start_block, owner);
