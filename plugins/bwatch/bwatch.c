@@ -25,18 +25,13 @@ static const char *init(struct command *cmd,
 	bwatch->scid_watches = new_htable(bwatch, scid_watches);
 	bwatch->blockdepth_watches = new_htable(bwatch, blockdepth_watches);
 
-	bwatch->block_history = tal_arr(bwatch, struct block_record_wire *, 0);
+	bwatch->block_history = tal_arr(bwatch, struct block_record_wire, 0);
 
 	/* Replay persisted block history.  load_block_history sets
 	 * current_height / current_blockhash from the most recent record;
 	 * if there are no records, fall back to zero so the first poll
 	 * initialises us at the chain tip. */
 	bwatch_load_block_history(cmd, bwatch);
-	if (tal_count(bwatch->block_history) == 0) {
-		bwatch->current_height = 0;
-		memset(&bwatch->current_blockhash, 0,
-		       sizeof(bwatch->current_blockhash));
-	}
 
 	return NULL;
 }

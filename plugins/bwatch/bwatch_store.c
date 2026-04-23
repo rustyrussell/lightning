@@ -217,12 +217,11 @@ void bwatch_add_block_to_history(struct bwatch *bwatch, u32 height,
 				 const struct bitcoin_blkid *hash,
 				 const struct bitcoin_blkid *prev_hash)
 {
-	struct block_record_wire *br = tal(bwatch, struct block_record_wire);
+	struct block_record_wire br;
 
-	br->height = height;
-	br->hash = *hash;
-	br->prev_hash = *prev_hash;
-
+	br.height = height;
+	br.hash = *hash;
+	br.prev_hash = *prev_hash;
 	tal_arr_expand(&bwatch->block_history, br);
 
 	plugin_log(bwatch->plugin, LOG_DBG,
@@ -248,18 +247,27 @@ void bwatch_delete_block_from_datastore(struct command *cmd, u32 height)
 	plugin_log(cmd->plugin, LOG_DBG, "Deleted block %u from datastore", height);
 }
 
+const struct block_record_wire *bwatch_last_block(const struct bwatch *bwatch)
+{
+	if (tal_count(bwatch->block_history) == 0)
+		return NULL;
+
+	return &bwatch->block_history[tal_count(bwatch->block_history) - 1];
+}
+
 void bwatch_load_block_history(struct command *cmd, struct bwatch *bwatch)
 {
 	const char *buf;
 	const jsmntok_t *datastore, *t;
 	size_t i;
+	const struct block_record_wire *most_recent;
 
 	datastore = bwatch_list_datastore(tmpctx, cmd, "bwatch", "block_history", &buf);
 
 	json_for_each_arr(i, t, datastore) {
 		const u8 *data = json_tok_bin_from_hex(tmpctx, buf,
 						       json_get_member(buf, t, "hex"));
-		struct block_record_wire *br;
+		struct block_record_wire br;
 
 		if (!data)
 			plugin_err(cmd->plugin,
@@ -267,25 +275,26 @@ void bwatch_load_block_history(struct command *cmd, struct bwatch *bwatch)
 				   json_tok_full_len(t),
 				   json_tok_full(buf, t));
 
-		br = tal(bwatch, struct block_record_wire);
-		if (!fromwire_bwatch_block(data, br)) {
+		if (!fromwire_bwatch_block(data, &br)) {
 			plugin_err(cmd->plugin,
 				   "Bad block_history %.*s",
 				   json_tok_full_len(t),
 				   json_tok_full(buf, t));
 		}
-
 		tal_arr_expand(&bwatch->block_history, br);
 	}
 
-	if (tal_count(bwatch->block_history) > 0) {
-		size_t count = tal_count(bwatch->block_history);
-		struct block_record_wire *most_recent = bwatch->block_history[count - 1];
-
+	most_recent = bwatch_last_block(bwatch);
+	if (most_recent) {
 		bwatch->current_height = most_recent->height;
 		bwatch->current_blockhash = most_recent->hash;
 		plugin_log(cmd->plugin, LOG_DBG,
 			   "Restored %zu blocks from datastore, current height=%u",
-			   count, bwatch->current_height);
+			   tal_count(bwatch->block_history),
+			   bwatch->current_height);
+	} else {
+		bwatch->current_height = 0;
+		memset(&bwatch->current_blockhash, 0,
+		       sizeof(bwatch->current_blockhash));
 	}
 }

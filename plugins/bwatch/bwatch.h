@@ -57,7 +57,7 @@ struct bwatch {
 	struct bitcoin_blkid current_blockhash;
 	/* Oldest first, most recent last. Used to replay a reorg by
 	 * peeling tips off until the parent hash matches the new chain. */
-	struct block_record_wire **block_history;
+	struct block_record_wire *block_history;
 
 	struct scriptpubkey_watches *scriptpubkey_watches;
 	struct outpoint_watches *outpoint_watches;
@@ -66,6 +66,9 @@ struct bwatch {
 
 	u32 poll_interval_ms;
 };
+
+/* Helper: get last block_history (or NULL) */
+const struct block_record_wire *bwatch_last_block(const struct bwatch *bwatch);
 
 /* Helper: retrieve the bwatch state from a plugin handle. */
 struct bwatch *bwatch_of(struct plugin *plugin);
