@@ -4,6 +4,7 @@
 #include <ccan/tal/str/str.h>
 #include <common/json_parse_simple.h>
 #include <common/json_stream.h>
+#include <common/mkdatastorekey.h>
 #include <db/exec.h>
 #include <lightningd/jsonrpc.h>
 #include <lightningd/lightningd.h>
@@ -40,13 +41,9 @@ struct pending_op {
  */
 
 /* Generate datastore key for a pending operation */
-static const char **make_key(const tal_t *ctx, const char *op_id)
+static const char **make_key(const tal_t *ctx, const char *op_id TAKES)
 {
-	const char **key = tal_arr(ctx, const char *, 3);
-	key[0] = "watchman";
-	key[1] = "pending";
-	key[2] = op_id;
-	return key;
+	return mkdatastorekey(ctx, "watchman", "pending", op_id);
 }
 
 
@@ -157,6 +154,7 @@ static const char *owner_from_op_id(const char *op_id)
 }
 
 /* op_id is "{method}:{owner}"; return the method prefix. */
+__attribute__((unused))
 static const char *method_from_op_id(const tal_t *ctx, const char *op_id)
 {
 	const char *colon = strchr(op_id, ':');
