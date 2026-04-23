@@ -99,8 +99,7 @@ static void maybe_fire_scid_watch(struct command *cmd,
 	struct bitcoin_tx *tx;
 	u32 scid_blockheight, txindex, outnum;
 
-	if (w->type != WATCH_SCID)
-		return;
+	assert(w->type == WATCH_SCID);
 
 	/* The scid pins the watch to one specific block. */
 	scid_blockheight = short_channel_id_blocknum(w->key.scid);
