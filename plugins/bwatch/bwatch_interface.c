@@ -324,15 +324,12 @@ struct command_result *json_bwatch_add_scriptpubkey(struct command *cmd,
 	u8 *scriptpubkey;
 	u32 *start_block;
 
-	if (!param_check(cmd, buffer, params,
-			 p_req("owner", param_string, &owner),
-			 p_req("scriptpubkey", param_bin_from_hex, &scriptpubkey),
-			 p_req("start_block", param_u32, &start_block),
-			 NULL))
+	if (!param(cmd, buffer, params,
+		   p_req("owner", param_string, &owner),
+		   p_req("scriptpubkey", param_bin_from_hex, &scriptpubkey),
+		   p_req("start_block", param_u32, &start_block),
+		   NULL))
 		return command_param_failed();
-
-	if (command_check_only(cmd))
-		return command_check_done(cmd);
 
 	/* New owner is appended to the watch's owner list; same owner
 	 * re-adding lowers start_block if needed (rescan handled later). */
@@ -352,14 +349,11 @@ struct command_result *json_bwatch_del_scriptpubkey(struct command *cmd,
 	const char *owner;
 	u8 *scriptpubkey;
 
-	if (!param_check(cmd, buffer, params,
-			 p_req("owner", param_string, &owner),
-			 p_req("scriptpubkey", param_bin_from_hex, &scriptpubkey),
-			 NULL))
+	if (!param(cmd, buffer, params,
+		   p_req("owner", param_string, &owner),
+		   p_req("scriptpubkey", param_bin_from_hex, &scriptpubkey),
+		   NULL))
 		return command_param_failed();
-
-	if (command_check_only(cmd))
-		return command_check_done(cmd);
 
 	bwatch_del_watch(cmd, bwatch, WATCH_SCRIPTPUBKEY,
 			 NULL, scriptpubkey, NULL, NULL, owner);
