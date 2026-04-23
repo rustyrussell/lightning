@@ -432,16 +432,13 @@ static struct command_result *json_chaininfo(struct command *cmd,
 	u32 *headercount, *blockcount;
 	bool *ibd;
 
-	if (!param_check(cmd, buffer, params,
-			 p_req("chain", param_string, &chain),
-			 p_req("headercount", param_number, &headercount),
-			 p_req("blockcount", param_number, &blockcount),
-			 p_req("ibd", param_bool, &ibd),
-			 NULL))
+	if (!param(cmd, buffer, params,
+		   p_req("chain", param_string, &chain),
+		   p_req("headercount", param_number, &headercount),
+		   p_req("blockcount", param_number, &blockcount),
+		   p_req("ibd", param_bool, &ibd),
+		   NULL))
 		return command_param_failed();
-
-	if (command_check_only(cmd))
-		return command_check_done(cmd);
 
 	if (!streq(chain, chainparams->bip70_name))
 		fatal("Wrong network! Our Bitcoin backend is running on '%s',"
