@@ -505,12 +505,12 @@ static struct command_result *json_watch_found(struct command *cmd,
 	struct bitcoin_tx *tx;
 
 	if (!param_check(cmd, buffer, params,
-		   p_req("blockheight", param_number, &blockheight),
-		   p_req("owners", param_string_array, &owners),
-		   p_opt("tx", param_bitcoin_tx, &tx),
-		   p_opt("txindex", param_number, &txindex),
-		   p_opt("index", param_number, &index),
-		   p_opt("depth", param_number, &depth),
+			 p_req("blockheight", param_number, &blockheight),
+			 p_req("owners", param_string_array, &owners),
+			 p_opt("tx", param_bitcoin_tx, &tx),
+			 p_opt("txindex", param_number, &txindex),
+			 p_opt("index", param_number, &index),
+			 p_opt("depth", param_number, &depth),
 		   NULL))
 		return command_param_failed();
 
@@ -562,14 +562,11 @@ static struct command_result *json_watch_revert(struct command *cmd,
 	const char *owner;
 	u32 *blockheight;
 
-	if (!param_check(cmd, buffer, params,
-			 p_req("owner", param_string, &owner),
-			 p_req("blockheight", param_number, &blockheight),
-			 NULL))
+	if (!param(cmd, buffer, params,
+		   p_req("owner", param_string, &owner),
+		   p_req("blockheight", param_number, &blockheight),
+		   NULL))
 		return command_param_failed();
-
-	if (command_check_only(cmd))
-		return command_check_done(cmd);
 
 	dispatch_watch_revert(cmd->ld, owner, *blockheight);
 	struct json_stream *response = json_stream_success(cmd);
