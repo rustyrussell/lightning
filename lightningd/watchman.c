@@ -25,8 +25,10 @@ static void load_tip(struct watchman *wm)
 	wm->last_processed_height = db_get_intvar(db, "last_watchman_block_height", 0);
 
 	blob = db_get_blobvar(tmpctx, db, "last_watchman_block_hash");
-	if (blob && tal_bytelen(blob) == sizeof(struct bitcoin_blkid))
+	if (blob) {
+		assert(tal_bytelen(blob) == sizeof(struct bitcoin_blkid));
 		memcpy(&wm->last_processed_hash, blob, sizeof(wm->last_processed_hash));
+	}
 }
 
 /* Apply --rescan: negative means absolute height (only go back),
