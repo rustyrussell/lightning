@@ -297,6 +297,12 @@ void bwatch_load_block_history(struct command *cmd, struct bwatch *bwatch)
 	}
 }
 
+static char *fmt_scriptpubkey(const tal_t *ctx,
+			      const struct scriptpubkey *scriptpubkey)
+{
+	return tal_hexstr(ctx, scriptpubkey->script, scriptpubkey->len);
+}
+
 /* Build the datastore key path for a watch.  All watch types share the
  * ["bwatch", <type>, <stringified-key>] layout; only the key payload
  * varies. */
@@ -306,9 +312,8 @@ static const char **get_watch_datastore_key(const tal_t *ctx, const struct watch
 
 	switch (w->type) {
 	case WATCH_SCRIPTPUBKEY: {
-		char *hex = tal_hexstr(ctx, w->key.scriptpubkey.script,
-				       w->key.scriptpubkey.len);
-		return mkdatastorekey(ctx, "bwatch", type_name, hex);
+		return mkdatastorekey(ctx, "bwatch", type_name,
+				      take(fmt_scriptpubkey(NULL, &w->key.scriptpubkey)));
 	}
 	case WATCH_OUTPOINT:
 		return mkdatastorekey(ctx, "bwatch", type_name,
