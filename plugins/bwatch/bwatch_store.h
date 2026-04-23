@@ -88,7 +88,7 @@ struct watch *bwatch_add_watch(struct command *cmd,
 			       const struct short_channel_id *scid,
 			       const u32 *confirm_height,
 			       u32 start_block,
-			       const char *owner_id);
+			       const char *owner_id TAKES);
 
 void bwatch_del_watch(struct command *cmd,
 		      struct bwatch *bwatch,

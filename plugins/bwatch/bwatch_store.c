@@ -490,6 +490,16 @@ void bwatch_load_watches_from_datastore(struct command *cmd, struct bwatch *bwat
 	load_watches_by_type(cmd, bwatch, WATCH_BLOCKDEPTH);
 }
 
+/* -1 means "not found" */
+static int find_owner(wirestring **owners, const char *owner_id)
+{
+	for (size_t i = 0; i < tal_count(owners); i++) {
+		if (streq(owners[i], owner_id))
+			return i;
+	}
+	return -1;
+}
+
 struct watch *bwatch_add_watch(struct command *cmd,
 			       struct bwatch *bwatch,
 			       enum watch_type type,
@@ -498,20 +508,14 @@ struct watch *bwatch_add_watch(struct command *cmd,
 			       const struct short_channel_id *scid,
 			       const u32 *confirm_height,
 			       u32 start_block,
-			       const char *owner_id)
+			       const char *owner_id TAKES)
 {
 	struct watch *w = bwatch_get_watch(bwatch, type, outpoint, scriptpubkey,
 					   scid, confirm_height);
 
 	if (w) {
-		bool found_owner = false;
 		bool lowered = start_block < w->start_block;
-		for (size_t i = 0; i < tal_count(w->owners); i++) {
-			if (streq(w->owners[i], owner_id)) {
-				found_owner = true;
-				break;
-			}
-		}
+		bool found_owner = (find_owner(w->owners, owner_id) != -1);
 		if (lowered)
 			w->start_block = start_block;
 		if (!found_owner)
@@ -534,7 +538,6 @@ struct watch *bwatch_add_watch(struct command *cmd,
 	w = tal(bwatch, struct watch);
 	w->type = type;
 	w->start_block = start_block;
-	w->owners = tal_arr(w, wirestring *, 0);
 	switch (w->type) {
 	case WATCH_SCRIPTPUBKEY:
 		w->key.scriptpubkey.len = tal_bytelen(scriptpubkey);
@@ -551,7 +554,8 @@ struct watch *bwatch_add_watch(struct command *cmd,
 		 * already set from start_block above. */
 		break;
 	}
-	tal_arr_expand(&w->owners, tal_strdup(w->owners, owner_id));
+	w->owners = tal_arr(w, wirestring *, 1);
+	w->owners[0] = tal_strdup(w->owners, owner_id);
 	bwatch_save_watch_to_datastore(cmd, w);
 	bwatch_add_watch_to_hash(bwatch, w);
 	return w;
@@ -568,6 +572,7 @@ void bwatch_del_watch(struct command *cmd,
 {
 	struct watch *w = bwatch_get_watch(bwatch, type, outpoint, scriptpubkey,
 					   scid, confirm_height);
+	int owner_off;
 
 	if (!w) {
 		plugin_log(cmd->plugin, LOG_DBG,
@@ -576,23 +581,22 @@ void bwatch_del_watch(struct command *cmd,
 		return;
 	}
 
-	for (size_t i = 0; i < tal_count(w->owners); i++) {
-		if (streq(w->owners[i], owner_id)) {
-			tal_free(w->owners[i]);
-			tal_arr_remove(&w->owners, i);
-
-			if (tal_count(w->owners) == 0) {
-				bwatch_delete_watch_from_datastore(cmd, w);
-				bwatch_remove_watch_from_hash(bwatch, w);
-				tal_free(w);
-			} else {
-				bwatch_save_watch_to_datastore(cmd, w);
-			}
-			return;
-		}
+	owner_off = find_owner(w->owners, owner_id);
+	if (owner_off < 0) {
+		plugin_log(cmd->plugin, LOG_BROKEN,
+			   "Attempted to remove watch for owner %s but it wasn't watching",
+			   owner_id);
+		return;
 	}
 
-	plugin_log(cmd->plugin, LOG_BROKEN,
-		   "Attempted to remove watch for owner %s but it wasn't watching",
-		   owner_id);
+	tal_free(w->owners[owner_off]);
+	tal_arr_remove(&w->owners, owner_off);
+
+	if (tal_count(w->owners) == 0) {
+		bwatch_delete_watch_from_datastore(cmd, w);
+		bwatch_remove_watch_from_hash(bwatch, w);
+		tal_free(w);
+	} else {
+		bwatch_save_watch_to_datastore(cmd, w);
+	}
 }
