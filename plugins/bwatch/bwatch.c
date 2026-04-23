@@ -1,5 +1,6 @@
 #include "config.h"
 #include <ccan/array_size/array_size.h>
+#include <ccan/ptrint/ptrint.h>
 #include <common/json_param.h>
 #include <common/json_parse.h>
 #include <common/json_stream.h>
@@ -32,7 +33,7 @@ static struct command_result *handle_block(struct command *cmd,
 					   const char *method,
 					   const char *buf,
 					   const jsmntok_t *result,
-					   u32 *block_height);
+					   ptrint_t *block_height);
 
 /* Parse the bitcoin block out of a getrawblockbyheight response. */
 static struct bitcoin_block *block_from_response(const char *buf,
@@ -56,12 +57,11 @@ static struct bitcoin_block *block_from_response(const char *buf,
 
 /* Fetch a block by height for normal polling. */
 static struct command_result *fetch_block_handle(struct command *cmd,
-						 u32 height,
-						 u32 *block_height)
+						 u32 height)
 {
 	struct out_req *req = jsonrpc_request_start(cmd, "getrawblockbyheight",
 						    handle_block, handle_block,
-						    block_height);
+						    int2ptr(height));
 	json_add_u32(req->js, "height", height);
 	return send_outreq(req);
 }
@@ -97,7 +97,7 @@ static struct command_result *handle_block(struct command *cmd,
 					   const char *method UNUSED,
 					   const char *buf,
 					   const jsmntok_t *result,
-					   u32 *block_height)
+					   ptrint_t *block_height)
 {
 	struct bwatch *bwatch = bwatch_of(cmd->plugin);
 	struct bitcoin_blkid blockhash;
@@ -107,19 +107,21 @@ static struct command_result *handle_block(struct command *cmd,
 	if (!block) {
 		plugin_log(cmd->plugin, LOG_UNUSUAL,
 			   "Failed to get/parse block %u: '%.*s'",
-			   *block_height,
+			   (unsigned int)ptr2int(block_height),
 			   json_tok_full_len(result),
 			   json_tok_full(buf, result));
 		return poll_finished(cmd);
 	}
 
-	bwatch->current_height = *block_height;
+	bwatch->current_height = ptr2int(block_height);
 	bwatch->current_blockhash = blockhash;
-	bwatch_add_block_to_history(bwatch, *block_height, &blockhash,
+	bwatch_add_block_to_history(bwatch, bwatch->current_height, &blockhash,
 				    &block->hdr.prev_hash);
 
 	struct block_record_wire br = {
-		*block_height, blockhash, block->hdr.prev_hash
+		bwatch->current_height,
+		bwatch->current_blockhash,
+		block->hdr.prev_hash,
 	};
 	return bwatch_add_block_to_datastore(cmd, &br, fetch_more);
 }
@@ -145,7 +147,7 @@ static struct command_result *getchaininfo_done(struct command *cmd,
 	}
 
 	if (blockheight > bwatch->current_height) {
-		u32 *target_height = tal(cmd, u32);
+		u32 target_height;
 
 		/* On first init we jump straight to the chain tip; afterwards
 		 * we catch up one block at a time so handle_block can validate
@@ -154,12 +156,12 @@ static struct command_result *getchaininfo_done(struct command *cmd,
 			plugin_log(cmd->plugin, LOG_DBG,
 				   "First poll: init at block %u",
 				   blockheight);
-			*target_height = blockheight;
+			target_height = blockheight;
 		} else {
-			*target_height = bwatch->current_height + 1;
+			target_height = bwatch->current_height + 1;
 		}
 
-		return fetch_block_handle(cmd, *target_height, target_height);
+		return fetch_block_handle(cmd, target_height);
 	}
 
 	plugin_log(cmd->plugin, LOG_DBG,
