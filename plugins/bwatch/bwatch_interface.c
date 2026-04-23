@@ -53,7 +53,7 @@ static struct command_result *block_processed_err(struct command *cmd,
 {
 	struct bwatch *bwatch = bwatch_of(cmd->plugin);
 
-	plugin_log(cmd->plugin, LOG_DBG,
+	plugin_log(cmd->plugin, LOG_BROKEN,
 		   "block_processed RPC failed (watchman not ready?): %.*s",
 		   json_tok_full_len(result), json_tok_full(buf, result));
 
