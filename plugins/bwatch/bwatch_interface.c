@@ -371,15 +371,12 @@ struct command_result *json_bwatch_add_outpoint(struct command *cmd,
 	struct bitcoin_outpoint *outpoint;
 	u32 *start_block;
 
-	if (!param_check(cmd, buffer, params,
-			 p_req("owner", param_string, &owner),
-			 p_req("outpoint", param_outpoint, &outpoint),
-			 p_req("start_block", param_u32, &start_block),
-			 NULL))
+	if (!param(cmd, buffer, params,
+		   p_req("owner", param_string, &owner),
+		   p_req("outpoint", param_outpoint, &outpoint),
+		   p_req("start_block", param_u32, &start_block),
+		   NULL))
 		return command_param_failed();
-
-	if (command_check_only(cmd))
-		return command_check_done(cmd);
 
 	/* New owner is appended to the watch's owner list; same owner
 	 * re-adding lowers start_block if needed (rescan handled later). */
@@ -399,14 +396,11 @@ struct command_result *json_bwatch_del_outpoint(struct command *cmd,
 	const char *owner;
 	struct bitcoin_outpoint *outpoint;
 
-	if (!param_check(cmd, buffer, params,
-			 p_req("owner", param_string, &owner),
-			 p_req("outpoint", param_outpoint, &outpoint),
-			 NULL))
+	if (!param(cmd, buffer, params,
+		   p_req("owner", param_string, &owner),
+		   p_req("outpoint", param_outpoint, &outpoint),
+		   NULL))
 		return command_param_failed();
-
-	if (command_check_only(cmd))
-		return command_check_done(cmd);
 
 	bwatch_del_watch(cmd, bwatch, WATCH_OUTPOINT,
 			 outpoint, NULL, NULL, NULL, owner);
