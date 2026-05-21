@@ -5290,10 +5290,9 @@ def test_sendpay_grouping(node_factory, bitcoind):
     wait_for(lambda: [c['active'] for c in l1.rpc.listchannels(scid)['channels']] == [True, True])
     l1.rpc.pay(inv, amount_msat='10000msat')
 
-    # And finally we should have all 3 attempts to pay the invoice
-    pays = l1.rpc.listpays()['pays']
-    assert(len(pays) == 3)
-    assert([p['status'] for p in pays] == ['failed', 'failed', 'complete'])
+    # And finally we should have all 3 attempts to pay the invoice, but
+    # if we're fast enough, xpay could still be cleaning up, so wait.
+    wait_for(lambda: [p['status'] for p in l1.rpc.listpays()['pays']] == ['failed', 'failed', 'complete'])
 
 
 @pytest.mark.flaky(reruns=2)
