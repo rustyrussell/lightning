@@ -61,7 +61,9 @@ def test_apis_batch1(node_factory):
     assert "coingecko" in rates
     assert "kraken" in rates
     assert "blockchain.info" in rates
-    assert "coindesk" in rates
+
+    # This one ratelimits more aggressively
+    assert "coindesk" in rates or l1.daemon.is_in_log("failed to get `USD` rate from coindesk.*Rate limit excedeed")
     assert "binance" in rates
 
     # Death to the 58k gang!
